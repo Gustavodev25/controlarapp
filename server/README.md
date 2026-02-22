@@ -2,6 +2,10 @@
 
 Servidor backend para integração com a API Pluggy (Open Finance).
 
+## 🚨 PROBLEMA COM RAILWAY?
+
+**Leia:** [../COMECE_AQUI.md](../COMECE_AQUI.md) - Solução completa!
+
 ## Setup
 
 ### 1. Instalar dependências

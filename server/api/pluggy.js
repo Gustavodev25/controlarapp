@@ -198,12 +198,16 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
     try {
         const { connectorId, credentials, oauthRedirectUri } = req.body;
         const token = await getAccessToken();
+        
+        console.log('[Pluggy] Criando item para connector:', connectorId);
+        console.log('[Pluggy] OAuth Redirect URI:', oauthRedirectUri || 'não fornecido');
+        
         const payload = { connectorId, parameters: credentials || {} };
 
-        // CORREÇÃO: A Pluggy exige "clientUrl" e/ou "webhookUrl" para Mobile OAuth, não "redirectUrl".
+        // A Pluggy exige "clientUrl" para Mobile OAuth
         if (oauthRedirectUri) {
             payload.clientUrl = oauthRedirectUri;
-            payload.webhookUrl = oauthRedirectUri; // Apenas para garantia em certas versões da API
+            console.log('[Pluggy] Configurando clientUrl para OAuth:', oauthRedirectUri);
         }
 
         const response = await safeFetch(`${PLUGGY_API_URL}/items`, {
@@ -233,7 +237,7 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
                 details: data
             };
 
-            console.error('[Pluggy] Create item failed:', errorDetails);
+            console.error('[Pluggy] Create item failed:', JSON.stringify(errorDetails, null, 2));
 
             return res.status(response.status).json({
                 success: false,
@@ -242,20 +246,48 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
             });
         }
 
-        // CORREÇÃO: Pega o link seja de clientUrl, oauthUrl, etc
-        const oauthUrl = data.clientUrl || data.parameter?.oauthUrl || data.oauthUrl || data.userAction?.url || data.userAction?.attributes?.url;
+        // Extrair o link OAuth de várias possíveis localizações na resposta
+        const oauthUrl = 
+            data.clientUrl || 
+            data.parameter?.oauthUrl || 
+            data.oauthUrl || 
+            data.userAction?.url || 
+            data.userAction?.attributes?.url ||
+            null;
 
-        console.log('[Pluggy] Item criado:', data.id, 'Status:', data.status);
+        console.log('[Pluggy] Item criado com sucesso:', {
+            id: data.id,
+            status: data.status,
+            connector: data.connector?.name || data.connectorId,
+            hasOAuthUrl: !!oauthUrl
+        });
+
         if (oauthUrl) {
-            console.log('[Pluggy] Link de redirecionamento (OAuth) encontrado:', oauthUrl);
+            console.log('[Pluggy] ✅ Link OAuth encontrado:', oauthUrl);
         } else {
-            console.warn('[Pluggy] AVISO: Nenhum link de redirecionamento imediato. Necessita Polling.');
+            console.warn('[Pluggy] ⚠️ Nenhum link OAuth retornado. Status:', data.status);
+            console.warn('[Pluggy] Resposta completa:', JSON.stringify(data, null, 2));
         }
 
-        res.json({ success: true, item: data, oauthUrl });
+        res.json({ 
+            success: true, 
+            item: data, 
+            oauthUrl,
+            // Informações adicionais para debug no app
+            debug: {
+                hasOAuthUrl: !!oauthUrl,
+                itemStatus: data.status,
+                executionStatus: data.executionStatus
+            }
+        });
     } catch (error) {
         console.error('[Pluggy] Create item error:', error.message);
-        res.status(500).json({ success: false, error: 'Erro interno ao criar conexão' });
+        console.error('[Pluggy] Stack:', error.stack);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Erro interno ao criar conexão',
+            details: error.message 
+        });
     }
 });
 

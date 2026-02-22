@@ -2,6 +2,32 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+## 🚨 PROBLEMA COM RAILWAY + PLUGGY OAUTH?
+
+### ⚡ Solução Rápida
+
+**Leia:** [COMECE_AQUI.md](./COMECE_AQUI.md) - Solução completa em 5 minutos!
+
+**Problema resolvido:**
+- ✅ Backend no Railway não responde
+- ✅ Erro "banco não enviou o link"
+- ✅ OAuth do Pluggy não funciona
+
+### 📚 Documentação Completa
+
+| Arquivo | Descrição |
+|---------|-----------|
+| **[COMECE_AQUI.md](./COMECE_AQUI.md)** | 🎯 Ponto de entrada - Comece aqui! |
+| [GUIA_RAPIDO_RAILWAY.md](./GUIA_RAPIDO_RAILWAY.md) | ⚡ Solução em 5 minutos |
+| [INSTRUCOES_VISUAIS.md](./INSTRUCOES_VISUAIS.md) | 🎨 Guia visual passo a passo |
+| [RAILWAY_SETUP.md](./RAILWAY_SETUP.md) | 📖 Configuração detalhada |
+| [PLUGGY_OAUTH_FIX.md](./PLUGGY_OAUTH_FIX.md) | 🔧 Detalhes técnicos do OAuth |
+| [CHECKLIST_DEPLOY.md](./CHECKLIST_DEPLOY.md) | ✅ Checklist completo |
+| [COMANDOS_UTEIS.md](./COMANDOS_UTEIS.md) | 🛠️ Comandos de debug |
+| [RESUMO_SOLUCAO.md](./RESUMO_SOLUCAO.md) | 📋 Resumo executivo |
+
+---
+
 ## Get started
 
 1. Install dependencies

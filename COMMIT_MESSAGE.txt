@@ -1,0 +1,42 @@
+Fix: Configurar Railway e corrigir OAuth do Pluggy
+
+Problema:
+- Backend no Railway não respondia ("Application failed to respond")
+- Erro "banco não enviou o link" no OAuth do Pluggy
+- Variáveis de ambiente não configuradas
+
+Solução:
+- Adicionado railway.json e Procfile para configurar deploy
+- Melhorado logs e tratamento de OAuth no backend
+- Criado endpoint /api/diagnostics para debug
+- Adicionado script test:config para validar configurações
+- Documentação completa em português
+
+Arquivos criados:
+- railway.json - Configuração do Railway
+- Procfile - Comando de inicialização
+- COMECE_AQUI.md - Guia principal
+- GUIA_RAPIDO_RAILWAY.md - Solução rápida
+- RAILWAY_SETUP.md - Setup detalhado
+- PLUGGY_OAUTH_FIX.md - Detalhes do OAuth
+- CHECKLIST_DEPLOY.md - Checklist completo
+- COMANDOS_UTEIS.md - Comandos úteis
+- RESUMO_SOLUCAO.md - Resumo executivo
+- INSTRUCOES_VISUAIS.md - Guia visual
+- SOLUCAO_IMPLEMENTADA.md - Documentação da solução
+- deploy.sh / deploy.ps1 - Scripts de deploy
+- server/scripts/test-config.js - Validação de config
+
+Arquivos modificados:
+- server/index.js - Logs detalhados e diagnóstico
+- server/api/pluggy.js - OAuth melhorado
+- server/package.json - Novo script test:config
+- README.md - Links para documentação
+
+Como usar:
+1. Configure variáveis no Railway (PLUGGY_*, FIREBASE_*)
+2. git push origin main
+3. Teste: curl https://backendcontrolarapp-production.up.railway.app/health
+4. Configure app: EXPO_PUBLIC_API_URL no .env.local
+
+Documentação: Leia COMECE_AQUI.md
