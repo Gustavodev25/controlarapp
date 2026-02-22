@@ -50,7 +50,8 @@ let tokenPromise = null;
 
 const TRANSACTIONS_PAGE_SIZE = 500;
 const MAX_TRANSACTION_PAGES = 50;
-const FETCH_TIMEOUT_MS = 25000;
+// Aumentado para 45 segundos para que o backend espere adequadamente
+const FETCH_TIMEOUT_MS = 45000;
 
 // ==========================================
 // UTILS DE REDE (COM RETRY PARA RATE LIMIT)
@@ -65,7 +66,6 @@ const safeFetch = async (url, options = {}, retries = 3) => {
         try {
             const response = await fetch(url, { ...options, signal: controller.signal });
 
-            // Tratamento de Rate Limit (429) e Erros Internos da API
             if (!response.ok && (response.status === 429 || response.status >= 500)) {
                 if (attempt === retries) return response;
 
@@ -138,7 +138,6 @@ const fetchTransactionsForAccount = async (token, accountId, fromDate) => {
     });
     if (fromDate) params.set('from', fromDate);
 
-    // 1. Busca primeira página
     const firstPageRes = await safeFetch(`${PLUGGY_API_URL}/transactions?${params.toString()}`, { headers: { 'X-API-KEY': token } });
     if (!firstPageRes.ok) return [];
 
@@ -148,7 +147,6 @@ const fetchTransactionsForAccount = async (token, accountId, fromDate) => {
 
     const totalFromApi = Number(firstPageData.total);
 
-    // 2. Busca o restante das páginas em paralelo se houverem muitas transações
     if (totalFromApi > TRANSACTIONS_PAGE_SIZE && page1Results.length > 0) {
         const totalPages = Math.ceil(totalFromApi / TRANSACTIONS_PAGE_SIZE);
         const maxPages = Math.min(totalPages, MAX_TRANSACTION_PAGES);
@@ -165,7 +163,6 @@ const fetchTransactionsForAccount = async (token, accountId, fromDate) => {
             );
         }
 
-        // Resolve em mini-lotes de 3 para não estressar a API
         for (let i = 0; i < pagesPromises.length; i += 3) {
             const batch = pagesPromises.slice(i, i + 3);
             const batchResults = await Promise.all(batch);
@@ -202,7 +199,12 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
         const { connectorId, credentials, oauthRedirectUri } = req.body;
         const token = await getAccessToken();
         const payload = { connectorId, parameters: credentials || {} };
-        if (oauthRedirectUri) payload.redirectUrl = oauthRedirectUri;
+
+        // CORREÇÃO: A Pluggy exige "clientUrl" e/ou "webhookUrl" para Mobile OAuth, não "redirectUrl".
+        if (oauthRedirectUri) {
+            payload.clientUrl = oauthRedirectUri;
+            payload.webhookUrl = oauthRedirectUri; // Apenas para garantia em certas versões da API
+        }
 
         const response = await safeFetch(`${PLUGGY_API_URL}/items`, {
             method: 'POST',
@@ -215,7 +217,6 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
         if (!response.ok) {
             let errorMessage = 'Falha ao conectar na instituição';
 
-            // Tratamento específico para evitar duplicação ou processos travados (ITEM_IS_ALREADY_UPDATING)
             if (data.codeDescription === 'ITEM_IS_ALREADY_UPDATING') {
                 errorMessage = 'Uma conexão com estas credenciais já está em andamento. Aguarde alguns segundos antes de tentar novamente.';
             } else if (data.message) {
@@ -241,13 +242,14 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
             });
         }
 
-        const oauthUrl = data.parameter?.oauthUrl || data.oauthUrl || data.userAction?.url || data.userAction?.attributes?.url;
+        // CORREÇÃO: Pega o link seja de clientUrl, oauthUrl, etc
+        const oauthUrl = data.clientUrl || data.parameter?.oauthUrl || data.oauthUrl || data.userAction?.url || data.userAction?.attributes?.url;
 
         console.log('[Pluggy] Item criado:', data.id, 'Status:', data.status);
         if (oauthUrl) {
             console.log('[Pluggy] Link de redirecionamento (OAuth) encontrado:', oauthUrl);
         } else {
-            console.warn('[Pluggy] AVISO: Nenhum link de redirecionamento encontrado na resposta:', JSON.stringify(data));
+            console.warn('[Pluggy] AVISO: Nenhum link de redirecionamento imediato. Necessita Polling.');
         }
 
         res.json({ success: true, item: data, oauthUrl });
@@ -268,7 +270,6 @@ router.get('/items/:id', ensureUserMatch, async (req, res) => {
 
         const data = await response.json();
 
-        // Log do status para debug (silenciando um pouco o UPDATED que acontece muito)
         if (data.status && data.status !== 'UPDATED') {
             console.log(`[Pluggy] Item ${id} status: ${data.status}`);
         }

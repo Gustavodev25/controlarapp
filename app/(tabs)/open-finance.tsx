@@ -470,7 +470,7 @@ export default function OpenFinanceScreen() {
         }
 
         let pollCount = 0;
-        const maxPolls = 120; // 6 minutos aguardando (o banco as vezes é lento)
+        const maxPolls = 180; // AUMENTADO: 9 minutos de tolerância máxima para processamento do banco
         let cancelled = false;
         let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -500,7 +500,6 @@ export default function OpenFinanceScreen() {
                         setConnectionProgress(60);
                         setConnectionStatusText('Autorização confirmada! Preparando extração de dados (Isso pode levar alguns minutos)...');
 
-                        // PAUSA ESTRATÉGICA: Dar tempo para a Pluggy indexar as transações antes de chamar o sync
                         await new Promise(resolve => setTimeout(resolve, 8000));
 
                         try {
@@ -516,14 +515,13 @@ export default function OpenFinanceScreen() {
                                     userId: user.uid,
                                     itemId: pendingItemId,
                                 }),
-                                timeout: 240000
+                                timeout: 240000 // AUMENTADO PARA 4 MINUTOS (Bancos podem demorar no 1º sync)
                             });
 
                             if (syncResponse.ok) {
                                 let syncData = await syncResponse.json();
                                 let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
 
-                                // RETENTATIVA: Se vieram 0 transações, a Pluggy pode estar um pouco atrasada.
                                 if (totalTx === 0 && syncData.accounts && syncData.accounts.length > 0) {
                                     setConnectionStatusText('O banco está processando seu extrato. Por favor, aguarde mais um pouco...');
                                     await new Promise(resolve => setTimeout(resolve, 10000));
@@ -600,16 +598,14 @@ export default function OpenFinanceScreen() {
                         return;
                     }
 
-                    // Se estiver Extraindo ou Aguardando, IGNORAMOS e continuamos!
                     if (status === 'UPDATING' || status === 'WAITING_USER_INPUT') {
                         if (status === 'UPDATING' && connectionProgress < 50) {
                             setConnectionProgress(50);
                             setConnectionStatusText('O banco autorizou. Extraindo dados (Isso leva de 1 a 3 minutos)...');
                         }
-                        return; // Continua rodando o loop pacificamente
+                        return;
                     }
 
-                    // Se falhou fatalmente:
                     if (status === 'LOGIN_ERROR' || status === 'OUTDATED' || status === 'ERROR') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
@@ -649,7 +645,7 @@ export default function OpenFinanceScreen() {
                 if (intervalId) clearInterval(intervalId);
 
                 setOauthPolling(false);
-                setConnectionError('Tempo expirado. O banco demorou muito para responder ou você não autorizou a tempo.');
+                setConnectionError('Tempo expirado. O banco demorou muito para processar sua autorização.');
                 setConnectionStep('error');
                 setPendingItemId(null);
                 setCurrentOauthUrl(null);
@@ -659,7 +655,7 @@ export default function OpenFinanceScreen() {
         setOauthPolling(true);
         checkStatus();
 
-        intervalId = setInterval(checkStatus, 3000); // 3 em 3 segundos dá tempo da API respirar
+        intervalId = setInterval(checkStatus, 3000);
 
         return () => {
             cancelled = true;
@@ -1063,6 +1059,7 @@ export default function OpenFinanceScreen() {
             setConnectionProgress(15);
             setConnectionStatusText('Criando conexão segura com a Pluggy...');
 
+            // AUMENTADO O TIMEOUT DA CHAMADA DE CRIAÇÃO PARA 90 SEG (MUITO IMPORTANTE)
             const createResponse = await apiFetch('/api/pluggy/create-item', {
                 method: 'POST',
                 headers: {
@@ -1075,6 +1072,7 @@ export default function OpenFinanceScreen() {
                     credentials: sanitizedCredentials,
                     oauthRedirectUri: redirectUri,
                 }),
+                timeout: 90000
             });
 
             const createData = await createResponse.json();
@@ -1117,9 +1115,12 @@ export default function OpenFinanceScreen() {
             setConnectionProgress(25);
             setConnectionStatusText('Analisando requisitos de acesso do banco...');
 
+            // ATUALIZADO PARA INCLUIR CLIENT_URL NA BUSCA DO LINK DE AUTORIZAÇÃO
             const resolveAuthRequirements = (currentItem: any) => {
                 const url =
                     currentItem.oauthUrl ||
+                    currentItem.clientUrl ||
+                    currentItem.redirectUrl ||
                     currentItem.parameter?.data ||
                     currentItem.parameter?.oauthUrl ||
                     currentItem.parameter?.authorizationUrl ||
@@ -1127,7 +1128,6 @@ export default function OpenFinanceScreen() {
                     currentItem.userAction?.url ||
                     currentItem.userAction?.oauthUrl ||
                     currentItem.authorizationUrl ||
-                    currentItem.redirectUrl ||
                     currentItem.executionResult?.oauthUrl ||
                     currentItem.executionResult?.authorizationUrl;
 
@@ -1143,7 +1143,8 @@ export default function OpenFinanceScreen() {
 
             if (isOAuthConnector && !oauthUrl) {
                 let attempts = 0;
-                const maxAttempts = 20;
+                // AUMENTADO DE 20 PARA 60 (Tempo de espera do polling elevado de 40s para 120s)
+                const maxAttempts = 60;
 
                 const shouldContinuePolling = () => {
                     if (oauthUrl) return false;
@@ -1187,7 +1188,7 @@ export default function OpenFinanceScreen() {
             if (shouldHandleOAuth) {
                 if (!oauthUrl && status !== 'UPDATED') {
                     showError('Erro', 'O banco não retornou o link de autorização. Tente novamente mais tarde.');
-                    setConnectionError('O servidor do banco demorou muito para responder.');
+                    setConnectionError('O servidor do banco demorou muito para responder (Tempo limite excedido). Tente novamente em alguns minutos.');
                     setConnectionStep('error');
                     setPendingItemId(null);
                     return;
@@ -1209,11 +1210,9 @@ export default function OpenFinanceScreen() {
                 }
             }
 
-            // SE NÃO FOI OAUTH OU SE O SANDBOX AUTO-COMPLETOU, CAI AQUI DIRETAMENTE:
             setConnectionProgress(50);
             setConnectionStatusText('Conexão autorizada. Preparando extração de dados (Aguarde alguns segundos)...');
 
-            // PAUSA ESTRATÉGICA: Dar tempo para a Pluggy indexar as transações antes de chamar o sync
             await new Promise(resolve => setTimeout(resolve, 8000));
 
             let syncResponse = await apiFetch('/api/pluggy/sync', {
@@ -1236,7 +1235,6 @@ export default function OpenFinanceScreen() {
             let syncData = await syncResponse.json();
             let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
 
-            // RETENTATIVA: Se vieram 0 transações, a Pluggy pode estar um pouco atrasada.
             if (totalTx === 0 && syncData.accounts && syncData.accounts.length > 0) {
                 setConnectionStatusText('O banco está processando seu extrato. Por favor, aguarde mais um pouco...');
                 await new Promise(resolve => setTimeout(resolve, 10000));
@@ -1434,15 +1432,15 @@ export default function OpenFinanceScreen() {
                 );
 
             case 'credentials':
-                const connectorCredentials = selectedConnector?.credentials || [];
-                const { acceptsBothDocuments } = getConnectorDocumentSupport(connectorCredentials);
-                const visibleCredentials = connectorCredentials.filter((cred) => {
+                const visibleCredentials = (selectedConnector?.credentials || []).filter((cred) => {
+                    const { acceptsBothDocuments } = getConnectorDocumentSupport(selectedConnector?.credentials);
                     if (!acceptsBothDocuments || !isDocumentCredential(cred)) return true;
                     const isCpfCredential = credentialHasCpf(cred);
                     const isCnpjCredential = credentialHasCnpj(cred);
                     if (isCpfCredential && isCnpjCredential) return true;
                     return useCNPJ ? isCnpjCredential : isCpfCredential;
                 });
+                const { acceptsBothDocuments } = getConnectorDocumentSupport(selectedConnector?.credentials);
 
                 return (
                     <ScrollView style={styles.modalScroll} contentContainerStyle={styles.credentialsContent} showsVerticalScrollIndicator={false}>
@@ -1612,7 +1610,6 @@ export default function OpenFinanceScreen() {
                             <Text style={styles.stepText}>{connectionStatusText || (oauthPolling ? 'Aguardando você finalizar no app do banco...' : 'Aguardando...')}</Text>
                         </View>
 
-                        {/* SE O BANK APP NÃO ABRIR AUTOMATICAMENTE, ESTE BOTÃO SALVA O USUÁRIO */}
                         {currentOauthUrl && (
                             <TouchableOpacity
                                 style={[styles.actionButton, { marginTop: 24, width: '100%', backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#444' }]}
