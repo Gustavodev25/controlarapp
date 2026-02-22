@@ -8,7 +8,7 @@ export interface ApiBaseUrlConfig {
 }
 
 const DEFAULT_PORT = 3001;
-const DEFAULT_PRODUCTION_URL = 'https://controlar-production.up.railway.app';
+const DEFAULT_PRODUCTION_URL = 'https://backendcontrolarapp-production.up.railway.app';
 const TUNNEL_HOST_SUFFIXES = ['.exp.direct', '.expo.dev'];
 const LOCAL_HOSTNAMES = new Set(['localhost', '10.0.2.2']);
 
