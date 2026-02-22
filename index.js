@@ -1,6 +1,4 @@
 require('dotenv').config();
-// Basic health check to see if we are alive even without vars
-console.log('[Server] Starting boot sequence...');
 const express = require('express');
 const cors = require('cors');
 const pluggyRoutes = require('./api/pluggy');
@@ -10,17 +8,19 @@ const PORT = process.env.PORT || 3001;
 const { limiter, securityHeaders } = require('./middleware/security');
 
 // Security Middleware
+app.set('trust proxy', 1); // Trust Railway's reverse proxy for rate limiting
 app.use(securityHeaders);
-// Permissive CORS for production/mobile access
+app.use(limiter);
+
+// Strict CORS
 app.use(cors({
-    origin: '*',
+    origin: '*', // TODO: Restrict this in production to specific app domains
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'x-requested-with'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
 }));
 
-// Body parser with size limit
-app.use(express.json({ limit: '50mb' })); // Increased for potential transaction batching
+// Body parser with size limit (DoS protection)
+app.use(express.json({ limit: '10kb' }));
 
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -42,7 +42,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`
     Aplicativo Controlar está rodando na porta ${PORT}  
     
