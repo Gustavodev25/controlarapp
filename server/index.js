@@ -9,17 +9,16 @@ const { limiter, securityHeaders } = require('./middleware/security');
 
 // Security Middleware
 app.use(securityHeaders);
-app.use(limiter);
-
-// Strict CORS
+// Permissive CORS for production/mobile access
 app.use(cors({
-    origin: '*', // TODO: Restrict this in production to specific app domains
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'x-requested-with'],
+    credentials: true
 }));
 
-// Body parser with size limit (DoS protection)
-app.use(express.json({ limit: '10kb' }));
+// Body parser with size limit
+app.use(express.json({ limit: '50mb' })); // Increased for potential transaction batching
 
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
