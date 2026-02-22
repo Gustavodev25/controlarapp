@@ -1,5 +1,5 @@
 const express = require('express');
-const fetch = require('node-fetch'); 
+const fetch = require('node-fetch');
 const router = express.Router();
 const verifyAuth = require('../middleware/auth');
 const validate = require('../middleware/validate');
@@ -26,7 +26,7 @@ const syncSchema = z.object({
 // ==========================================
 const ensureUserMatch = (req, res, next) => {
     const requestUserId = req.body?.userId || req.query?.userId || req.params?.userId;
-    
+
     if (requestUserId && requestUserId !== req.user.uid) {
         console.warn(`[Security] Tentativa de IDOR evitada: Token(${req.user.uid}) vs Requisição(${requestUserId})`);
         return res.status(403).json({ success: false, error: 'Acesso não autorizado para este usuário' });
@@ -42,15 +42,15 @@ router.use(verifyAuth);
 const PLUGGY_API_URL = 'https://api.pluggy.ai';
 const CLIENT_ID = process.env.PLUGGY_CLIENT_ID;
 const CLIENT_SECRET = process.env.PLUGGY_CLIENT_SECRET;
-const PLUGGY_SANDBOX = String(process.env.PLUGGY_SANDBOX ?? 'true').toLowerCase() === 'true';
+const PLUGGY_SANDBOX = String(process.env.PLUGGY_SANDBOX ?? 'false').toLowerCase() === 'true';
 
 let accessToken = null;
 let tokenExpiry = null;
-let tokenPromise = null; 
+let tokenPromise = null;
 
 const TRANSACTIONS_PAGE_SIZE = 500;
-const MAX_TRANSACTION_PAGES = 50; 
-const FETCH_TIMEOUT_MS = 25000; 
+const MAX_TRANSACTION_PAGES = 50;
+const FETCH_TIMEOUT_MS = 25000;
 
 // ==========================================
 // UTILS DE REDE (COM RETRY PARA RATE LIMIT)
@@ -61,20 +61,20 @@ const safeFetch = async (url, options = {}, retries = 3) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-        
+
         try {
             const response = await fetch(url, { ...options, signal: controller.signal });
-            
+
             // Tratamento de Rate Limit (429) e Erros Internos da API
             if (!response.ok && (response.status === 429 || response.status >= 500)) {
-                if (attempt === retries) return response; 
-                
+                if (attempt === retries) return response;
+
                 const backoff = attempt * 1500;
                 console.warn(`[Pluggy API] Limit/Erro ${response.status}. Tentativa ${attempt}/${retries}. Aguardando ${backoff}ms...`);
                 await delay(backoff);
-                continue; 
+                continue;
             }
-            
+
             return response;
         } catch (error) {
             const isTimeout = error.name === 'AbortError' || error.message.includes('Tempo de requisição');
@@ -109,7 +109,7 @@ async function getAccessToken() {
 
             const data = await response.json();
             accessToken = data.apiKey;
-            tokenExpiry = Date.now() + (2 * 60 * 60 * 1000); 
+            tokenExpiry = Date.now() + (2 * 60 * 60 * 1000);
             console.log('[Pluggy] Access token obtido com sucesso');
             return accessToken;
         } finally {
@@ -147,12 +147,12 @@ const fetchTransactionsForAccount = async (token, accountId, fromDate) => {
     transactions.push(...page1Results);
 
     const totalFromApi = Number(firstPageData.total);
-    
+
     // 2. Busca o restante das páginas em paralelo se houverem muitas transações
     if (totalFromApi > TRANSACTIONS_PAGE_SIZE && page1Results.length > 0) {
         const totalPages = Math.ceil(totalFromApi / TRANSACTIONS_PAGE_SIZE);
         const maxPages = Math.min(totalPages, MAX_TRANSACTION_PAGES);
-        
+
         const pagesPromises = [];
         for (let p = 2; p <= maxPages; p++) {
             const pParams = new URLSearchParams(params);
@@ -170,7 +170,7 @@ const fetchTransactionsForAccount = async (token, accountId, fromDate) => {
             const batch = pagesPromises.slice(i, i + 3);
             const batchResults = await Promise.all(batch);
             batchResults.forEach(res => transactions.push(...res));
-            await delay(150); 
+            await delay(150);
         }
     }
 
@@ -211,10 +211,10 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
         });
 
         const data = await response.json();
-        
+
         if (!response.ok) {
             let errorMessage = 'Falha ao conectar na instituição';
-            
+
             // Tratamento específico para evitar duplicação ou processos travados (ITEM_IS_ALREADY_UPDATING)
             if (data.codeDescription === 'ITEM_IS_ALREADY_UPDATING') {
                 errorMessage = 'Uma conexão com estas credenciais já está em andamento. Aguarde alguns segundos antes de tentar novamente.';
@@ -223,7 +223,7 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
             } else if (data.error) {
                 errorMessage = data.error;
             }
-            
+
             const errorDetails = {
                 message: errorMessage,
                 code: data.code,
@@ -231,13 +231,13 @@ router.post('/create-item', validate(createItemSchema), ensureUserMatch, async (
                 status: response.status,
                 details: data
             };
-            
+
             console.error('[Pluggy] Create item failed:', errorDetails);
-            
-            return res.status(response.status).json({ 
-                success: false, 
-                error: errorMessage, 
-                details: errorDetails 
+
+            return res.status(response.status).json({
+                success: false,
+                error: errorMessage,
+                details: errorDetails
             });
         }
 
@@ -253,18 +253,18 @@ router.get('/items/:id', ensureUserMatch, async (req, res) => {
     try {
         const { id } = req.params;
         if (!req.query.userId && !req.body.userId) return res.status(400).json({ success: false, error: 'userId obrigatório' });
-        
+
         const token = await getAccessToken();
         const response = await safeFetch(`${PLUGGY_API_URL}/items/${id}`, { headers: { 'X-API-KEY': token } });
         if (!response.ok) return res.status(response.status === 404 ? 404 : 500).json({ success: false, error: 'Conexão não encontrada' });
-        
+
         const data = await response.json();
-        
+
         // Log do status para debug (silenciando um pouco o UPDATED que acontece muito)
         if (data.status && data.status !== 'UPDATED') {
             console.log(`[Pluggy] Item ${id} status: ${data.status}`);
         }
-        
+
         res.json({ success: true, item: data });
     } catch (error) {
         console.error('[Pluggy] Get item error:', error.message);
@@ -288,11 +288,11 @@ router.post('/sync', validate(syncSchema), ensureUserMatch, async (req, res) => 
         const accounts = accountsData.results || [];
 
         const accountsWithTransactions = [];
-        const BATCH_SIZE = 2; 
-        
+        const BATCH_SIZE = 2;
+
         for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
             const batch = accounts.slice(i, i + BATCH_SIZE);
-            
+
             const batchPromises = batch.map(async (account) => {
                 account.itemId = itemId;
                 if (!account.connector && item.connector) account.connector = item.connector;
@@ -303,8 +303,8 @@ router.post('/sync', validate(syncSchema), ensureUserMatch, async (req, res) => 
                             console.warn(`[Pluggy] Exceção transações conta ${account.id}:`, err.message);
                             return [];
                         }),
-                        
-                    account.type === 'CREDIT' 
+
+                    account.type === 'CREDIT'
                         ? safeFetch(`${PLUGGY_API_URL}/accounts/${account.id}/bills`, { headers: { 'X-API-KEY': token } })
                             .then(res => res.ok ? res.json() : { results: [] })
                             .catch(err => {
@@ -316,7 +316,7 @@ router.post('/sync', validate(syncSchema), ensureUserMatch, async (req, res) => 
 
                 account.transactions = transactions || [];
                 account.bills = billsData?.results || [];
-                
+
                 return account;
             });
 
@@ -344,7 +344,7 @@ router.delete('/items/:id', ensureUserMatch, async (req, res) => {
     try {
         const { id } = req.params;
         if (!req.query.userId && !req.body.userId) return res.status(400).json({ success: false, error: 'userId obrigatório' });
-        
+
         const token = await getAccessToken();
         const response = await safeFetch(`${PLUGGY_API_URL}/items/${id}`, { method: 'DELETE', headers: { 'X-API-KEY': token } });
         if (!response.ok) throw new Error(`Falha ao excluir item: ${response.status}`);
@@ -358,7 +358,7 @@ router.post('/update-item/:id', ensureUserMatch, async (req, res) => {
     try {
         const { id } = req.params;
         if (!req.query.userId && !req.body.userId) return res.status(400).json({ success: false, error: 'userId obrigatório' });
-        
+
         const token = await getAccessToken();
         const response = await safeFetch(`${PLUGGY_API_URL}/items/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-API-KEY': token }, body: JSON.stringify({}) });
         if (!response.ok) throw new Error(`Falha ao solicitar atualização: ${response.status}`);
