@@ -1043,8 +1043,10 @@ export default function OpenFinanceScreen() {
                 setConnectionProgress(prev => Math.min(prev + 40, 40));
             }, 500);
 
-            const redirectUri = Linking.createURL('open-finance');
-            console.log('[Connect] Generated Redirect URI:', redirectUri);
+            // Use a URL do backend Railway para o Pluggy OAuth callback
+            // O backend irá redirecionar de volta para o app via deep link
+            const redirectUri = 'https://backendcontrolarapp-production.up.railway.app/api/pluggy/oauth-callback';
+            console.log('[Connect] Using Railway OAuth Redirect URI:', redirectUri);
 
             const sanitizedCredentials = { ...credentialValues };
             connectorCredentials
