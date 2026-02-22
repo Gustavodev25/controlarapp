@@ -1,0 +1,14 @@
+app/
+assets/
+components/
+constants/
+contexts/
+hooks/
+scripts/
+types/
+utils/
+.expo/
+.vscode/
+node_modules/
+*.md
+!server/
