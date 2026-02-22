@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Basic health check to see if we are alive even without vars
+console.log('[Server] Starting boot sequence...');
 const express = require('express');
 const cors = require('cors');
 const pluggyRoutes = require('./api/pluggy');
