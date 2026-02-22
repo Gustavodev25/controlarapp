@@ -48,6 +48,7 @@ export function TransactionOptionsModal({
     const isProjected = transaction.isProjected;
     const isRefund = transaction.isRefund;
     const canRefund = !isProjected && !isPayment && !isRefund && onRefund;
+    const canMoveInvoice = !isProjected;
 
     const handleDateChange = (text: string) => {
         let cleaned = text.replace(/\D/g, '');
@@ -96,7 +97,9 @@ export function TransactionOptionsModal({
                 <View style={styles.sectionCard}>
                     <TouchableOpacity
                         style={styles.itemContainer}
+                        disabled={!canMoveInvoice}
                         onPress={() => {
+                            if (!canMoveInvoice) return;
                             onMoveInvoice('prev');
                             onClose();
                         }}
@@ -113,7 +116,9 @@ export function TransactionOptionsModal({
 
                     <TouchableOpacity
                         style={styles.itemContainer}
+                        disabled={!canMoveInvoice}
                         onPress={() => {
+                            if (!canMoveInvoice) return;
                             onMoveInvoice('next');
                             onClose();
                         }}
@@ -145,7 +150,8 @@ export function TransactionOptionsModal({
                                     autoFocus
                                 />
                                 <TouchableOpacity
-                                    style={styles.saveButton}
+                                    style={[styles.saveButton, !canMoveInvoice && { opacity: 0.5 }]}
+                                    disabled={!canMoveInvoice}
                                     onPress={handleSaveCustomDate}
                                 >
                                     <Text style={styles.saveButtonText}>OK</Text>
@@ -155,7 +161,11 @@ export function TransactionOptionsModal({
                     ) : (
                         <TouchableOpacity
                             style={styles.itemContainer}
-                            onPress={() => setShowCustomDate(true)}
+                            disabled={!canMoveInvoice}
+                            onPress={() => {
+                                if (!canMoveInvoice) return;
+                                setShowCustomDate(true);
+                            }}
                         >
                             <View style={[styles.itemIconContainer, { backgroundColor: '#252525' }]}>
                                 <Calendar size={20} color="#E0E0E0" />
@@ -166,6 +176,12 @@ export function TransactionOptionsModal({
                         </TouchableOpacity>
                     )}
                 </View>
+
+                {!canMoveInvoice && (
+                    <Text style={styles.projectedHint}>
+                        Transações projetadas não podem ser movidas.
+                    </Text>
+                )}
 
                 <Text style={styles.sectionHeader}>AÇÕES</Text>
                 <View style={styles.sectionCard}>
@@ -296,5 +312,12 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 12,
         fontWeight: '700'
+    },
+    projectedHint: {
+        marginTop: -8,
+        marginBottom: 16,
+        marginHorizontal: 4,
+        color: '#8E8E93',
+        fontSize: 12
     }
 });

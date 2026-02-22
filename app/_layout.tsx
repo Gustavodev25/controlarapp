@@ -4,7 +4,6 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { SubscriptionBlocker } from '@/components/SubscriptionBlocker';
-import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CategoryProvider } from '@/contexts/CategoryContext';
 import { NetworkProvider } from '@/contexts/NetworkContext';
@@ -59,7 +58,6 @@ export default function RootLayout() {
                       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                       <Stack.Screen name="settings" options={{ headerShown: false }} />
                     </Stack>
-                    <OfflineBanner />
                     <StatusBar style="light" translucent backgroundColor="transparent" />
                   </ThemeProvider>
                 </CategoryProvider>

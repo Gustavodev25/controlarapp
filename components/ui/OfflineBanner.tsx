@@ -1,15 +1,23 @@
 // Offline Banner Component for Controlar+ App
-// Same visual style as DeleteConfirmCard
+// Styled as a liquid notification expanding from the bottom navbar
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { useNetwork } from '@/contexts/NetworkContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
-    Layout,
-    SlideInRight,
-    SlideOutRight
+    FadeIn,
+    FadeOut,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring
 } from 'react-native-reanimated';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TAB_BAR_WIDTH = SCREEN_WIDTH * 0.75;
+
+// Física ajustada para transições mais ágeis e elásticas
+const springConfig = { damping: 14, stiffness: 200, mass: 0.6 };
 
 const IntervalLottie = ({ source, size, interval = 5000 }: { source: any; size: number; interval?: number }) => (
     <DelayedLoopLottie
@@ -21,134 +29,163 @@ const IntervalLottie = ({ source, size, interval = 5000 }: { source: any; size: 
     />
 );
 
+type IslandState = 'HIDDEN' | 'SYNCING' | 'OFFLINE';
+
 export function OfflineBanner() {
     const { isOnline, pendingOps, isSyncing, refresh } = useNetwork();
-    const [showBanner, setShowBanner] = useState(false);
+    const [islandState, setIslandState] = useState<IslandState>('HIDDEN');
 
-    // Delay showing the banner to avoid flashing for brief disconnections
+    // Largura inicial estreita, escondido atrás do centro do navbar
+    const islandWidth = useSharedValue(TAB_BAR_WIDTH * 0.3);
+    const islandHeight = useSharedValue(0);
+
     useEffect(() => {
         let timeout: ReturnType<typeof setTimeout>;
 
         if (!isOnline) {
-            timeout = setTimeout(() => setShowBanner(true), 1500);
+            // Sem timeout - instantâneo
+            setIslandState('OFFLINE');
+            islandWidth.value = withSpring(TAB_BAR_WIDTH - 24, springConfig);
+            // Cresce unida à navbar
+            islandHeight.value = withSpring(48, springConfig);
         } else if (isSyncing || pendingOps > 0) {
-            setShowBanner(true);
+            setIslandState('SYNCING');
+            islandWidth.value = withSpring(180, springConfig);
+            islandHeight.value = withSpring(38, springConfig);
         } else {
-            setShowBanner(false);
+            // Volta a encolher e deslizar para trás do navbar
+            islandWidth.value = withSpring(TAB_BAR_WIDTH * 0.3, { damping: 16, stiffness: 220, mass: 0.5 });
+            islandHeight.value = withSpring(0, { damping: 16, stiffness: 220, mass: 0.5 });
+
+            timeout = setTimeout(() => setIslandState('HIDDEN'), 350);
         }
 
         return () => clearTimeout(timeout);
     }, [isOnline, isSyncing, pendingOps]);
 
-    // Syncing state — same card style, green theme
-    if (isOnline && (isSyncing || pendingOps > 0)) {
-        return (
-            <Animated.View
-                entering={SlideInRight.duration(300).springify()}
-                exiting={SlideOutRight.duration(200)}
-                layout={Layout.springify()}
-                style={[styles.card, styles.syncingCard]}
-            >
-                <View style={styles.cardContent}>
-                    <Ionicons name="sync" size={20} color="#66BB6A" />
-                    <Text style={styles.syncingText}>
-                        Sincronizando {pendingOps} {pendingOps === 1 ? 'alteração' : 'alterações'}...
-                    </Text>
-                </View>
-            </Animated.View>
-        );
-    }
+    const animatedStyle = useAnimatedStyle(() => ({
+        width: islandWidth.value,
+        height: islandHeight.value,
+    }));
 
-    if (!showBanner) return null;
+    if (islandState === 'HIDDEN') return null;
 
-    // Offline state — same card style as DeleteConfirmCard, orange/warning theme
     return (
-        <Animated.View
-            entering={SlideInRight.duration(300).springify()}
-            exiting={SlideOutRight.duration(200)}
-            layout={Layout.springify()}
-            style={[styles.card, styles.offlineCard]}
-        >
-            <View style={styles.cardContent}>
-                <IntervalLottie
-                    source={require('@/assets/perigo.json')}
-                    size={22}
-                    interval={4000}
-                />
-                <Text style={styles.offlineText}>
-                    Você está sem conexão
-                </Text>
-            </View>
-            <View style={styles.cardActions}>
-                <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={refresh}
+        <Animated.View style={[styles.dynamicIsland, animatedStyle]}>
+
+            {/* ESTADO: SINCRONIZANDO (Verde) */}
+            {islandState === 'SYNCING' && (
+                <Animated.View
+                    entering={FadeIn.duration(150)}
+                    exiting={FadeOut.duration(100)}
+                    style={[styles.islandContent, styles.syncingContent]}
                 >
-                    <Text style={styles.retryButtonText}>Reconectar</Text>
-                </TouchableOpacity>
-            </View>
+                    <Ionicons name="sync" size={16} color="#66BB6A" />
+                    <Text style={styles.syncingText}>
+                        Sincronizando {pendingOps}...
+                    </Text>
+                </Animated.View>
+            )}
+
+            {/* ESTADO: OFFLINE (Laranja) */}
+            {islandState === 'OFFLINE' && (
+                <Animated.View
+                    entering={FadeIn.duration(150)}
+                    exiting={FadeOut.duration(100)}
+                    style={[styles.islandContent, styles.offlineContent]}
+                >
+                    <View style={styles.offlineLeft}>
+                        <IntervalLottie
+                            source={require('@/assets/perigo.json')}
+                            size={18}
+                            interval={4000}
+                        />
+                        <Text style={styles.offlineText} numberOfLines={1}>
+                            Sem conexão
+                        </Text>
+                    </View>
+
+                    <TouchableOpacity style={styles.retryButton} onPress={refresh}>
+                        <Text style={styles.retryButtonText}>Tentar</Text>
+                    </TouchableOpacity>
+                </Animated.View>
+            )}
+
         </Animated.View>
     );
 }
 
 const styles = StyleSheet.create({
-    card: {
+    dynamicIsland: {
         position: 'absolute',
-        top: 54,
-        left: 16,
-        right: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderRadius: 12,
-        padding: 12,
+        bottom: 70, // Alinhado ao topo do navbar
+        alignSelf: 'center',
+        backgroundColor: '#141414',
+        overflow: 'hidden',
+        zIndex: 5, // Fica entre o background principal (0) e a navbar (10)
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
         borderWidth: 1,
-        zIndex: 9999,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        borderBottomWidth: 0,
+        borderColor: 'rgba(255, 255, 255, 0.12)',
     },
-    offlineCard: {
-        backgroundColor: 'rgba(255, 167, 38, 0.1)',
-        borderColor: 'rgba(255, 167, 38, 0.2)',
-    },
-    syncingCard: {
-        backgroundColor: 'rgba(102, 187, 106, 0.1)',
-        borderColor: 'rgba(102, 187, 106, 0.2)',
-    },
-    cardContent: {
+    islandContent: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 48,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        flex: 1,
+        paddingHorizontal: 16,
     },
-    offlineText: {
-        color: '#FFA726',
-        fontSize: 14,
-        fontWeight: '500',
-        flex: 1,
+
+    /* ---- Sincronizando ---- */
+    syncingContent: {
+        justifyContent: 'center',
+        backgroundColor: 'rgba(102, 187, 106, 0.08)',
+        gap: 8,
     },
     syncingText: {
         color: '#66BB6A',
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '500',
+    },
+
+    /* ---- Offline ---- */
+    offlineContent: {
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        backgroundColor: '#141414',
+    },
+    offlineLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
         flex: 1,
     },
-    cardActions: {
-        flexDirection: 'row',
-        gap: 8,
+    offlineText: {
+        color: '#ffffff',
+        fontSize: 13,
+        fontWeight: '500',
+        fontFamily: 'AROneSans_500Medium',
+        flexShrink: 1,
     },
     retryButton: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 6,
-        backgroundColor: '#FFA726',
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        marginLeft: 8,
     },
     retryButtonText: {
-        color: '#FFF',
+        color: '#ffffff',
         fontSize: 12,
         fontWeight: '600',
+        fontFamily: 'AROneSans_500Medium',
     },
 });

@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "CFBundleDisplayName": "Controlar+",
         "NSFaceIDUsageDescription": "Usamos Face ID para proteger seu acesso ao app",
         "ITSAppUsesNonExemptEncryption": false
       },

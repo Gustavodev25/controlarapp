@@ -632,14 +632,18 @@ const SelectionIsland = ({
         }, 350);
     };
 
+    const handleIconPress = () => {
+        if (showBulkDeleteConfirm) {
+            animatedOpacity.value = withTiming(0, { duration: 100 });
+            setShowContent(false);
+            setTimeout(() => onCancelDelete(), 120);
+            return;
+        }
+        handleClose(onCancel);
+    };
+
     return (
         <View style={islandStyles.overlay} pointerEvents="box-none">
-            <TouchableOpacity
-                style={StyleSheet.absoluteFill}
-                activeOpacity={1}
-                onPress={() => handleClose(onCancel)}
-            />
-
             <Animated.View
                 entering={(values: any) => {
                     'worklet';
@@ -662,7 +666,12 @@ const SelectionIsland = ({
                     <View style={islandStyles.glassBorder} />
 
                     {/* Icon always visible */}
-                    <View style={islandStyles.iconPosition}>
+                    <TouchableOpacity
+                        style={islandStyles.iconPosition}
+                        onPress={handleIconPress}
+                        activeOpacity={0.8}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
                         {showBulkDeleteConfirm ? (
                             <IntervalLottie source={require('@/assets/perigo.json')} size={22} interval={4000} />
                         ) : (
@@ -673,7 +682,7 @@ const SelectionIsland = ({
                                 style={{ width: 22, height: 22 }}
                             />
                         )}
-                    </View>
+                    </TouchableOpacity>
 
                     {/* Content that fades in */}
                     {showContent && (

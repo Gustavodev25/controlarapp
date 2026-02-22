@@ -9,7 +9,6 @@ import { RollingCounter } from '@/components/organisms/rolling-counter';
 import Avvvatars from '@/components/ui/Avvvatars';
 
 import { ConfigIncomeModal } from '@/components/ConfigIncomeModal';
-import { OfflineWarningCard } from '@/components/OfflineWarningCard';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { BottomModal } from '@/components/ui/BottomModal';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
@@ -23,16 +22,16 @@ import { notificationService } from '@/services/notifications';
 import { queryCache } from '@/services/queryCache'; // New Cache Service
 import { getDashboardLoadPlan } from '@/utils/dashboardDataPipeline';
 import {
-  calculateFinancials,
-  Discount
+    calculateFinancials,
+    Discount
 } from '@/utils/financial-math';
 import {
-  clampMonth,
-  extractMonthKey,
-  getFirestoreMonthRange,
-  getRecentMonthWindow,
-  startOfMonth,
-  toMonthKey
+    clampMonth,
+    extractMonthKey,
+    getFirestoreMonthRange,
+    getRecentMonthWindow,
+    startOfMonth,
+    toMonthKey
 } from '@/utils/monthWindow';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
@@ -42,10 +41,10 @@ import { Ban, Calendar, ChevronLeft, ChevronRight, CreditCard, RotateCcw, Trendi
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, InteractionManager, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
-  interpolate,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
+    interpolate,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring
 } from 'react-native-reanimated';
 import { VictoryLabel, VictoryPie } from 'victory-native';
 
@@ -1071,13 +1070,12 @@ export default function DashboardScreen() {
 
   // Compute carousel data for render and dots
   const carouselData = React.useMemo(() => [
-    ...(bankAccountData.hasAccounts ? [{ type: 'account' as const, key: 'account_balance', ...bankAccountData }] : []),
     ...(creditCardData.hasCards && invoiceData.cards.length > 0 ? invoiceData.cards.map(c => ({
       type: 'credit' as const,
       key: c.id,
       ...c
     })) : [])
-  ], [bankAccountData, creditCardData.hasCards, invoiceData.cards]);
+  ], [creditCardData.hasCards, invoiceData.cards]);
 
   return (
     <View style={styles.mainContainer}>
@@ -1191,16 +1189,82 @@ export default function DashboardScreen() {
 
 
 
-          {/* Offline Warning */}
-          <OfflineWarningCard style={{ marginHorizontal: 16, marginTop: 8, marginBottom: 4 }} />
 
-          {/* Unified Stack Carousel for Accounts and Credit Cards */}
+          {/* Main Balance Container */}
+          {bankAccountData.hasAccounts && (
+            <View style={{ marginBottom: 16 }}>
+              <View style={[styles.sectionHeader, { marginTop: 16, marginBottom: 12, alignItems: 'center' }]}>
+                <Text style={[styles.sectionTitle, { fontSize: 16, color: '#909090' }]}>Minhas Contas</Text>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.95}
+                style={[styles.incomeCard, { marginTop: 0, width: '100%', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 70 }]}
+                onPress={() => setBalanceModalVisible(true)}
+              >
+                {/* Left side */}
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <DelayedLoopLottie
+                    source={require('../../assets/carteira.json')}
+                    style={{ width: 36, height: 36 }}
+                    delay={1000}
+                    throttleMultiplier={1.15}
+                  />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 12, fontFamily: 'AROneSans_500Medium', color: '#909090', letterSpacing: 0.5 }}>
+                        SALDO PRINCIPAL
+                      </Text>
+                      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#04D361' }} />
+                      <Text style={{ fontSize: 11, color: '#909090', fontFamily: 'AROneSans_500Medium' }}>
+                        {bankAccountData.count} {bankAccountData.count === 1 ? 'conta' : 'contas'}
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#E0E0E0', marginRight: 4, letterSpacing: -0.5 }}>
+                        {bankAccountData.totalBalance < 0 ? '-R$' : 'R$'}
+                      </Text>
+                      {isValuesVisible ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                          <RollingCounter
+                            value={Math.abs(bankAccountData.totalBalance)}
+                            height={28}
+                            width={14}
+                            fontSize={24}
+                            letterSpacing={-0.5}
+                            color="#FFFFFF"
+                          />
+                          <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5 }}>
+                            ,{Math.abs(bankAccountData.totalBalance).toFixed(2).slice(-2)}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5, paddingTop: 6 }}>
+                          ••••
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Right side: Chevron */}
+                <View style={{ paddingLeft: 8 }}>
+                  <View style={styles.chevronContainer}>
+                    <ChevronRight size={18} color="#505050" />
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Unified Stack Carousel for Credit Cards */}
           {
             (carouselData.length > 0) && (
               <View>
                 {/* Header with Title and Dots */}
                 <View style={[styles.sectionHeader, { marginTop: 16, marginBottom: 12, alignItems: 'center' }]}>
-                  <Text style={[styles.sectionTitle, { fontSize: 16, color: '#909090' }]}>Minhas Contas</Text>
+                  <Text style={[styles.sectionTitle, { fontSize: 16, color: '#909090' }]}>Meus Cartões</Text>
                   <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                     {carouselData.map((_, index) => (
                       <View
@@ -1220,83 +1284,12 @@ export default function DashboardScreen() {
                   data={carouselData}
                   onSnapToItem={setCurrentCardIndex}
 
-                  cardHeight={160}
+                  cardHeight={110}
                   cardWidth={Dimensions.get('window').width - 32}
                   renderItem={({ item, index, animatedIndex, translateX, totalCards }) => {
                     // Hook must be called unconditionally at top level of component
                     const cardWidth = Dimensions.get('window').width - 32;
                     const animatedStyle = useStackCardStyle(index, animatedIndex, translateX, totalCards, cardWidth, 12);
-
-                    if (item.type === 'account') {
-                      return (
-                        <Animated.View style={[styles.stackCardWrapper, animatedStyle, { position: 'absolute', width: '100%', height: '100%' }]}>
-                          <TouchableOpacity
-                            activeOpacity={0.95}
-                            style={[styles.incomeCard, { marginTop: 0, width: '100%', height: '100%', padding: 16, flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start' }]}
-                            onPress={() => setBalanceModalVisible(true)}
-                          >
-                            {/* Top Row: Icon + Texts + Menu */}
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
-                                <DelayedLoopLottie
-                                  source={require('../../assets/carteira.json')}
-                                  style={{ width: 28, height: 28 }}
-                                  delay={1000}
-                                  throttleMultiplier={1.15}
-                                />
-                                <Text
-                                  style={{ fontSize: 14, fontFamily: 'AROneSans_500Medium', color: '#E0E0E0', letterSpacing: 0.5, flex: 1 }}
-                                  numberOfLines={1}
-                                >
-                                  SALDO PRINCIPAL
-                                </Text>
-                              </View>
-                              <View style={styles.chevronContainer}>
-                                <ChevronRight size={20} color="#505050" />
-                              </View>
-                            </View>
-
-                            <View style={{ flex: 1, justifyContent: 'center' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#E0E0E0', marginRight: 6, letterSpacing: -0.5 }}>
-                                  {(item as any).totalBalance < 0 ? '-R$' : 'R$'}
-                                </Text>
-                                {isValuesVisible ? (
-                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <RollingCounter
-                                      value={Math.abs((item as any).totalBalance)}
-                                      height={36}
-                                      width={20}
-                                      fontSize={32}
-                                      letterSpacing={-0.5}
-                                      color="#FFFFFF"
-                                    />
-                                    <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5 }}>
-                                      ,{Math.abs((item as any).totalBalance).toFixed(2).slice(-2)}
-                                    </Text>
-                                  </View>
-                                ) : (
-                                  <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5, paddingTop: 8 }}>
-                                    ••••
-                                  </Text>
-                                )}
-                              </View>
-                            </View>
-
-                            <View style={{ width: '100%', marginTop: 'auto', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#04D361' }} />
-                                <Text style={{ fontSize: 12, color: '#909090', fontFamily: 'AROneSans_500Medium' }}>
-                                  {(item as any).count} {(item as any).count === 1 ? 'Conta vinculada' : 'Contas vinculadas'}
-                                </Text>
-                              </View>
-                            </View>
-
-
-                          </TouchableOpacity>
-                        </Animated.View>
-                      );
-                    }
 
                     const cardItem = item as any;
                     const selectedPeriod = getCardInvoicePeriod(cardItem.id);
@@ -1318,29 +1311,29 @@ export default function DashboardScreen() {
                       <Animated.View style={[styles.stackCardWrapper, animatedStyle, { position: 'absolute', width: '100%', height: '100%' }]}>
                         <TouchableOpacity
                           activeOpacity={0.95}
-                          style={[styles.incomeCard, { marginTop: 0, width: '100%', height: '100%', padding: 16, flexDirection: 'column', alignItems: 'stretch' }]}
+                          style={[styles.incomeCard, { marginTop: 0, width: '100%', height: '100%', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'column', alignItems: 'stretch' }]}
                           onPress={() => {
                             setSelectedCardForModal(cardItem);
                             setInvoiceModalVisible(true);
                           }}
                         >
                           {/* Header: Icon + Name ... Status */}
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'auto' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
                               <DelayedLoopLottie
                                 source={require('../../assets/cartabranco.json')}
-                                style={{ width: 28, height: 28 }}
+                                style={{ width: 22, height: 22 }}
                                 delay={1000}
                                 throttleMultiplier={1.15}
                               />
                               <Text
-                                style={{ fontSize: 14, fontFamily: 'AROneSans_500Medium', color: '#E0E0E0', letterSpacing: 0.5, flex: 1 }}
+                                style={{ fontSize: 12, fontFamily: 'AROneSans_500Medium', color: '#E0E0E0', letterSpacing: 0.5, flex: 1 }}
                                 numberOfLines={1}
                               >
                                 {cardItem.name.toUpperCase()}
                               </Text>
                             </View>
-                            <Text style={{ fontSize: 12, fontFamily: 'AROneSans_500Medium', color: '#666666', letterSpacing: 0.5 }}>
+                            <Text style={{ fontSize: 10, fontFamily: 'AROneSans_500Medium', color: '#666666', letterSpacing: 0.5 }}>
                               • {
                                 selectedPeriod === 'past' ? 'FATURA ANTERIOR' :
                                   selectedPeriod === 'next' ? 'PRÓXIMA FATURA' :
@@ -1351,33 +1344,33 @@ export default function DashboardScreen() {
                           </View>
 
                           {/* Main Value and Due Date - Left Aligned */}
-                          <View style={{ flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'baseline', marginBottom: 16, marginTop: 4 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 10 }}>
-                              <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#E0E0E0', marginRight: 6, letterSpacing: -0.5 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginRight: 10 }}>
+                              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#E0E0E0', marginRight: 4, letterSpacing: -0.5 }}>
                                 {selectedValue < 0 ? '-R$' : 'R$'}
                               </Text>
                               {isValuesVisible ? (
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
                                   <RollingCounter
                                     value={Math.abs(selectedValue)}
-                                    height={36}
-                                    width={20}
-                                    fontSize={32}
+                                    height={28}
+                                    width={14}
+                                    fontSize={24}
                                     letterSpacing={-0.5}
                                     color="#FFFFFF"
                                   />
-                                  <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5 }}>
+                                  <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5 }}>
                                     ,{Math.abs(selectedValue).toFixed(2).slice(-2)}
                                   </Text>
                                 </View>
                               ) : (
-                                <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5, paddingTop: 8 }}>
+                                <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5, paddingTop: 4 }}>
                                   ••••
                                 </Text>
                               )}
                             </View>
                             {cardItem.dueDate && (
-                              <Text style={{ fontSize: 13, fontFamily: 'AROneSans_400Regular', color: '#909090' }}>
+                              <Text style={{ fontSize: 11, fontFamily: 'AROneSans_400Regular', color: '#909090' }}>
                                 Vence {new Date(cardItem.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                               </Text>
                             )}
@@ -1385,26 +1378,26 @@ export default function DashboardScreen() {
 
                           {/* Progress Bar and Limits */}
                           <View style={{ width: '100%', marginTop: 'auto' }}>
-                            <View style={{ width: '100%', height: 6, backgroundColor: '#2A2A2A', borderRadius: 3, marginBottom: 10 }}>
-                              <View style={{ height: '100%', width: `${percentage}%`, backgroundColor: progressColor, borderRadius: 3 }} />
+                            <View style={{ width: '100%', height: 4, backgroundColor: '#2A2A2A', borderRadius: 2, marginBottom: 6 }}>
+                              <View style={{ height: '100%', width: `${percentage}%`, backgroundColor: progressColor, borderRadius: 2 }} />
                             </View>
 
                             {/* Footer: Limits - Space Between */}
                             <View
-                              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 4 }}
+                              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
                             >
                               <AnimatedCurrency
                                 value={cardItem.limit - selectedValue}
                                 isVisible={isValuesVisible}
-                                style={{ fontSize: 11, color: '#909090', fontFamily: 'AROneSans_400Regular' }}
+                                style={{ fontSize: 10, color: '#909090', fontFamily: 'AROneSans_400Regular' }}
                                 prefix="Disp: R$ "
                               />
                               <AnimatedCurrency
                                 value={cardItem.limit}
                                 isVisible={isValuesVisible}
-                                style={{ fontSize: 11, color: '#04D361', fontFamily: 'AROneSans_600SemiBold' }}
+                                style={{ fontSize: 10, color: '#04D361', fontFamily: 'AROneSans_600SemiBold' }}
                                 prefix="Limite: R$ "
-                                prefixStyle={{ fontSize: 11, color: '#04D361', fontFamily: 'AROneSans_500Medium' }}
+                                prefixStyle={{ fontSize: 10, color: '#04D361', fontFamily: 'AROneSans_500Medium' }}
                               />
                             </View>
                           </View>
@@ -1500,9 +1493,9 @@ export default function DashboardScreen() {
 
           {/* Financial Calendar */}
           <FinancialCalendar
-            checkingTransactions={checkingTransactions}
-            creditCardTransactions={creditCardTransactions}
-            recurrences={recurrences}
+            checkingTransactions={expenseSource === 'checking' ? checkingTransactions : []}
+            creditCardTransactions={expenseSource === 'credit' ? creditCardTransactions : []}
+            recurrences={expenseSource === 'checking' ? recurrences : []}
             selectedMonth={selectedMonth}
             minMonth={minMonth}
             maxMonth={maxMonth}

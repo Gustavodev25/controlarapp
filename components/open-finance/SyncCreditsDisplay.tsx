@@ -1,5 +1,6 @@
+import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { databaseService } from '@/services/firebase';
-import { Clock, Plus, Zap } from 'lucide-react-native';
+import { Clock, Zap } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
     StyleSheet,
@@ -131,7 +132,14 @@ export const SyncCreditsDisplay = ({
                             connectDisabled && styles.unifiedButtonDisabled
                         ]}
                     >
-                        <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />
+                        <DelayedLoopLottie
+                            source={require('@/assets/adicionar.json')}
+                            style={{ width: 18, height: 18 }}
+                            delay={3000}
+                            initialDelay={500}
+                            jitterRatio={0.3}
+                            renderMode="HARDWARE"
+                        />
                         <Text style={styles.unifiedButtonText}>
                             Conectar <Text style={{ opacity: 0.8 }}>({creditsData.unlimited ? '∞' : creditsData.credits})</Text>
                         </Text>

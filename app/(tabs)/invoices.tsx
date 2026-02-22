@@ -9,6 +9,7 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { db } from '@/services/firebase';
 import { CreditCardAccount, Transaction } from '@/services/invoiceBuilder';
 import { queryCache } from '@/services/queryCache';
+import { useRouter } from 'expo-router';
 import {
     collection,
     DocumentData,
@@ -54,6 +55,7 @@ function mapCreditTransaction(doc: QueryDocumentSnapshot<DocumentData>): Transac
 }
 
 export default function InvoicesScreen() {
+    const router = useRouter();
     const { user } = useAuthContext();
     const insets = useSafeAreaInsets();
     const [loading, setLoading] = useState(true);
@@ -383,6 +385,7 @@ export default function InvoicesScreen() {
                             onLoadMoreHistory={loadMoreHistory}
                             hasMoreHistory={hasMoreHistory}
                             loadingMoreHistory={loadingMoreHistory}
+                            onNavigateToOpenFinance={() => router.push('/(tabs)/open-finance')}
                         />
                     )}
                 </View>

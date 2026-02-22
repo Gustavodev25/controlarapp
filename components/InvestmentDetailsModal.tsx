@@ -2,7 +2,7 @@ import { BottomModal } from '@/components/ui/BottomModal';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { ArrowLeftRight, ArrowUpCircle, DollarSign, List, Pencil, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 interface InvestmentDetailsModalProps {
@@ -55,6 +55,9 @@ export function InvestmentDetailsModal({
             setAmountStr('');
             setType('deposit');
             rotation.value = 0;
+        } else {
+            // Dismiss keyboard when modal closes
+            Keyboard.dismiss();
         }
     }, [visible]);
 
@@ -68,6 +71,7 @@ export function InvestmentDetailsModal({
             return;
         }
 
+        Keyboard.dismiss();
         onSaveMovement(rawAmount, type);
         onClose();
     };
@@ -157,80 +161,89 @@ export function InvestmentDetailsModal({
     return (
         <BottomModal
             visible={visible}
-            onClose={() => setView('menu')} // Back to menu instead of close
+            onClose={() => {
+                Keyboard.dismiss();
+                setView('menu');
+            }}
             title={type === 'deposit' ? 'Guardar Dinheiro' : 'Resgatar Dinheiro'}
-            height="auto"
+            height={500}
         >
-            <View style={styles.container}>
-                <View style={styles.sectionCard}>
-                    {/* Valor */}
-                    <View style={styles.itemContainer}>
-                        <View style={styles.itemIconContainer}>
-                            <DollarSign size={20} color="#E0E0E0" />
+            <ScrollView
+                contentContainerStyle={{ paddingBottom: 20 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={styles.container}>
+                    <View style={styles.sectionCard}>
+                        {/* Valor */}
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                <DollarSign size={20} color="#E0E0E0" />
+                            </View>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <Text style={styles.itemTitle}>Valor</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={{ color: amountStr ? '#FFFFFF' : '#555', fontSize: 16, marginRight: 4 }}>R$</Text>
+                                        <TextInput
+                                            style={styles.inputRight}
+                                            value={amountStr}
+                                            onChangeText={handleChangeAmount}
+                                            placeholder="0,00"
+                                            placeholderTextColor="#555"
+                                            keyboardType="numeric"
+                                            textAlign="right"
+                                            autoFocus
+                                        />
+                                    </View>
+                                </View>
+                            </View>
+                            <View style={styles.itemSeparator} />
                         </View>
-                        <View style={styles.itemRightContainer}>
-                            <View style={styles.itemContent}>
-                                <Text style={styles.itemTitle}>Valor</Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <Text style={{ color: amountStr ? '#FFFFFF' : '#555', fontSize: 16, marginRight: 4 }}>R$</Text>
-                                    <TextInput
-                                        style={styles.inputRight}
-                                        value={amountStr}
-                                        onChangeText={handleChangeAmount}
-                                        placeholder="0,00"
-                                        placeholderTextColor="#555"
-                                        keyboardType="numeric"
-                                        textAlign="right"
-                                        autoFocus
+
+                        {/* Tipo de Operação */}
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                <Animated.View style={animatedIconStyle}>
+                                    <ArrowUpCircle
+                                        size={20}
+                                        color={type === 'deposit' ? "#04D361" : "#FF4C4C"}
+                                    />
+                                </Animated.View>
+                            </View>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <View>
+                                        <Text style={styles.itemTitle}>Operação</Text>
+                                        <Text style={[styles.itemSubtitle, { color: type === 'deposit' ? '#04D361' : '#FF4C4C' }]}>
+                                            {type === 'deposit' ? 'Guardar dinheiro' : 'Resgatar dinheiro'}
+                                        </Text>
+                                    </View>
+                                    <ModernSwitch
+                                        value={type === 'deposit'}
+                                        onValueChange={(val) => setType(val ? 'deposit' : 'withdraw')}
+                                        activeColor="#04D361"
+                                        width={46}
+                                        height={26}
                                     />
                                 </View>
                             </View>
                         </View>
-                        <View style={styles.itemSeparator} />
                     </View>
 
-                    {/* Tipo de Operação */}
-                    <View style={styles.itemContainer}>
-                        <View style={styles.itemIconContainer}>
-                            <Animated.View style={animatedIconStyle}>
-                                <ArrowUpCircle
-                                    size={20}
-                                    color={type === 'deposit' ? "#04D361" : "#FF4C4C"}
-                                />
-                            </Animated.View>
-                        </View>
-                        <View style={styles.itemRightContainer}>
-                            <View style={styles.itemContent}>
-                                <View>
-                                    <Text style={styles.itemTitle}>Operação</Text>
-                                    <Text style={[styles.itemSubtitle, { color: type === 'deposit' ? '#04D361' : '#FF4C4C' }]}>
-                                        {type === 'deposit' ? 'Guardar dinheiro' : 'Resgatar dinheiro'}
-                                    </Text>
-                                </View>
-                                <ModernSwitch
-                                    value={type === 'deposit'}
-                                    onValueChange={(val) => setType(val ? 'deposit' : 'withdraw')}
-                                    activeColor="#04D361"
-                                    width={46}
-                                    height={26}
-                                />
-                            </View>
-                        </View>
-                    </View>
+                    {/* Botão Salvar */}
+                    <TouchableOpacity
+                        style={[
+                            styles.saveButton,
+                            (!amountStr) && { opacity: 0.5 }
+                        ]}
+                        onPress={handleSave}
+                        disabled={!amountStr}
+                    >
+                        <Text style={styles.saveButtonText}>Confirmar</Text>
+                    </TouchableOpacity>
                 </View>
-
-                {/* Botão Salvar */}
-                <TouchableOpacity
-                    style={[
-                        styles.saveButton,
-                        (!amountStr) && { opacity: 0.5 }
-                    ]}
-                    onPress={handleSave}
-                    disabled={!amountStr}
-                >
-                    <Text style={styles.saveButtonText}>Confirmar</Text>
-                </TouchableOpacity>
-            </View>
+            </ScrollView>
         </BottomModal>
     );
 }

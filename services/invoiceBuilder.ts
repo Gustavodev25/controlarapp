@@ -183,7 +183,19 @@ const MONTH_KEY_REGEX = /^\d{4}-\d{2}$/;
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const getEffectiveInvoiceMonthKey = (tx: Transaction): string | null => {
+    // COMPATIBILIDADE: Verificar ambos os campos
+    // - App Mobile usa: invoiceMonthKey
+    // - Web usa: manualInvoiceMonth
     const rawKey = typeof tx.invoiceMonthKey === 'string' ? tx.invoiceMonthKey.trim() : '';
+    const manualKey = typeof (tx as any).manualInvoiceMonth === 'string' ? (tx as any).manualInvoiceMonth.trim() : '';
+    
+    // Se manualInvoiceMonth existe (campo do web), SEMPRE usar ele
+    // Isso garante que mudanças feitas no web sejam respeitadas
+    if (manualKey && MONTH_KEY_REGEX.test(manualKey)) {
+        return manualKey;
+    }
+    
+    // Se não tem manualInvoiceMonth, verificar invoiceMonthKey do app
     if (!rawKey || !MONTH_KEY_REGEX.test(rawKey)) {
         return null;
     }
@@ -900,7 +912,10 @@ export const buildInvoices = (
         const txDateNum = dateToNumber(txDate);
         const txInLastRange = txDateNum >= lastInvoiceStartNum && txDateNum <= lastClosingDateNum;
         const txInCurrentRange = txDateNum >= currentInvoiceStartNum && txDateNum <= currentClosingDateNum;
-        const hasManualInvoiceMonthOverride = tx.invoiceMonthKeyManual === true;
+        // COMPATIBILIDADE: Verificar ambos os campos
+        // - App Mobile usa: invoiceMonthKeyManual
+        // - Web usa: manualInvoiceMonth (presença do campo indica manual)
+        const hasManualInvoiceMonthOverride = tx.invoiceMonthKeyManual === true || !!(tx as any).manualInvoiceMonth;
 
         const effectiveInvoiceMonthKey = getEffectiveInvoiceMonthKey(tx);
 
@@ -1005,7 +1020,8 @@ export const buildInvoices = (
         // If the base transaction has invoiceMonthKey, it shifts the start of the series
         let effectiveFirstInstDate = firstInstDate;
         const baseInvoiceMonthKey = getEffectiveInvoiceMonthKey(baseTx);
-        if (baseInvoiceMonthKey && baseTx.invoiceMonthKeyManual === true) {
+        // COMPATIBILIDADE: Verificar ambos os campos para override manual
+        if (baseInvoiceMonthKey && (baseTx.invoiceMonthKeyManual === true || !!(baseTx as any).manualInvoiceMonth)) {
             const [y, m] = baseInvoiceMonthKey.split('-').map(Number);
             // Reconstruct date with overridden Year/Month, preserving original day
             // Note: Month in Date constructor is 0-indexed (m - 1)
@@ -1063,7 +1079,8 @@ export const buildInvoices = (
             if (existingTx && existingInvoiceMonthKey) {
                 const installmentInLastRange = classificationDateNum >= lastInvoiceStartNum && classificationDateNum <= lastClosingDateNum;
                 const installmentInCurrentRange = classificationDateNum >= currentInvoiceStartNum && classificationDateNum <= currentClosingDateNum;
-                const hasManualInvoiceMonthOverride = existingTx.invoiceMonthKeyManual === true;
+                // COMPATIBILIDADE: Verificar ambos os campos para override manual
+                const hasManualInvoiceMonthOverride = existingTx.invoiceMonthKeyManual === true || !!(existingTx as any).manualInvoiceMonth;
 
                 if (existingInvoiceMonthKey === periods.lastMonthKey) {
                     if (!hasManualInvoiceMonthOverride && installmentInCurrentRange) {

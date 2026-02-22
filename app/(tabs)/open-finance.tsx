@@ -1,9 +1,11 @@
+import { ConnectAccountModal } from '@/components/ConnectAccountModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { BankConnectorLogo } from '@/components/open-finance/BankConnectorLogo';
 import { ConnectedBankCard, BankSyncStatus as SyncStatus } from '@/components/open-finance/ConnectedBankCard';
 import { SyncCreditsDisplay, useSyncCredits } from '@/components/open-finance/SyncCreditsDisplay';
-import { BottomModal } from '@/components/ui/BottomModal';
+import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
+import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { useAuthContext as useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { API_BASE_URL, API_BASE_URL_CANDIDATES } from '@/services/apiBaseUrl';
@@ -12,7 +14,7 @@ import { notificationService } from '@/services/notifications';
 import { getConnectorLogoUrl, normalizeHexColor } from '@/utils/connectorLogo';
 import * as Linking from 'expo-linking';
 import LottieView from 'lottie-react-native';
-import { CheckCircle2, ChevronRight, Eye, EyeOff, Lock, Search, ShieldCheck, User, XCircle, Zap } from 'lucide-react-native';
+import { ChevronRight, Eye, EyeOff, Lock, Search, ShieldCheck, User, Zap } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -29,8 +31,6 @@ import {
     UIManager,
     View
 } from 'react-native';
-
-
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -57,7 +57,6 @@ const isNetworkTransportError = (error: unknown): boolean => {
 const getApiConnectionErrorMessage = (apiBaseUrl: string, errorMsg?: string): string =>
     `Erro de rede: ${errorMsg || 'Falha na conexao'}. Tentando acessar: ${apiBaseUrl}. Verifique se o servidor backend esta rodando e acessivel.`;
 
-// Wrapper for fetch with configurable timeout (default 180s for sync operations)
 const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number } = {}) => {
     const { timeout = 180000, ...fetchOptions } = options;
 
@@ -73,7 +72,6 @@ const fetchWithTimeout = async (resource: string, options: RequestInit & { timeo
         return response;
     } catch (error: any) {
         clearTimeout(id);
-        // If aborted, match the standard RN timeout error message for consistency
         if (error.name === 'AbortError') {
             throw new TypeError('Network request timed out');
         }
@@ -83,9 +81,6 @@ const fetchWithTimeout = async (resource: string, options: RequestInit & { timeo
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-
-
-// Helper for auth requirements logic
 const checkAuthRequirements = (item: any) => {
     return {
         url: item.connectorUrl || item.oauthUrl || null,
@@ -94,18 +89,11 @@ const checkAuthRequirements = (item: any) => {
     };
 };
 
-// CPF Validation Helper
 const validateCPF = (cpf: string): boolean => {
-    // Remove non-numeric characters
     const cleanCPF = cpf.replace(/\D/g, '');
-
-    // Must have 11 digits
     if (cleanCPF.length !== 11) return false;
-
-    // Check for known invalid patterns (all same digits)
     if (/^(\d)\1{10}$/.test(cleanCPF)) return false;
 
-    // Validate check digits
     let sum = 0;
     for (let i = 0; i < 9; i++) {
         sum += parseInt(cleanCPF.charAt(i)) * (10 - i);
@@ -125,7 +113,6 @@ const validateCPF = (cpf: string): boolean => {
     return true;
 };
 
-// CPF Mask Helper
 const formatCPF = (value: string): string => {
     const numbers = value.replace(/\D/g, '').slice(0, 11);
     if (numbers.length <= 3) return numbers;
@@ -134,7 +121,51 @@ const formatCPF = (value: string): string => {
     return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9)}`;
 };
 
-// Types
+const formatCNPJ = (value: string): string => {
+    const numbers = value.replace(/\D/g, '').slice(0, 14);
+    if (numbers.length <= 2) return numbers;
+    if (numbers.length <= 5) return `${numbers.slice(0, 2)}.${numbers.slice(2)}`;
+    if (numbers.length <= 8) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5)}`;
+    if (numbers.length <= 12) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8)}`;
+    return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8, 12)}-${numbers.slice(12)}`;
+};
+
+const validateCNPJ = (cnpj: string): boolean => {
+    const cleanCNPJ = cnpj.replace(/\D/g, '');
+
+    if (cleanCNPJ.length !== 14) return false;
+    if (/^(\d)\1{13}$/.test(cleanCNPJ)) return false;
+
+    let length = cleanCNPJ.length - 2;
+    let numbers = cleanCNPJ.substring(0, length);
+    const digits = cnpj.substring(length);
+    let sum = 0;
+    let pos = length - 7;
+
+    for (let i = length; i >= 1; i--) {
+        sum += parseInt(numbers.charAt(length - i)) * pos--;
+        if (pos < 2) pos = 9;
+    }
+
+    let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+    if (result !== parseInt(digits.charAt(0))) return false;
+
+    length = length + 1;
+    numbers = cleanCNPJ.substring(0, length);
+    sum = 0;
+    pos = length - 7;
+
+    for (let i = length; i >= 1; i--) {
+        sum += parseInt(numbers.charAt(length - i)) * pos--;
+        if (pos < 2) pos = 9;
+    }
+
+    result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+    if (result !== parseInt(digits.charAt(1))) return false;
+
+    return true;
+};
+
 interface Connector {
     id: number;
     name: string;
@@ -158,11 +189,37 @@ interface CredentialValues {
 }
 
 type ConnectionStep = 'info' | 'banks' | 'credentials' | 'connecting' | 'oauth_pending' | 'success' | 'error';
+type ConnectorCredential = Connector['credentials'][number];
 
-// Deep link URI for OAuth callback
+const getCredentialSearchText = (credential: ConnectorCredential): string => (
+    `${credential.label || ''} ${credential.placeholder || ''} ${credential.validation || ''} ${credential.validationMessage || ''}`
+).toLowerCase();
+
+const credentialHasCpf = (credential: ConnectorCredential): boolean => (
+    getCredentialSearchText(credential).includes('cpf')
+);
+
+const credentialHasCnpj = (credential: ConnectorCredential): boolean => (
+    getCredentialSearchText(credential).includes('cnpj')
+);
+
+const isDocumentCredential = (credential: ConnectorCredential): boolean => {
+    return credentialHasCpf(credential) || credentialHasCnpj(credential);
+};
+
+const getConnectorDocumentSupport = (credentials: ConnectorCredential[] = []) => {
+    const hasCpfCredential = credentials.some(credentialHasCpf);
+    const hasCnpjCredential = credentials.some(credentialHasCnpj);
+
+    return {
+        hasCpfCredential,
+        hasCnpjCredential,
+        acceptsBothDocuments: hasCpfCredential && hasCnpjCredential,
+    };
+};
+
 const OAUTH_REDIRECT_URI = Linking.createURL('open-finance/callback');
 
-// Componente separado para o card do banco (necessário para usar hooks)
 const ConnectorCard = ({
     item,
     onSelect,
@@ -180,7 +237,6 @@ const ConnectorCard = ({
             onPress={() => onSelect(item)}
             activeOpacity={0.7}
         >
-            <View style={[styles.bankColorStrip, { backgroundColor: color }]} />
             <BankConnectorLogo
                 connector={item}
                 size={36}
@@ -195,8 +251,6 @@ const ConnectorCard = ({
     );
 };
 
-
-
 export default function OpenFinanceScreen() {
     const { user, profile, refreshProfile } = useAuth();
     const { showError, showWarning } = useToast();
@@ -206,6 +260,7 @@ export default function OpenFinanceScreen() {
     const [accounts, setAccounts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingDots, setLoadingDots] = useState('');
+    const [dataRefreshKey, setDataRefreshKey] = useState(0);
 
     useEffect(() => {
         if (!loading) return;
@@ -219,16 +274,12 @@ export default function OpenFinanceScreen() {
     }, [loading]);
 
     const [refreshing, setRefreshing] = useState(false);
+    const { credits: syncCredits, refresh: refreshCredits, consumeCredit, hasCredits, canSyncItem } = useSyncCredits(user?.uid);
 
-    // Sync Credits System
-    const { credits: syncCredits, refresh: refreshCredits, consumeCredit, hasCredits, canSync, canSyncItem } = useSyncCredits(user?.uid);
-
-    // Schedule daily reset notification once
     useEffect(() => {
         notificationService.scheduleDailySyncResetNotification();
     }, []);
 
-    // Connection flow states
     const [connectionStep, setConnectionStep] = useState<ConnectionStep>('info');
     const [connectors, setConnectors] = useState<Connector[]>([]);
     const [loadingConnectors, setLoadingConnectors] = useState(false);
@@ -237,10 +288,16 @@ export default function OpenFinanceScreen() {
     const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
     const [credentialValues, setCredentialValues] = useState<CredentialValues>({});
     const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
+    const [useCNPJ, setUseCNPJ] = useState(false);
     const [connecting, setConnecting] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const [connectionProgress, setConnectionProgress] = useState(0);
+    const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
     const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
+
+    // Novo estado para o Link caso o Android não abra automaticamente
+    const [currentOauthUrl, setCurrentOauthUrl] = useState<string | null>(null);
+
     const lastApiHealthCheckRef = useRef(0);
 
     useEffect(() => {
@@ -278,7 +335,6 @@ export default function OpenFinanceScreen() {
                     lastTransportError = error;
                     continue;
                 }
-
                 console.warn('[OpenFinance] Unexpected API health check error:', error);
             }
         }
@@ -311,10 +367,8 @@ export default function OpenFinanceScreen() {
         let newIds: string[];
 
         if (hiddenIds.includes(accountId)) {
-            // If currently hidden, remove from list to make visible
             newIds = hiddenIds.filter(id => id !== accountId);
         } else {
-            // If visible, add to list to hide
             newIds = [...hiddenIds, accountId];
         }
 
@@ -329,15 +383,11 @@ export default function OpenFinanceScreen() {
         }
     };
 
-
-
-    // OAuth states
     const [pendingItemId, setPendingItemId] = useState<string | null>(null);
     const pendingItemIdRef = useRef<string | null>(null);
     const [oauthPolling, setOauthPolling] = useState(false);
     const oauthPollingRef = useRef(false);
 
-    // Update refs when state changes
     useEffect(() => {
         pendingItemIdRef.current = pendingItemId;
     }, [pendingItemId]);
@@ -352,6 +402,7 @@ export default function OpenFinanceScreen() {
             const result = await databaseService.getAccounts(user.uid);
             if (result.success && result.data) {
                 setAccounts(result.data);
+                setDataRefreshKey(prev => prev + 1);
             }
         } catch (error) {
             console.error('Error fetching accounts:', error);
@@ -361,15 +412,11 @@ export default function OpenFinanceScreen() {
         }
     };
 
-    // Handle OAuth callback from deep link
     const handleOAuthCallback = useCallback(async (url: string) => {
         console.log('[OAuth] Callback received:', url);
 
-        // Extract itemId from URL parameters if present (some banks return it)
-        // Or default to the pending one
         let itemId = pendingItemIdRef.current;
 
-        // Parse URL to check for status or errors
         try {
             const { queryParams } = Linking.parse(url);
 
@@ -380,125 +427,31 @@ export default function OpenFinanceScreen() {
                 setIsModalVisible(true);
                 return;
             }
-
-            // If we don't have a pending item ID, we might be recovering from a completely closed app state
-            // Ideally we should store this pending ID in AsyncStorage to survive app restarts
-            if (!itemId) {
-                console.log('[OAuth] No pending item found in memory. Checking URL params...');
-                // Checking if the backend passed it back in the redirect (if you implemented that)
-                // For now, we rely on memory or storage mechanisms you might add later.
-                // If it's lost, we can prompt user or try to find "WAITING_USER_INPUT" items from Pluggy API
-            }
         } catch (e) {
             console.error('[OAuth] Failed to parse callback URL', e);
         }
 
         if (!itemId || !user) {
             console.log('[OAuth] No pending item or user to sync.');
-            // Even without item, we should show the modal so user knows something happened
-            setIsModalVisible(true);
-            if (!itemId) setConnectionError('Não foi possível identificar a conexão pendente.');
-            setConnectionStep('error');
             return;
         }
 
-        console.log('[OAuth] Processing callback for item:', itemId);
+        console.log('[OAuth] Processando callback para o item:', itemId);
 
-        // Show modal and set state
         setIsModalVisible(true);
-        setConnectionStep('connecting');
-        setConnectionProgress(60);
+        setConnectionStep('oauth_pending');
+        setConnectionProgress(40);
+        setConnectionStatusText('Autorização recebida do app! Aguardando o banco finalizar o envio (isso pode levar alguns minutos)...');
 
-        try {
-            console.log('[OAuth] Syncing item to Firebase...');
-            const token = await user.getIdToken();
-            const syncResponse = await apiFetch('/api/pluggy/sync', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    userId: user.uid,
-                    itemId: itemId,
-                }),
-                timeout: 240000
-            });
+    }, [user]);
 
-            if (syncResponse.ok) {
-                const syncData = await syncResponse.json();
-                console.log('[OAuth] Sync response:', syncData);
-
-                setConnectionProgress(80);
-
-                if (syncData.accounts && syncData.accounts.length > 0) {
-                    console.log(`[OAuth] Saving ${syncData.accounts.length} accounts to Firebase...`);
-
-                    for (const account of syncData.accounts) {
-                        const result = await databaseService.saveAccount(
-                            user.uid,
-                            account,
-                            syncData.connector
-                        );
-
-                        if (result.success) {
-                            console.log(`[OAuth] Account ${account.id} saved successfully`);
-                        } else {
-                            console.error(`[OAuth] Failed to save account ${account.id}:`, result.error);
-                        }
-                    }
-
-                    console.log('[OAuth] Saving transactions to Firebase...');
-                    const txResult = await databaseService.saveOpenFinanceTransactions(
-                        user.uid,
-                        syncData.accounts,
-                        syncData.connector
-                    );
-
-                    if (txResult.success) {
-                        console.log(`[OAuth] Transactions saved: ${txResult.savedCount} total (${txResult.details?.checkingTransactions} checking, ${txResult.details?.creditCardTransactions} credit card)`);
-                    } else {
-                        console.error('[OAuth] Failed to save transactions:', txResult.error);
-                    }
-                }
-            } else {
-                throw new Error('Falha na sincronização com o servidor.');
-            }
-
-            setConnectionProgress(100);
-            setConnectionStep('success');
-
-            // Clear pending item
-            setPendingItemId(null);
-
-            // Refresh accounts and credits
-            setTimeout(() => {
-                fetchAccounts();
-                refreshCredits(); // Update credits display
-                // Don't close immediately, let user see success
-                setTimeout(() => {
-                    setIsModalVisible(false);
-                    setConnectionStep('info');
-                }, 1500);
-            }, 1000);
-
-        } catch (error: any) {
-            console.error('[OAuth] Sync error:', error);
-            setConnectionError('Erro ao sincronizar. Tente novamente.');
-            setConnectionStep('error');
-        }
-    }, [apiFetch, user, refreshCredits]);
-
-    // Listen for deep link callbacks
     useEffect(() => {
-        // Handle URL when app is opened from background
         const subscription = Linking.addEventListener('url', (event) => {
             if (event.url.includes('open-finance') || event.url.includes('pluggy')) {
                 handleOAuthCallback(event.url);
             }
         });
 
-        // Check if app was opened with a URL (Cold start)
         Linking.getInitialURL().then((url) => {
             if (url && (url.includes('open-finance') || url.includes('pluggy'))) {
                 handleOAuthCallback(url);
@@ -510,16 +463,14 @@ export default function OpenFinanceScreen() {
         };
     }, [handleOAuthCallback]);
 
-    // Polling effect for OAuth flow - runs while user is in the bank app
+    // Polling effect for OAuth flow
     useEffect(() => {
         if (connectionStep !== 'oauth_pending' || !pendingItemId || !user) {
             return;
         }
 
-        console.log('[OAuth Polling] Starting polling for item:', pendingItemId);
-
         let pollCount = 0;
-        const maxPolls = 90; // 3 minutes max (2s intervals)
+        const maxPolls = 120; // 6 minutos aguardando (o banco as vezes é lento)
         let cancelled = false;
         let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -527,11 +478,10 @@ export default function OpenFinanceScreen() {
             if (cancelled) return;
 
             pollCount++;
-            console.log(`[OAuth Polling] Attempt ${pollCount}/${maxPolls}`);
 
             try {
                 const token = await user.getIdToken();
-                const response = await apiFetch(`/api/pluggy/items/${pendingItemId}`, {
+                const response = await apiFetch(`/api/pluggy/items/${pendingItemId}?userId=${user.uid}`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                     timeout: 15000
                 });
@@ -541,21 +491,22 @@ export default function OpenFinanceScreen() {
                     const item = data.item || data;
                     const status = item.status;
 
-                    console.log(`[OAuth Polling] Status: ${status}`);
-
                     if (status === 'UPDATED') {
-                        console.log('[OAuth Polling] Connection completed!');
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
 
                         setOauthPolling(false);
                         setConnectionStep('connecting');
                         setConnectionProgress(60);
+                        setConnectionStatusText('Autorização confirmada! Preparando extração de dados (Isso pode levar alguns minutos)...');
 
-                        // Sync accounts
+                        // PAUSA ESTRATÉGICA: Dar tempo para a Pluggy indexar as transações antes de chamar o sync
+                        await new Promise(resolve => setTimeout(resolve, 8000));
+
                         try {
                             const token = await user.getIdToken();
-                            const syncResponse = await apiFetch('/api/pluggy/sync', {
+
+                            let syncResponse = await apiFetch('/api/pluggy/sync', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json',
@@ -569,76 +520,123 @@ export default function OpenFinanceScreen() {
                             });
 
                             if (syncResponse.ok) {
-                                const syncData = await syncResponse.json();
-                                console.log('[OAuth Polling] Sync data received:', syncData);
+                                let syncData = await syncResponse.json();
+                                let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
+
+                                // RETENTATIVA: Se vieram 0 transações, a Pluggy pode estar um pouco atrasada.
+                                if (totalTx === 0 && syncData.accounts && syncData.accounts.length > 0) {
+                                    setConnectionStatusText('O banco está processando seu extrato. Por favor, aguarde mais um pouco...');
+                                    await new Promise(resolve => setTimeout(resolve, 10000));
+
+                                    const retryResponse = await apiFetch('/api/pluggy/sync', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'Authorization': `Bearer ${token}`
+                                        },
+                                        body: JSON.stringify({
+                                            userId: user.uid,
+                                            itemId: pendingItemId,
+                                        }),
+                                        timeout: 240000
+                                    });
+
+                                    if (retryResponse.ok) {
+                                        syncData = await retryResponse.json();
+                                        totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
+                                    }
+                                }
 
                                 setConnectionProgress(80);
 
-                                // Save accounts to Firebase
                                 if (syncData.accounts && syncData.accounts.length > 0) {
-                                    console.log(`[OAuth Polling] Saving ${syncData.accounts.length} accounts to Firebase...`);
-
-                                    for (const account of syncData.accounts) {
-                                        const result = await databaseService.saveAccount(
+                                    for (let i = 0; i < syncData.accounts.length; i++) {
+                                        const account = syncData.accounts[i];
+                                        setConnectionStatusText(`Organizando conta ${i + 1} de ${syncData.accounts.length}...`);
+                                        await databaseService.saveAccount(
                                             user.uid,
                                             account,
                                             syncData.connector || selectedConnector
                                         );
-
-                                        if (result.success) {
-                                            console.log(`[OAuth Polling] Account ${account.id} saved successfully`);
-                                        } else {
-                                            console.error(`[OAuth Polling] Failed to save account ${account.id}:`, result.error);
-                                        }
                                     }
 
-                                    // Save transactions to Firebase
-                                    console.log('[OAuth Polling] Saving transactions to Firebase...');
+                                    setConnectionStatusText(`Salvando ${totalTx} transações no banco de dados...`);
                                     const txResult = await databaseService.saveOpenFinanceTransactions(
                                         user.uid,
                                         syncData.accounts,
                                         syncData.connector || selectedConnector
                                     );
 
-                                    if (txResult.success) {
-                                        console.log(`[OAuth Polling] Transactions saved: ${txResult.savedCount} total (${txResult.details?.checkingTransactions} checking, ${txResult.details?.creditCardTransactions} credit card)`);
+                                    if (!txResult.success) {
+                                        console.warn('[OAuth Polling] Erro ao salvar transações:', txResult.error);
                                     } else {
-                                        console.error('[OAuth Polling] Failed to save transactions:', txResult.error);
+                                        console.log(`[OAuth Polling] ${txResult.savedCount} transações salvas com sucesso.`);
                                     }
                                 }
 
                                 setConnectionProgress(100);
+                                setConnectionStatusText('Sincronização concluída com sucesso!');
                                 setConnectionStep('success');
                                 setPendingItemId(null);
+                                setCurrentOauthUrl(null);
 
                                 setTimeout(() => {
                                     fetchAccounts();
-                                    refreshCredits(); // Update credits display
+                                    refreshCredits();
                                     setTimeout(() => {
                                         setIsModalVisible(false);
                                         setConnectionStep('info');
                                     }, 1500);
                                 }, 1000);
                             } else {
-                                throw new Error('Sync failed');
+                                throw new Error('Falha de sincronização com o servidor');
                             }
                         } catch (syncError) {
                             console.error('[OAuth Polling] Sync error:', syncError);
-                            setConnectionError('Erro ao sincronizar contas. Tente novamente.');
+                            setConnectionError('O servidor levou muito tempo para baixar as transações e o tempo esgotou. Tente novamente.');
                             setConnectionStep('error');
+                            setCurrentOauthUrl(null);
                         }
                         return;
                     }
 
+                    // Se estiver Extraindo ou Aguardando, IGNORAMOS e continuamos!
+                    if (status === 'UPDATING' || status === 'WAITING_USER_INPUT') {
+                        if (status === 'UPDATING' && connectionProgress < 50) {
+                            setConnectionProgress(50);
+                            setConnectionStatusText('O banco autorizou. Extraindo dados (Isso leva de 1 a 3 minutos)...');
+                        }
+                        return; // Continua rodando o loop pacificamente
+                    }
+
+                    // Se falhou fatalmente:
                     if (status === 'LOGIN_ERROR' || status === 'OUTDATED' || status === 'ERROR') {
-                        console.log('[OAuth Polling] Connection failed with status:', status);
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
 
                         setOauthPolling(false);
-                        setConnectionError('O banco recusou a conexão ou ocorreu um erro. Tente novamente.');
+
+                        let errorMessage = 'Erro ao conectar com o banco.';
+
+                        if (status === 'LOGIN_ERROR') {
+                            errorMessage = 'Credenciais inválidas ou banco temporariamente indisponível. Verifique seus dados e tente novamente.';
+                        } else if (status === 'OUTDATED') {
+                            errorMessage = 'A conexão expirou. Por favor, reconecte sua conta bancária.';
+                        } else if (status === 'ERROR') {
+                            const errorDetails = item.error || item.executionErrorResult;
+                            if (errorDetails?.message?.toLowerCase().includes('mfa') ||
+                                errorDetails?.message?.toLowerCase().includes('autenticação') ||
+                                errorDetails?.message?.toLowerCase().includes('token')) {
+                                errorMessage = 'O banco exige dupla validação (MFA) que ainda não é suportada. Tente usar outro método de conexão.';
+                            } else {
+                                errorMessage = 'Erro ao processar a conexão. Tente novamente mais tarde.';
+                            }
+                        }
+
+                        setConnectionError(errorMessage);
                         setConnectionStep('error');
                         setPendingItemId(null);
+                        setCurrentOauthUrl(null);
                         return;
                     }
                 }
@@ -646,25 +644,22 @@ export default function OpenFinanceScreen() {
                 console.warn('[OAuth Polling] Error:', error);
             }
 
-            // Check if max polls reached
             if (pollCount >= maxPolls && !cancelled) {
-                console.log('[OAuth Polling] Timeout reached');
                 cancelled = true;
                 if (intervalId) clearInterval(intervalId);
 
                 setOauthPolling(false);
-                setConnectionError('Tempo expirado. Por favor, tente conectar novamente.');
+                setConnectionError('Tempo expirado. O banco demorou muito para responder ou você não autorizou a tempo.');
                 setConnectionStep('error');
                 setPendingItemId(null);
+                setCurrentOauthUrl(null);
             }
         };
 
-        // Start polling immediately
         setOauthPolling(true);
-        checkStatus(); // First check immediately
+        checkStatus();
 
-        // Then continue polling every 2 seconds
-        intervalId = setInterval(checkStatus, 2000);
+        intervalId = setInterval(checkStatus, 3000); // 3 em 3 segundos dá tempo da API respirar
 
         return () => {
             cancelled = true;
@@ -719,7 +714,6 @@ export default function OpenFinanceScreen() {
                 setConnectors([]);
             }
         } catch (error) {
-            console.error('Error fetching connectors:', error);
             if (isNetworkTransportError(error)) {
                 const connectionMessage = getConnectionErrorMessage(error instanceof Error ? error.message : undefined);
                 setConnectorsFetchError(connectionMessage);
@@ -729,7 +723,6 @@ export default function OpenFinanceScreen() {
                 setConnectorsFetchError(fetchMessage);
                 setConnectionError(fetchMessage);
             }
-
             setConnectors([]);
         } finally {
             setLoadingConnectors(false);
@@ -743,6 +736,8 @@ export default function OpenFinanceScreen() {
         setCredentialValues({});
         setConnectorsFetchError(null);
         setConnectionError(null);
+        setConnectionStatusText('');
+        setCurrentOauthUrl(null);
     };
 
     const handleCloseModal = () => {
@@ -753,6 +748,9 @@ export default function OpenFinanceScreen() {
         setConnectorsFetchError(null);
         setConnectionError(null);
         setSearchQuery('');
+        setUseCNPJ(false);
+        setConnectionStatusText('');
+        setCurrentOauthUrl(null);
     };
 
     const handleStartConnection = () => {
@@ -762,6 +760,7 @@ export default function OpenFinanceScreen() {
 
     const handleSelectConnector = (connector: Connector) => {
         setSelectedConnector(connector);
+        setUseCNPJ(false);
         const initialValues: CredentialValues = {};
         (connector.credentials || []).forEach(cred => {
             initialValues[cred.name] = '';
@@ -777,52 +776,41 @@ export default function OpenFinanceScreen() {
 
     const handleConfirmDelete = async () => {
         if (!user || !itemToDelete) return;
-
-        console.log('handleConfirmDelete called for group:', itemToDelete.connector?.name);
         setLoading(true);
-        setDeleteModalVisible(false); // Close modal immediately
+        setDeleteModalVisible(false);
 
         try {
-            const promises = itemToDelete.accounts.map((acc: any) =>
-                databaseService.deleteAccount(user.uid, acc.id)
-            );
-            await Promise.all(promises);
+            const accountIds = (itemToDelete.accounts || [])
+                .map((acc: any) => acc?.id)
+                .filter(Boolean);
+
+            const deleteResult = await databaseService.deleteOpenFinanceConnection(user.uid, accountIds);
+            if (!deleteResult.success) {
+                throw new Error(deleteResult.error || 'Falha ao remover dados da conexao');
+            }
+
             await fetchAccounts();
             setItemToDelete(null);
         } catch (error) {
-            console.error('Error deleting bank:', error);
             Alert.alert('Erro', 'Não foi possível desconectar a instituição.');
         } finally {
             setLoading(false);
         }
     };
 
-    // Handle sync for an already connected bank
     const handleSyncBank = async (
         group: any,
         onStatusUpdate: (status: SyncStatus) => void
     ): Promise<void> => {
         if (!user) return;
 
-        console.log('[Sync] Starting sync for', group.connector?.name);
-        console.log('[Sync] Group data:', JSON.stringify(group, null, 2));
-
-        // Get the itemId from first account - check multiple possible field names
-        // Web app may save it as 'pluggyItemId', 'itemId', or it may be nested
         const firstAccount = group.accounts[0];
-        console.log('[Sync] First account full data:', JSON.stringify(firstAccount, null, 2));
-
         const itemId = firstAccount?.pluggyItemId ||
             firstAccount?.itemId ||
             firstAccount?.connector?.itemId ||
             null;
 
-        console.log('[Sync] Found itemId:', itemId);
-        console.log('[Sync] pluggyItemId:', firstAccount?.pluggyItemId);
-        console.log('[Sync] itemId:', firstAccount?.itemId);
-
         if (!itemId) {
-            console.error('[Sync] No itemId found! Account fields:', Object.keys(firstAccount || {}));
             onStatusUpdate({ step: 'error', message: 'Conexão não identificada - itemId ausente', progress: 0 });
             setTimeout(() => {
                 onStatusUpdate({ step: 'idle', message: '', progress: 0 });
@@ -831,15 +819,13 @@ export default function OpenFinanceScreen() {
         }
 
         try {
-            // Step 1: Fetching data from bank
             onStatusUpdate({
                 step: 'fetching_accounts',
                 message: 'Obtendo dados do banco...',
                 progress: 10
             });
 
-            // Determine synchronization start date (Incremental Sync)
-            let fromDate: string;
+            let fromDate: string | null = null;
             let latestSyncDate: string | null = null;
             if (group.accounts && group.accounts.length > 0) {
                 group.accounts.forEach((acc: any) => {
@@ -855,38 +841,30 @@ export default function OpenFinanceScreen() {
             }
             if (latestSyncDate) {
                 fromDate = new Date(latestSyncDate).toISOString().split('T')[0];
-            } else {
-                const d = new Date();
-                d.setDate(d.getDate() - 30);
-                fromDate = d.toISOString().split('T')[0];
             }
-            console.log('[Sync] Incremental sync from:', fromDate);
 
-            console.log('[Sync] Calling API:', `${apiBaseUrl}/api/pluggy/sync`);
-            console.log('[Sync] Request body:', { userId: user.uid, itemId: itemId });
+            const syncPayload: { userId: string; itemId: string; from?: string } = {
+                userId: user.uid,
+                itemId: itemId
+            };
 
-            // Call the sync endpoint
+            if (fromDate) {
+                syncPayload.from = fromDate;
+            }
+
             const token = await user.getIdToken();
-            // Increased timeout to 4 minutes (240000ms) for sync operations which can be heavy
             const syncResponse = await apiFetch('/api/pluggy/sync', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    userId: user.uid,
-                    itemId: itemId,
-                    from: fromDate
-                }),
+                body: JSON.stringify(syncPayload),
                 timeout: 240000
             });
 
-            console.log('[Sync] Response status:', syncResponse.status);
-
             if (syncResponse.ok) {
                 const syncData = await syncResponse.json();
-                console.log('[Sync] Response received:', syncData);
 
                 onStatusUpdate({
                     step: 'fetching_accounts',
@@ -894,9 +872,7 @@ export default function OpenFinanceScreen() {
                     progress: 30
                 });
 
-                // Save/update accounts
                 if (syncData.accounts && syncData.accounts.length > 0) {
-                    // Step 2: Saving accounts
                     onStatusUpdate({
                         step: 'saving_accounts',
                         message: 'Salvando contas...',
@@ -919,7 +895,6 @@ export default function OpenFinanceScreen() {
                         });
                     }
 
-                    // Step 3: Count total transactions
                     let totalTransactions = 0;
                     syncData.accounts.forEach((acc: any) => {
                         totalTransactions += (acc.transactions?.length || 0);
@@ -931,7 +906,6 @@ export default function OpenFinanceScreen() {
                         progress: 65
                     });
 
-                    // Step 4: Save transactions
                     onStatusUpdate({
                         step: 'saving_transactions',
                         message: 'Salvando transações...',
@@ -956,7 +930,6 @@ export default function OpenFinanceScreen() {
                             details: { checking, credit }
                         });
 
-                        // Reset after showing success
                         setTimeout(() => {
                             onStatusUpdate({ step: 'idle', message: '', progress: 0 });
                         }, 3000);
@@ -975,18 +948,11 @@ export default function OpenFinanceScreen() {
                     }, 3000);
                 }
 
-                // Refresh accounts list
                 await fetchAccounts();
             } else {
-                // Log the error response
-                const errorText = await syncResponse.text();
-                console.error('[Sync] API Error Response:', errorText);
-                console.error('[Sync] API Error Status:', syncResponse.status);
-                throw new Error(`API Error: ${syncResponse.status} - ${errorText}`);
+                throw new Error(`API Error: ${syncResponse.status}`);
             }
         } catch (error: any) {
-            console.error('[Sync] Error:', error);
-            console.error('[Sync] Error message:', error.message);
             const errorMessage = isNetworkTransportError(error)
                 ? getConnectionErrorMessage(error.message)
                 : error.message || 'Erro na sincronização';
@@ -999,9 +965,10 @@ export default function OpenFinanceScreen() {
         }
     };
 
-
     const handleConnect = async () => {
         if (!user || !selectedConnector) return;
+        const connectorCredentials = selectedConnector.credentials || [];
+        const { acceptsBothDocuments } = getConnectorDocumentSupport(connectorCredentials);
 
         if (!hasCredits) {
             const resetTime = databaseService.getTimeUntilReset();
@@ -1012,24 +979,52 @@ export default function OpenFinanceScreen() {
             return;
         }
 
-        const missingFields = (selectedConnector.credentials || []).filter(
-            cred => !credentialValues[cred.name]?.trim()
-        );
+        const missingFields = connectorCredentials.filter(cred => {
+            if (credentialValues[cred.name]?.trim()) return false;
+            if (!acceptsBothDocuments || !isDocumentCredential(cred)) return true;
+
+            const isCpfCredential = credentialHasCpf(cred);
+            const isCnpjCredential = credentialHasCnpj(cred);
+            const acceptsBothInSameField = isCpfCredential && isCnpjCredential;
+
+            if (acceptsBothInSameField) return true;
+            return useCNPJ ? isCnpjCredential : isCpfCredential;
+        });
 
         if (missingFields.length > 0) {
             showError('Campos obrigatorios', 'Por favor, preencha todos os campos obrigatorios.');
             return;
         }
 
-        if (credentialValues.cpf) {
-            const cleanCPF = credentialValues.cpf.replace(/\D/g, '');
-            if (cleanCPF.length !== 11) {
-                showError('CPF invalido', 'O CPF deve conter 11 digitos.');
-                return;
-            }
-            if (!validateCPF(cleanCPF)) {
-                showError('CPF invalido', 'O CPF informado nao e valido. Verifique os digitos e tente novamente.');
-                return;
+        const documentCredential = connectorCredentials.find(cred => {
+            if (!isDocumentCredential(cred)) return false;
+            if (!acceptsBothDocuments) return true;
+
+            const isCpfCredential = credentialHasCpf(cred);
+            const isCnpjCredential = credentialHasCnpj(cred);
+            const acceptsBothInSameField = isCpfCredential && isCnpjCredential;
+
+            if (acceptsBothInSameField) return true;
+            return useCNPJ ? isCnpjCredential : isCpfCredential;
+        });
+        const documentCredentialValue = documentCredential ? credentialValues[documentCredential.name] : '';
+
+        if (documentCredential && documentCredentialValue) {
+            const supportsCPF = credentialHasCpf(documentCredential);
+            const supportsCNPJ = credentialHasCnpj(documentCredential);
+            const shouldValidateAsCNPJ = supportsCNPJ && (!supportsCPF || useCNPJ);
+            const cleanDoc = documentCredentialValue.replace(/\D/g, '');
+
+            if (shouldValidateAsCNPJ) {
+                if (cleanDoc.length !== 14 || !validateCNPJ(cleanDoc)) {
+                    showError('CNPJ invalido', 'O CNPJ informado nao e valido.');
+                    return;
+                }
+            } else {
+                if (cleanDoc.length !== 11 || !validateCPF(cleanDoc)) {
+                    showError('CPF invalido', 'O CPF informado nao e valido.');
+                    return;
+                }
             }
         }
 
@@ -1041,25 +1036,33 @@ export default function OpenFinanceScreen() {
 
         setConnecting(true);
         setConnectionStep('connecting');
-        setConnectionProgress(0);
+        setConnectionProgress(5);
+        setConnectionStatusText('Autenticando com a instituição...');
 
         const isOAuthConnector = Boolean(selectedConnector.oauth || selectedConnector.isOpenFinance);
         let progressInterval: ReturnType<typeof setInterval> | null = null;
 
         try {
             progressInterval = setInterval(() => {
-                setConnectionProgress(prev => Math.min(prev + 5, 40));
+                setConnectionProgress(prev => Math.min(prev + 40, 40));
             }, 500);
 
             const redirectUri = Linking.createURL('open-finance');
             console.log('[Connect] Generated Redirect URI:', redirectUri);
 
             const sanitizedCredentials = { ...credentialValues };
-            if (sanitizedCredentials.cpf) {
-                sanitizedCredentials.cpf = sanitizedCredentials.cpf.replace(/\D/g, '');
-            }
+            connectorCredentials
+                .filter(isDocumentCredential)
+                .forEach((credential) => {
+                    if (sanitizedCredentials[credential.name]) {
+                        sanitizedCredentials[credential.name] = sanitizedCredentials[credential.name].replace(/\D/g, '');
+                    }
+                });
 
             const token = await user.getIdToken();
+            setConnectionProgress(15);
+            setConnectionStatusText('Criando conexão segura com a Pluggy...');
+
             const createResponse = await apiFetch('/api/pluggy/create-item', {
                 method: 'POST',
                 headers: {
@@ -1078,22 +1081,28 @@ export default function OpenFinanceScreen() {
 
             if (!createResponse.ok) {
                 let errorMessage = 'Falha ao conectar. Verifique suas credenciais.';
-                if (createData.details && Array.isArray(createData.details)) {
-                    const errorDetails = createData.details
-                        .map((d: any) => `- ${d.message} (${d.parameter})`)
-                        .join('\n');
-                    errorMessage = `Erro de validacao:\n${errorDetails}`;
+
+                if (createData.details) {
+                    if (Array.isArray(createData.details)) {
+                        errorMessage = `Erro de validação nos dados enviados ao banco.`;
+                    } else if (createData.details.code === 'INVALID_CREDENTIALS') {
+                        errorMessage = 'Credenciais inválidas. Verifique seu usuário e senha.';
+                    } else if (createData.details.code === 'INSTITUTION_UNAVAILABLE') {
+                        errorMessage = 'O banco está temporariamente indisponível. Tente novamente em alguns minutos.';
+                    } else if (createData.details.code === 'MFA_REQUIRED') {
+                        errorMessage = 'Este banco exige autenticação de dois fatores (MFA) que ainda não é suportada.';
+                    }
                 } else if (createData.error) {
                     errorMessage = createData.error;
                 }
 
-                setConnectionError(errorMessage);
-                setConnectionStep('error');
-                return;
-            }
+                console.error('[Connect] Create item failed:', {
+                    status: createResponse.status,
+                    error: errorMessage,
+                    details: createData.details
+                });
 
-            if (!createData.success && !createData.item) {
-                setConnectionError(createData.error || 'Falha ao conectar. Verifique suas credenciais.');
+                setConnectionError(errorMessage);
                 setConnectionStep('error');
                 return;
             }
@@ -1104,6 +1113,9 @@ export default function OpenFinanceScreen() {
             if (!itemId) {
                 throw new Error('Item ID nao retornado pelo servidor');
             }
+
+            setConnectionProgress(25);
+            setConnectionStatusText('Analisando requisitos de acesso do banco...');
 
             const resolveAuthRequirements = (currentItem: any) => {
                 const url =
@@ -1147,7 +1159,7 @@ export default function OpenFinanceScreen() {
 
                     try {
                         const pollingToken = await user.getIdToken();
-                        const pollResponse = await apiFetch(`/api/pluggy/items/${itemId}`, {
+                        const pollResponse = await apiFetch(`/api/pluggy/items/${itemId}?userId=${user.uid}`, {
                             headers: { 'Authorization': `Bearer ${pollingToken}` },
                             timeout: 15000
                         });
@@ -1173,31 +1185,38 @@ export default function OpenFinanceScreen() {
             );
 
             if (shouldHandleOAuth) {
-                setConnectionProgress(30);
-                setPendingItemId(itemId);
-                setConnectionStep('oauth_pending');
-
-                if (!oauthUrl) {
-                    showError('Erro', 'O banco nao retornou o link de autorizacao. Tente novamente.');
+                if (!oauthUrl && status !== 'UPDATED') {
+                    showError('Erro', 'O banco não retornou o link de autorização. Tente novamente mais tarde.');
+                    setConnectionError('O servidor do banco demorou muito para responder.');
+                    setConnectionStep('error');
+                    setPendingItemId(null);
                     return;
                 }
 
-                try {
-                    await Linking.openURL(oauthUrl);
-                } catch (openError) {
-                    console.error('[Connect] Failed to open OAuth URL:', openError);
-                    showError(
-                        'Autorizacao necessaria',
-                        'Nao foi possivel abrir o app do banco automaticamente. Tente novamente.'
-                    );
-                }
+                if (status !== 'UPDATED') {
+                    setConnectionProgress(30);
+                    setConnectionStatusText('Aguardando autorização no app do banco...');
+                    setPendingItemId(itemId);
+                    setCurrentOauthUrl(oauthUrl);
+                    setConnectionStep('oauth_pending');
 
-                return;
+                    try {
+                        await Linking.openURL(oauthUrl);
+                    } catch (openError) {
+                        console.warn('[Connect] Failed automatic redirect, user must click manual button.');
+                    }
+                    return;
+                }
             }
 
+            // SE NÃO FOI OAUTH OU SE O SANDBOX AUTO-COMPLETOU, CAI AQUI DIRETAMENTE:
             setConnectionProgress(50);
+            setConnectionStatusText('Conexão autorizada. Preparando extração de dados (Aguarde alguns segundos)...');
 
-            const syncResponse = await apiFetch('/api/pluggy/sync', {
+            // PAUSA ESTRATÉGICA: Dar tempo para a Pluggy indexar as transações antes de chamar o sync
+            await new Promise(resolve => setTimeout(resolve, 8000));
+
+            let syncResponse = await apiFetch('/api/pluggy/sync', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1211,15 +1230,42 @@ export default function OpenFinanceScreen() {
             });
 
             if (!syncResponse.ok) {
-                const syncText = await syncResponse.text();
-                throw new Error(`API Error: ${syncResponse.status} - ${syncText}`);
+                throw new Error(`O servidor demorou muito para responder ou houve uma falha. Tente novamente.`);
             }
 
-            const syncData = await syncResponse.json();
+            let syncData = await syncResponse.json();
+            let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
+
+            // RETENTATIVA: Se vieram 0 transações, a Pluggy pode estar um pouco atrasada.
+            if (totalTx === 0 && syncData.accounts && syncData.accounts.length > 0) {
+                setConnectionStatusText('O banco está processando seu extrato. Por favor, aguarde mais um pouco...');
+                await new Promise(resolve => setTimeout(resolve, 10000));
+
+                const retryResponse = await apiFetch('/api/pluggy/sync', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        userId: user.uid,
+                        itemId,
+                    }),
+                    timeout: 240000
+                });
+
+                if (retryResponse.ok) {
+                    syncData = await retryResponse.json();
+                    totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
+                }
+            }
+
             setConnectionProgress(80);
 
             if (syncData.accounts && syncData.accounts.length > 0) {
-                for (const account of syncData.accounts) {
+                for (let i = 0; i < syncData.accounts.length; i++) {
+                    const account = syncData.accounts[i];
+                    setConnectionStatusText(`Organizando dados da conta ${i + 1} de ${syncData.accounts.length}...`);
                     await databaseService.saveAccount(
                         user.uid,
                         account,
@@ -1227,14 +1273,22 @@ export default function OpenFinanceScreen() {
                     );
                 }
 
-                await databaseService.saveOpenFinanceTransactions(
+                setConnectionStatusText(`Protegendo e salvando ${totalTx} transações...`);
+                const txResult = await databaseService.saveOpenFinanceTransactions(
                     user.uid,
                     syncData.accounts,
                     syncData.connector || selectedConnector
                 );
+
+                if (!txResult.success) {
+                    console.warn('[Connect] Erro ao salvar transações:', txResult.error);
+                } else {
+                    console.log(`[Connect] ${txResult.savedCount} transações salvas com sucesso.`);
+                }
             }
 
             setConnectionProgress(100);
+            setConnectionStatusText('Tudo pronto! Sincronização concluída.');
             setConnectionStep('success');
 
             setTimeout(() => {
@@ -1242,17 +1296,10 @@ export default function OpenFinanceScreen() {
                 handleCloseModal();
             }, 2000);
         } catch (error: any) {
-            console.error('Connection error:', error);
-            const connectionMessage = isNetworkTransportError(error)
-                ? getConnectionErrorMessage(error?.message)
-                : error?.message || 'Erro de conexao com o servidor.';
-
-            setConnectionError(connectionMessage);
+            setConnectionError(error?.message || 'Erro de conexao com o servidor ou limite de tempo excedido. Suas transações podem não ter salvo por completo.');
             setConnectionStep('error');
         } finally {
-            if (progressInterval) {
-                clearInterval(progressInterval);
-            }
+            if (progressInterval) clearInterval(progressInterval);
             setConnecting(false);
         }
     };
@@ -1263,40 +1310,26 @@ export default function OpenFinanceScreen() {
     const shouldShowConnectorsNetworkError =
         !loadingConnectors && filteredConnectors.length === 0 && Boolean(connectorsFetchError);
 
-    // Group accounts by connector
     const groupedAccounts = accounts.reduce((acc, account) => {
         const connectorData = account.connector || null;
         const connectorName = connectorData?.name || account.name || 'Outros';
 
         if (!acc[connectorName]) {
-            acc[connectorName] = {
-                connector: connectorData,
-                accounts: []
-            };
+            acc[connectorName] = { connector: connectorData, accounts: [] };
         }
         acc[connectorName].accounts.push(account);
         return acc;
     }, {} as Record<string, any>);
 
-    // Render bank card usando o componente separado
     const renderConnectorCard = ({ item }: { item: Connector }) => (
-        <ConnectorCard
-            item={item}
-            onSelect={handleSelectConnector}
-            styles={styles}
-        />
+        <ConnectorCard item={item} onSelect={handleSelectConnector} styles={styles} />
     );
 
-    // Render modal content based on step
     const renderModalContent = () => {
         switch (connectionStep) {
             case 'info':
                 return (
-                    <ScrollView
-                        style={styles.modalScroll}
-                        contentContainerStyle={styles.modalContent}
-                        showsVerticalScrollIndicator={false}
-                    >
+                    <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
                         <Text style={styles.sectionHeader}>INFORMAÇÕES</Text>
                         <View style={styles.sectionCard}>
                             <View style={styles.itemContainer}>
@@ -1361,90 +1394,63 @@ export default function OpenFinanceScreen() {
                                 </View>
                             </View>
                         </View>
-
-
-
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            activeOpacity={0.8}
-                            onPress={handleStartConnection}
-                        >
-                            <Text style={styles.actionButtonText}>Escolher Banco</Text>
-                        </TouchableOpacity>
                     </ScrollView>
                 );
 
             case 'banks':
-                return (
-                    <View style={styles.banksContainer}>
-                        {/* Search Bar */}
-                        <View style={styles.searchContainer}>
-                            <Search size={18} color="#666" />
-                            <TextInput
-                                style={styles.searchInput}
-                                placeholder="Buscar banco..."
-                                placeholderTextColor="#666"
-                                value={searchQuery}
-                                onChangeText={setSearchQuery}
-                            />
+                if (loadingConnectors) {
+                    return (
+                        <View style={[styles.loadingContainer, { minHeight: 400 }]}>
+                            <LottieView source={require('@/assets/carregando.json')} autoPlay loop style={{ width: 50, height: 50 }} />
+                            <Text style={styles.loadingText}>Carregando bancos...</Text>
                         </View>
+                    );
+                }
 
-                        {loadingConnectors ? (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="large" color="#D97757" />
-                                <Text style={styles.loadingText}>Carregando bancos...</Text>
-                            </View>
-                        ) : shouldShowConnectorsNetworkError ? (
-                            <View style={styles.connectorsErrorContainer}>
-                                <Text style={styles.connectorsErrorTitle}>Falha ao conectar com o backend</Text>
-                                <Text style={styles.connectorsErrorText}>{connectorsFetchError}</Text>
-                                <TouchableOpacity
-                                    style={styles.connectorsRetryButton}
-                                    onPress={fetchConnectors}
-                                    activeOpacity={0.8}
-                                >
-                                    <Text style={styles.connectorsRetryButtonText}>Tentar novamente</Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
-                            <FlatList
-                                key="bank-list-1" // Force fresh render when switching layouts
-                                data={filteredConnectors}
-                                renderItem={renderConnectorCard}
-                                keyExtractor={(item) => item.id.toString()}
-                                contentContainerStyle={styles.banksList}
-                                ItemSeparatorComponent={() => <View style={styles.bankListSeparator} />}
-                                showsVerticalScrollIndicator={false}
-                                ListEmptyComponent={
-                                    <Text style={styles.emptyText}>Nenhum banco encontrado</Text>
-                                }
-                            />
-                        )}
-                    </View>
+                if (shouldShowConnectorsNetworkError) {
+                    return (
+                        <View style={styles.connectorsErrorContainer}>
+                            <Text style={styles.connectorsErrorTitle}>Falha ao conectar com o backend</Text>
+                            <Text style={styles.connectorsErrorText}>{connectorsFetchError}</Text>
+                            <TouchableOpacity style={styles.connectorsRetryButton} onPress={fetchConnectors} activeOpacity={0.8}>
+                                <Text style={styles.connectorsRetryButtonText}>Tentar novamente</Text>
+                            </TouchableOpacity>
+                        </View>
+                    );
+                }
+
+                return (
+                    <FlatList
+                        key="bank-list-1"
+                        style={styles.banksListContainer}
+                        data={filteredConnectors}
+                        renderItem={renderConnectorCard}
+                        keyExtractor={(item) => item.id.toString()}
+                        contentContainerStyle={[styles.banksList, styles.banksListContent]}
+                        ItemSeparatorComponent={() => <View style={styles.bankListSeparator} />}
+                        showsVerticalScrollIndicator={false}
+                        ListEmptyComponent={<Text style={styles.emptyText}>Nenhum banco encontrado</Text>}
+                    />
                 );
 
             case 'credentials':
-                return (
-                    <ScrollView
-                        style={styles.modalScroll}
-                        contentContainerStyle={styles.credentialsContent}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        <View style={{ height: 20 }} />
+                const connectorCredentials = selectedConnector?.credentials || [];
+                const { acceptsBothDocuments } = getConnectorDocumentSupport(connectorCredentials);
+                const visibleCredentials = connectorCredentials.filter((cred) => {
+                    if (!acceptsBothDocuments || !isDocumentCredential(cred)) return true;
+                    const isCpfCredential = credentialHasCpf(cred);
+                    const isCnpjCredential = credentialHasCnpj(cred);
+                    if (isCpfCredential && isCnpjCredential) return true;
+                    return useCNPJ ? isCnpjCredential : isCpfCredential;
+                });
 
-                        <Text style={styles.sectionHeader}>CREDENCIAIS DE ACESSO</Text>
+                return (
+                    <ScrollView style={styles.modalScroll} contentContainerStyle={styles.credentialsContent} showsVerticalScrollIndicator={false}>
+                        <Text style={[styles.sectionHeader, styles.credentialsSectionHeader]}>CREDENCIAIS DE ACESSO</Text>
                         <View style={styles.sectionCard}>
-                            {/* Bank Name Row */}
                             <View style={styles.itemContainer}>
                                 <View style={[styles.itemIconContainer, { backgroundColor: '#FFFFFF' }]}>
-                                    <BankConnectorLogo
-                                        connector={selectedConnector}
-                                        size={24}
-                                        borderRadius={8}
-                                        iconSize={18}
-                                        showBorder={false}
-                                        backgroundColor="transparent"
-                                    />
+                                    <BankConnectorLogo connector={selectedConnector} size={24} borderRadius={8} iconSize={18} showBorder={false} backgroundColor="transparent" />
                                 </View>
                                 <View style={styles.itemRightContainer}>
                                     <View style={styles.itemContent}>
@@ -1455,74 +1461,88 @@ export default function OpenFinanceScreen() {
                             </View>
                             <View style={styles.separator} />
 
-                            {selectedConnector?.credentials?.map((cred, index) => (
-                                <View key={index}>
-                                    <View style={styles.itemContainer}>
-                                        <View style={styles.itemIconContainer}>
-                                            {cred.type === 'password' ? (
-                                                <Lock size={18} color="#D97757" />
-                                            ) : (
-                                                <User size={18} color="#D97757" />
-                                            )}
-                                        </View>
-                                        <View style={styles.itemRightContainer}>
-                                            <View style={styles.itemContent}>
-                                                <Text style={styles.itemTitle}>{cred.label}</Text>
-                                                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                                    <TextInput
-                                                        style={styles.credentialInput}
-                                                        placeholder={cred.placeholder || "Digite..."}
-                                                        placeholderTextColor="#505050"
-                                                        value={credentialValues[cred.name]}
-                                                        onChangeText={(text) => {
-                                                            let formattedText = text;
-                                                            // Simple mask for CPF
-                                                            if (cred.label?.toLowerCase().includes('cpf')) {
-                                                                // Remove non-digits
-                                                                const code = text.replace(/\D/g, '');
-                                                                // Apply mask
-                                                                formattedText = code
-                                                                    .replace(/(\d{3})(\d)/, '$1.$2')
-                                                                    .replace(/(\d{3})(\d)/, '$1.$2')
-                                                                    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+                            {visibleCredentials.map((cred, index) => {
+                                const isCpfCredential = credentialHasCpf(cred);
+                                const isCnpjCredential = credentialHasCnpj(cred);
+                                const isDocumentField = isCpfCredential || isCnpjCredential;
+                                const acceptsBoth = isCpfCredential && isCnpjCredential;
+
+                                let credentialLabel = cred.label;
+                                if (isDocumentField && acceptsBoth) credentialLabel = useCNPJ ? 'CNPJ' : 'CPF';
+
+                                return (
+                                    <View key={index}>
+                                        <View style={[styles.itemContainer, styles.credentialItemContainer]}>
+                                            <View style={styles.itemIconContainer}>
+                                                {cred.type === 'password' ? <Lock size={18} color="#D97757" /> : <User size={18} color="#D97757" />}
+                                            </View>
+                                            <View style={styles.itemRightContainer}>
+                                                <View style={styles.credentialItemContent}>
+                                                    <Text style={[styles.itemTitle, styles.credentialLabel]}>{credentialLabel}</Text>
+                                                    <View style={styles.credentialInputContainer}>
+                                                        <TextInput
+                                                            style={[styles.credentialInput, isDocumentField && styles.credentialCpfInput]}
+                                                            placeholder={
+                                                                isDocumentField
+                                                                    ? (acceptsBoth ? (useCNPJ ? "00.000.000/0000-00" : "000.000.000-00") : (isCnpjCredential ? "00.000.000/0000-00" : "000.000.000-00"))
+                                                                    : (cred.placeholder || "Digite...")
                                                             }
-                                                            setCredentialValues(prev => ({
-                                                                ...prev,
-                                                                [cred.name]: formattedText
-                                                            }))
-                                                        }}
-                                                        secureTextEntry={cred.type === 'password' && !showPasswords[cred.name]}
-                                                        autoCapitalize="none"
-                                                        autoCorrect={false}
-                                                        keyboardType={cred.label?.toLowerCase().includes('cpf') ? 'numeric' : 'default'}
-                                                        maxLength={cred.label?.toLowerCase().includes('cpf') ? 14 : undefined}
-                                                    />
-                                                    {cred.type === 'password' && (
-                                                        <TouchableOpacity
-                                                            onPress={() => setShowPasswords(prev => ({
-                                                                ...prev,
-                                                                [cred.name]: !prev[cred.name]
-                                                            }))}
-                                                            style={{ marginLeft: 8 }}
-                                                        >
-                                                            {showPasswords[cred.name] ? (
-                                                                <EyeOff size={18} color="#666" />
-                                                            ) : (
-                                                                <Eye size={18} color="#666" />
-                                                            )}
-                                                        </TouchableOpacity>
-                                                    )}
+                                                            placeholderTextColor="#6F6F73"
+                                                            value={credentialValues[cred.name]}
+                                                            onChangeText={(text) => {
+                                                                let formattedText = text;
+                                                                if (isDocumentField) {
+                                                                    if (acceptsBoth) formattedText = useCNPJ ? formatCNPJ(text) : formatCPF(text);
+                                                                    else if (isCnpjCredential) formattedText = formatCNPJ(text);
+                                                                    else formattedText = formatCPF(text);
+                                                                }
+                                                                setCredentialValues(prev => ({ ...prev, [cred.name]: formattedText }))
+                                                            }}
+                                                            secureTextEntry={cred.type === 'password' && !showPasswords[cred.name]}
+                                                            autoCapitalize="none"
+                                                            autoCorrect={false}
+                                                            keyboardType={isDocumentField ? 'number-pad' : 'default'}
+                                                            maxLength={isDocumentField ? (acceptsBoth ? (useCNPJ ? 18 : 14) : (isCnpjCredential ? 18 : 14)) : undefined}
+                                                        />
+                                                        {cred.type === 'password' && (
+                                                            <TouchableOpacity onPress={() => setShowPasswords(prev => ({ ...prev, [cred.name]: !prev[cred.name] }))} style={{ marginLeft: 8 }}>
+                                                                {showPasswords[cred.name] ? <EyeOff size={18} color="#666" /> : <Eye size={18} color="#666" />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                    </View>
                                                 </View>
                                             </View>
                                         </View>
+                                        {index < (visibleCredentials.length - 1) && <View style={styles.separator} />}
                                     </View>
-                                    {index < ((selectedConnector?.credentials?.length || 0) - 1) && (
-                                        <View style={styles.separator} />
-                                    )}
-                                </View>
-                            ))}
-                            <View style={{ height: 20 }} />
+                                );
+                            })}
                         </View>
+
+                        {acceptsBothDocuments && (
+                            <View style={styles.documentSwitchCard}>
+                                <View style={styles.documentSwitchContainer}>
+                                    <Text style={styles.documentSwitchLabel}>{useCNPJ ? 'Mudar para CPF' : 'Mudar para CNPJ'}</Text>
+                                    <ModernSwitch
+                                        value={useCNPJ}
+                                        onValueChange={(value) => {
+                                            setUseCNPJ(value);
+                                            const documentFields = (selectedConnector?.credentials || []).filter(isDocumentCredential);
+                                            if (documentFields.length > 0) {
+                                                setCredentialValues(prev => {
+                                                    const nextValues = { ...prev };
+                                                    documentFields.forEach(field => { nextValues[field.name] = ''; });
+                                                    return nextValues;
+                                                });
+                                            }
+                                        }}
+                                        activeColor="#D97757"
+                                        inactiveColor="#3f3f46"
+                                        thumbColor="#FFFFFF"
+                                    />
+                                </View>
+                            </View>
+                        )}
                     </ScrollView>
                 );
 
@@ -1530,47 +1550,44 @@ export default function OpenFinanceScreen() {
                 return (
                     <View style={styles.statusContainer}>
                         <View style={styles.statusIconContainer}>
-                            <ActivityIndicator size="large" color="#D97757" />
+                            <LottieView source={require('@/assets/carregando.json')} autoPlay loop style={{ width: 60, height: 60 }} />
                         </View>
-                        <Text style={styles.statusTitle}>Conectando...</Text>
-                        <Text style={styles.statusText}>
-                            Aguarde enquanto estabelecemos uma conexão segura com {selectedConnector?.name}
-                        </Text>
+                        <Text style={styles.statusTitle}>Sincronizando...</Text>
+                        <Text style={styles.statusText}>Aguarde enquanto baixamos tudo do {selectedConnector?.name || 'seu banco'}. Não feche o aplicativo.</Text>
 
-                        {/* Progress bar */}
                         <View style={styles.progressBarContainer}>
                             <View style={[styles.progressBar, { width: `${connectionProgress}%` }]} />
                         </View>
                         <Text style={styles.progressText}>{connectionProgress}%</Text>
+
+                        <View style={styles.stepContainer}>
+                            <ActivityIndicator size="small" color="#D97757" style={{ marginRight: 12 }} />
+                            <Text style={styles.stepText}>{connectionStatusText}</Text>
+                        </View>
                     </View>
                 );
 
             case 'success':
                 return (
                     <View style={styles.statusContainer}>
-                        <View style={[styles.statusIconContainer, styles.successIcon]}>
-                            <CheckCircle2 size={48} color="#04D361" />
+                        <View style={styles.statusIconContainer}>
+                            <LottieView source={require('@/assets/check.json')} autoPlay loop={false} style={{ width: 60, height: 60 }} />
                         </View>
                         <Text style={styles.statusTitle}>Conexão realizada!</Text>
-                        <Text style={styles.statusText}>
-                            Sua conta do {selectedConnector?.name} foi conectada com sucesso. Os dados serão sincronizados em breve.
-                        </Text>
+                        <Text style={styles.statusText}>Sua conta do {selectedConnector?.name || 'banco'} foi conectada com sucesso. Os dados estão sendo atualizados no painel.</Text>
                     </View>
                 );
 
             case 'error':
                 return (
                     <View style={styles.statusContainer}>
-                        <View style={[styles.statusIconContainer, styles.errorIcon]}>
-                            <XCircle size={48} color="#EF4444" />
+                        <View style={styles.statusIconContainer}>
+                            <LottieView source={require('@/assets/erro.json')} autoPlay loop={true} style={{ width: 60, height: 60 }} />
                         </View>
                         <Text style={styles.statusTitle}>Erro na conexão</Text>
                         <Text style={styles.statusText}>{connectionError}</Text>
 
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={() => setConnectionStep('credentials')}
-                        >
+                        <TouchableOpacity style={styles.actionButton} onPress={() => setConnectionStep('credentials')}>
                             <Text style={styles.actionButtonText}>Tentar novamente</Text>
                         </TouchableOpacity>
                     </View>
@@ -1580,31 +1597,30 @@ export default function OpenFinanceScreen() {
                 return (
                     <View style={styles.statusContainer}>
                         <View style={styles.statusIconContainer}>
-                            <ActivityIndicator size="large" color="#D97757" />
+                            <LottieView source={require('@/assets/carregando.json')} autoPlay loop style={{ width: 60, height: 60 }} />
                         </View>
                         <Text style={styles.statusTitle}>Aguardando autorização</Text>
-                        <Text style={styles.statusText}>
-                            Conclua a autorização no app do seu banco. Quando terminar, volte para este aplicativo.
-                        </Text>
+                        <Text style={styles.statusText}>Você deve autorizar o acesso no aplicativo ou site do banco.</Text>
 
-                        {/* Progress indicator */}
                         <View style={styles.progressBarContainer}>
                             <View style={[styles.progressBar, { width: `${connectionProgress}%` }]} />
                         </View>
-                        <Text style={styles.progressText}>
-                            {oauthPolling ? 'Verificando autorização...' : 'Aguardando...'}
-                        </Text>
+                        <Text style={styles.progressText}>{connectionProgress}%</Text>
 
-                        <TouchableOpacity
-                            style={[styles.actionButton, { marginTop: 20, backgroundColor: '#333' }]}
-                            onPress={() => {
-                                setOauthPolling(false);
-                                setPendingItemId(null);
-                                setConnectionStep('credentials');
-                            }}
-                        >
-                            <Text style={styles.actionButtonText}>Cancelar</Text>
-                        </TouchableOpacity>
+                        <View style={styles.stepContainer}>
+                            <ActivityIndicator size="small" color="#D97757" style={{ marginRight: 12 }} />
+                            <Text style={styles.stepText}>{connectionStatusText || (oauthPolling ? 'Aguardando você finalizar no app do banco...' : 'Aguardando...')}</Text>
+                        </View>
+
+                        {/* SE O BANK APP NÃO ABRIR AUTOMATICAMENTE, ESTE BOTÃO SALVA O USUÁRIO */}
+                        {currentOauthUrl && (
+                            <TouchableOpacity
+                                style={[styles.actionButton, { marginTop: 24, width: '100%', backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#444' }]}
+                                onPress={() => Linking.openURL(currentOauthUrl)}
+                            >
+                                <Text style={[styles.actionButtonText, { color: '#E0E0E0' }]}>O app não abriu? Clique aqui manualmente</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 );
         }
@@ -1612,81 +1628,40 @@ export default function OpenFinanceScreen() {
 
     return (
         <View style={styles.mainContainer}>
-            <UniversalBackground
-                backgroundColor="#0C0C0C"
-                glowSize={350}
-                height={320}
-                showParticles={true}
-                particleCount={15}
-            />
+            <UniversalBackground backgroundColor="#0C0C0C" glowSize={350} height={320} showParticles={true} particleCount={15} />
 
             <View style={styles.container}>
                 <View style={styles.header}>
                     <Text style={styles.title}>Contas Bancárias</Text>
-
                     <View style={styles.headerRight}>
-                        {/* Credits Badge & Connect Button Merged */}
-                        {user && (
-                            <SyncCreditsDisplay
-                                userId={user.uid}
-                                compact
-                                onConnect={handleOpenModal}
-                                connectDisabled={!hasCredits}
-                            />
-                        )}
+                        {user && <SyncCreditsDisplay userId={user.uid} compact onConnect={handleOpenModal} connectDisabled={!hasCredits} />}
                     </View>
                 </View>
 
                 <View style={styles.content}>
                     {loading ? (
                         <View style={styles.loadingContainer}>
-                            <LottieView
-                                source={require('@/assets/carregando.json')}
-                                autoPlay
-                                loop
-                                style={{ width: 50, height: 50 }}
-                            />
+                            <LottieView source={require('@/assets/carregando.json')} autoPlay loop style={{ width: 50, height: 50 }} />
                             <Text style={styles.loadingText}>Carregando contas{loadingDots}</Text>
                         </View>
                     ) : (
                         <ScrollView
                             style={styles.accountsScroll}
                             contentContainerStyle={styles.accountsScrollContent}
-                            refreshControl={
-                                <RefreshControl
-                                    refreshing={refreshing}
-                                    onRefresh={onRefresh}
-                                    tintColor="#D97757"
-                                />
-                            }
+                            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D97757" />}
                         >
                             {accounts.length === 0 ? (
                                 <View style={styles.emptyState}>
-                                    <View style={styles.emptyIconContainer}>
-                                        <Zap size={32} color="#D97757" />
-                                    </View>
+                                    <DelayedLoopLottie source={require('@/assets/banco.json')} style={{ width: 100, height: 100 }} delay={3000} initialDelay={100} jitterRatio={0.2} renderMode="HARDWARE" />
                                     <Text style={styles.emptyTitle}>Nenhuma conta conectada</Text>
-                                    <Text style={styles.emptyText}>
-                                        Conecte suas contas bancárias para usar o poder do Open Finance.
-                                    </Text>
-                                    <TouchableOpacity
-                                        style={styles.emptyButton}
-                                        onPress={handleOpenModal}
-                                    >
-                                        <Text style={styles.emptyButtonText}>Conectar agora</Text>
-                                    </TouchableOpacity>
+                                    <Text style={styles.emptyText}>Conecte suas contas bancárias para usar o poder do Open Finance.</Text>
                                 </View>
                             ) : (
                                 Object.values(groupedAccounts).map((group: any, index) => {
-                                    const groupItemId =
-                                        group.accounts?.[0]?.pluggyItemId ||
-                                        group.accounts?.[0]?.itemId ||
-                                        group.connector?.id ||
-                                        `bank-${index}`;
-
+                                    const groupItemId = group.accounts?.[0]?.pluggyItemId || group.accounts?.[0]?.itemId || group.connector?.id || `bank-${index}`;
                                     return (
                                         <ConnectedBankCard
-                                            key={groupItemId}
+                                            key={`${groupItemId}-${dataRefreshKey}`}
                                             group={group}
                                             onDelete={handleRequestDelete}
                                             onSync={handleSyncBank}
@@ -1712,7 +1687,7 @@ export default function OpenFinanceScreen() {
                     cancelText="Cancelar"
                 />
 
-                <BottomModal
+                <ConnectAccountModal
                     visible={isModalVisible}
                     onClose={handleCloseModal}
                     title={
@@ -1723,590 +1698,158 @@ export default function OpenFinanceScreen() {
                                         connectionStep === 'oauth_pending' ? 'Autorização' :
                                             connectionStep === 'success' ? 'Sucesso!' : 'Erro'
                     }
-                    height={connectionStep === 'banks' ? '85%' : 'auto'}
+                    warningText={
+                        connectionStep === 'connecting' || connectionStep === 'oauth_pending'
+                            ? 'Pode demorar alguns minutos. Não feche o app.'
+                            : undefined
+                    }
+                    connectionStep={connectionStep}
+                    banksCount={filteredConnectors.length}
+                    isBanksLoading={loadingConnectors}
+                    credentialsCount={selectedConnector?.credentials?.length || 0}
                     onBack={connectionStep === 'credentials' ? () => setConnectionStep('banks') : undefined}
-                    rightElement={connectionStep === 'credentials' ? (
-                        <TouchableOpacity
-                            onPress={handleConnect}
-                            disabled={connecting}
-                            style={styles.headerConnectButton}
-                        >
-                            {connecting ? (
-                                <ActivityIndicator size="small" color="#D97757" />
-                            ) : (
-                                <Text style={styles.headerConnectText}>Conectar</Text>
-                            )}
-                        </TouchableOpacity>
-                    ) : undefined}
+                    searchElement={
+                        connectionStep === 'banks' ? (
+                            <View style={styles.searchContainer}>
+                                <Search size={18} color="#666" />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Buscar banco..."
+                                    placeholderTextColor="#666"
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    clearButtonMode="never"
+                                />
+                            </View>
+                        ) : undefined
+                    }
+                    rightElement={
+                        connectionStep === 'info' ? (
+                            <TouchableOpacity onPress={handleStartConnection} style={styles.headerConnectButton}>
+                                <Text style={styles.headerConnectText}>Escolher Banco</Text>
+                            </TouchableOpacity>
+                        ) : connectionStep === 'credentials' ? (
+                            <TouchableOpacity onPress={handleConnect} disabled={connecting} style={styles.headerConnectButton}>
+                                {connecting ? <ActivityIndicator size="small" color="#D97757" /> : <Text style={styles.headerConnectText}>Conectar</Text>}
+                            </TouchableOpacity>
+                        ) : undefined
+                    }
                 >
                     {renderModalContent()}
-                </BottomModal>
+                </ConnectAccountModal>
             </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    mainContainer: {
-        flex: 1,
-        backgroundColor: '#0C0C0C',
-    },
-    container: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        paddingTop: 60,
-        paddingHorizontal: 20,
-        zIndex: 10,
-    },
-    header: {
-        marginBottom: 20,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    title: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#FFFFFF',
-    },
-    connectButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#D97757',
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 20,
-        gap: 6,
-    },
-    connectButtonDisabled: {
-        backgroundColor: '#444',
-        opacity: 0.6,
-    },
-    connectButtonText: {
-        color: '#FFFFFF',
-        fontWeight: '700',
-        fontSize: 14,
-    },
-    headerRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-    },
-    content: {
-        flex: 1,
-    },
-    // Modal styles
-    modalScroll: {
-        // flex: 1, removed for auto-height compatibility
-    },
-    modalContent: {
-        paddingBottom: 20,
-    },
-    sectionHeader: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#8E8E93',
-        marginTop: 10,
-        marginBottom: 8,
-        marginLeft: 4,
-        letterSpacing: 0.5,
-        textTransform: 'uppercase',
-    },
-    sectionCard: {
-        backgroundColor: '#1A1A1A',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#2A2A2A',
-        marginBottom: 10
-    },
-    itemContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#1A1A1A',
-        paddingVertical: 16,
-        paddingHorizontal: 16,
-        position: 'relative',
-    },
-    itemIconContainer: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    itemRightContainer: {
-        flex: 1,
-    },
-    itemContent: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    itemTitle: {
-        fontSize: 16,
-        color: '#FFFFFF',
-        fontWeight: '500',
-    },
-    itemSubtitle: {
-        fontSize: 13,
-        color: '#909090',
-        marginTop: 2,
-    },
-    separator: {
-        height: 1,
-        backgroundColor: '#2A2A2A',
-        width: '100%',
-    },
-    fullSeparator: {
-        height: 1,
-        backgroundColor: '#2A2A2A',
-        width: '100%',
-    },
-
-    // Help Container Style matching Settings
-    helpContainer: {
-        backgroundColor: '#1A1A1A',
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#2A2A2A',
-        marginTop: 4,
-        marginBottom: 20
-    },
-    helpHeaderRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 8
-    },
-    helpTitle: {
-        fontSize: 14,
-        color: '#D97757',
-        fontWeight: '600'
-    },
-    helpText: {
-        fontSize: 13,
-        color: '#CCC',
-        lineHeight: 20
-    },
-
-    actionButton: {
-        backgroundColor: '#D97757',
-        paddingVertical: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginTop: 10,
-    },
-    actionButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    actionButtonDisabled: {
-        opacity: 0.7,
-    },
-    headerConnectButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        padding: 4,
-        paddingHorizontal: 8,
-    },
-    headerConnectText: {
-        color: '#D97757',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-
-    // Banks list styles
-    banksContainer: {
-        flex: 1,
-    },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#1A1A1A',
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#2A2A2A',
-        height: 50,
-    },
-    searchInput: {
-        flex: 1,
-        color: '#FFFFFF',
-        fontSize: 16,
-        paddingVertical: 12,
-        marginLeft: 8,
-    },
-    banksList: {
-        backgroundColor: '#1A1A1A',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#2A2A2A',
-    },
-    connectorsErrorContainer: {
-        backgroundColor: '#1A1A1A',
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#2A2A2A',
-        padding: 16,
-        alignItems: 'center',
-    },
-    connectorsErrorTitle: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-        textAlign: 'center',
-    },
-    connectorsErrorText: {
-        color: '#909090',
-        fontSize: 14,
-        textAlign: 'center',
-        lineHeight: 20,
-        marginTop: 8,
-    },
-    connectorsRetryButton: {
-        backgroundColor: '#D97757',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderRadius: 10,
-        marginTop: 16,
-        alignItems: 'center',
-        width: '100%',
-    },
-    connectorsRetryButtonText: {
-        color: '#FFFFFF',
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    bankListRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 16,
-        backgroundColor: '#1A1A1A',
-    },
-    bankListLogoContainer: {
-        marginRight: 12,
-    },
-    bankListSeparator: {
-        height: 1,
-        backgroundColor: '#2A2A2A',
-        width: '100%',
-    },
-    bankColorStrip: {
-        width: 4,
-        height: 24,
-        borderRadius: 4,
-        marginRight: 16,
-    },
-    bankRowTitle: {
-        flex: 1,
-        fontSize: 16,
-        color: '#FFFFFF',
-        fontWeight: '500',
-    },
-
-    // Credentials styles
-    credentialsContent: {
-        // paddingBottom: 40, removed
-    },
-    backButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 20,
-        gap: 8,
-    },
-    backButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-    },
-    selectedBankInfo: {
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    selectedBankLogo: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        marginBottom: 12,
-        backgroundColor: '#fff',
-    },
-    selectedBankName: {
-        color: '#FFFFFF',
-        fontSize: 20,
-        fontWeight: '600',
-    },
-    credentialInput: {
-        flex: 1,
-        color: '#FFFFFF',
-        fontSize: 16,
-        paddingVertical: 14,
-        paddingRight: 16,
-        textAlign: 'right',
-    },
-    eyeButton: {
-        padding: 14,
-    },
-    securityNote: {
-        color: '#666',
-        fontSize: 12,
-        textAlign: 'center',
-        marginTop: 16,
-    },
-    // Status styles
-    statusContainer: {
-        // flex: 1, removed for auto-height compatibility
-        // justifyContent: 'center', removed
-        alignItems: 'center',
-        padding: 20,
-    },
-    statusIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: 'rgba(217, 119, 87, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    successIcon: {
-        backgroundColor: 'rgba(4, 211, 97, 0.1)',
-    },
-    errorIcon: {
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    },
-    statusTitle: {
-        color: '#FFFFFF',
-        fontSize: 24,
-        fontWeight: '600',
-        marginBottom: 12,
-        textAlign: 'center',
-    },
-    statusText: {
-        color: '#909090',
-        fontSize: 16,
-        textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 24,
-    },
-    progressBarContainer: {
-        width: '100%',
-        height: 6,
-        backgroundColor: '#2A2A2A',
-        borderRadius: 3,
-        marginTop: 20,
-        overflow: 'hidden',
-    },
-    progressBar: {
-        height: '100%',
-        backgroundColor: '#D97757',
-        borderRadius: 3,
-    },
-    progressText: {
-        color: '#909090',
-        fontSize: 14,
-        marginTop: 8,
-    },
-    // Loading & empty states
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 12,
-    },
-    loadingText: {
-        color: '#909090',
-        fontSize: 14,
-    },
-    emptyText: {
-        color: '#909090',
-        textAlign: 'center',
-        marginTop: 40,
-    },
-    // Account list styles
-    accountsScroll: {
-        flex: 1,
-    },
-    accountsScrollContent: {
-        paddingBottom: 20,
-    },
-    emptyState: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 60,
-        padding: 20,
-    },
-    emptyIconContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: 'rgba(217, 119, 87, 0.1)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 16,
-    },
-    emptyTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#FFFFFF',
-        marginBottom: 8,
-    },
-    emptyButton: {
-        backgroundColor: '#30302E',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#40403E',
-    },
-    emptyButtonText: {
-        color: '#FFFFFF',
-        fontWeight: '600',
-    },
-    connectedBankCard: {
-        backgroundColor: '#111111',
-        borderRadius: 22,
-        marginBottom: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#262626',
-    },
-    connectedBankHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 18,
-        backgroundColor: '#111111',
-    },
-    bankHeaderLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-    },
-    bankHeaderRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    statusBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(4, 211, 97, 0.1)',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-    },
-    statusBadgeText: {
-        fontSize: 12,
-        color: '#04D361',
-        fontWeight: '600',
-    },
-    connectorName: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FAFAFA',
-        letterSpacing: -0.3,
-    },
-    connectedBankBody: {
-        padding: 0,
-        backgroundColor: '#0F0F0F',
-    },
-    innerAccountRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 18,
-        borderTopWidth: 1,
-        borderTopColor: '#1A1A1A',
-    },
-    accountRowDivider: {
-        // Handled by borderTop in innerAccountRow
-    },
-    accountRowInfo: {
-        flex: 1,
-    },
-    accountName: {
-        fontSize: 14,
-        color: '#E0E0E0',
-        fontWeight: '500',
-        marginBottom: 3,
-    },
-    accountNumber: {
-        fontSize: 12,
-        color: '#606060',
-        letterSpacing: 0.5,
-    },
-    statusDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#04D361',
-    },
-    syncButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#1A1A1A',
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 100,
-        marginRight: 10,
-        gap: 6,
-        minWidth: 100,
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#262626',
-    },
-    syncButtonDisabled: {
-        opacity: 0.8,
-    },
-    syncButtonSuccess: {
-        backgroundColor: 'rgba(4, 211, 97, 0.15)',
-    },
-    syncButtonError: {
-        backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    },
-    syncButtonText: {
-        color: '#D97757',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    syncProgressContainer: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        backgroundColor: '#1A1A1A',
-        borderTopWidth: 1,
-        borderTopColor: '#2A2A2A',
-    },
-    syncProgressBar: {
-        height: 4,
-        backgroundColor: '#2A2A2A',
-        borderRadius: 2,
-        overflow: 'hidden',
-        marginBottom: 8,
-    },
-    syncProgressFill: {
-        height: '100%',
-        backgroundColor: '#D97757',
-        borderRadius: 2,
-    },
-    syncProgressText: {
-        color: '#909090',
-        fontSize: 12,
-        textAlign: 'center',
-    },
+    mainContainer: { flex: 1, backgroundColor: '#0C0C0C' },
+    container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingTop: 60, paddingHorizontal: 20, zIndex: 10 },
+    header: { marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    title: { fontSize: 24, fontWeight: '700', color: '#FFFFFF' },
+    connectButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#D97757', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, gap: 6 },
+    connectButtonDisabled: { backgroundColor: '#444', opacity: 0.6 },
+    connectButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    content: { flex: 1 },
+    modalScroll: {},
+    modalContent: { padding: 20, paddingBottom: 20 },
+    sectionHeader: { fontSize: 12, fontWeight: '600', color: '#8E8E93', marginTop: 10, marginBottom: 8, marginLeft: 4, letterSpacing: 0.5, textTransform: 'uppercase' },
+    sectionCard: { backgroundColor: '#1A1A1A', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#2A2A2A', marginBottom: 10 },
+    itemContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', paddingVertical: 16, paddingHorizontal: 16, position: 'relative' },
+    itemIconContainer: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    itemRightContainer: { flex: 1 },
+    itemContent: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    itemTitle: { fontSize: 16, color: '#FFFFFF', fontWeight: '500' },
+    itemSubtitle: { fontSize: 13, color: '#909090', marginTop: 2 },
+    separator: { height: 1, backgroundColor: '#2A2A2A', width: '100%' },
+    fullSeparator: { height: 1, backgroundColor: '#2A2A2A', width: '100%' },
+    helpContainer: { backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A', marginTop: 4, marginBottom: 20 },
+    helpHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+    helpTitle: { fontSize: 14, color: '#D97757', fontWeight: '600' },
+    helpText: { fontSize: 13, color: '#CCC', lineHeight: 20 },
+    actionButton: { backgroundColor: '#D97757', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 10 },
+    actionButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+    actionButtonDisabled: { opacity: 0.7 },
+    headerConnectButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 4, paddingHorizontal: 8 },
+    headerConnectText: { color: '#D97757', fontSize: 14, fontWeight: '600' },
+    banksContainer: { flex: 1 },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2A2A2A', height: 48, width: '100%' },
+    searchInput: { flex: 1, color: '#FFFFFF', fontSize: 16, paddingVertical: 12, marginLeft: 8 },
+    banksList: { flexGrow: 1, paddingBottom: 8 },
+    banksListContainer: { margin: 20, marginTop: 10 },
+    banksListContent: { backgroundColor: '#1A1A1A', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#2A2A2A' },
+    connectorsErrorContainer: { backgroundColor: '#1A1A1A', borderRadius: 16, borderWidth: 1, borderColor: '#2A2A2A', padding: 16, alignItems: 'center' },
+    connectorsErrorTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', textAlign: 'center' },
+    connectorsErrorText: { color: '#909090', fontSize: 14, textAlign: 'center', lineHeight: 20, marginTop: 8 },
+    connectorsRetryButton: { backgroundColor: '#D97757', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, marginTop: 16, alignItems: 'center', width: '100%' },
+    connectorsRetryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+    bankListRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16 },
+    bankListLogoContainer: { marginRight: 12 },
+    bankListSeparator: { height: 1, backgroundColor: '#2A2A2A', width: '100%' },
+    bankRowTitle: { flex: 1, fontSize: 16, color: '#FFFFFF', fontWeight: '500' },
+    credentialsContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 },
+    credentialsSectionHeader: { marginTop: 0, marginBottom: 10, marginLeft: 2 },
+    backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 8 },
+    backButtonText: { color: '#FFFFFF', fontSize: 16 },
+    selectedBankInfo: { alignItems: 'center', marginBottom: 24 },
+    selectedBankLogo: { width: 64, height: 64, borderRadius: 32, marginBottom: 12, backgroundColor: '#fff' },
+    selectedBankName: { color: '#FFFFFF', fontSize: 20, fontWeight: '600' },
+    credentialInputContainer: { marginLeft: 'auto', flex: 1, minWidth: 0, paddingLeft: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
+    credentialInput: { flex: 1, color: '#FFFFFF', fontSize: 15, paddingVertical: 0, paddingRight: 0, textAlign: 'left' },
+    credentialCpfInput: { textAlign: 'right' },
+    credentialItemContainer: { paddingVertical: 14 },
+    credentialItemContent: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    credentialLabel: { flexShrink: 1 },
+    documentSwitchCard: { backgroundColor: '#1A1A1A', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#2A2A2A', marginTop: 16 },
+    documentSwitchContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, paddingHorizontal: 16 },
+    documentSwitchLabel: { fontSize: 16, color: '#FFFFFF', fontWeight: '500' },
+    eyeButton: { padding: 14 },
+    securityNote: { color: '#666', fontSize: 12, textAlign: 'center', marginTop: 16 },
+    statusContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, minHeight: 400 },
+    statusIconContainer: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+    successIcon: { backgroundColor: 'rgba(4, 211, 97, 0.1)' },
+    errorIcon: { backgroundColor: 'rgba(239, 68, 68, 0.1)' },
+    statusTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '600', marginBottom: 12, textAlign: 'center' },
+    statusSubtitle: { color: '#EF4444', fontSize: 14, fontWeight: '500', marginBottom: 12, textAlign: 'center' },
+    statusText: { color: '#909090', fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 24 },
+    progressBarContainer: { width: '100%', height: 6, backgroundColor: '#2A2A2A', borderRadius: 3, marginTop: 20, overflow: 'hidden' },
+    progressBar: { height: '100%', backgroundColor: '#D97757', borderRadius: 3 },
+    progressText: { color: '#909090', fontSize: 14, marginTop: 8 },
+    stepContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', padding: 14, borderRadius: 12, marginTop: 24, width: '100%', borderWidth: 1, borderColor: '#2A2A2A' },
+    stepText: { color: '#E0E0E0', fontSize: 14, fontWeight: '500', flex: 1 },
+    sseText: { color: '#909090', fontSize: 12, marginTop: 16, textAlign: 'center' },
+    warningTextSimple: { color: '#FF9F0A', fontSize: 13, marginTop: 8, marginBottom: 4, textAlign: 'center' },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+    loadingText: { color: '#909090', fontSize: 14 },
+    emptyText: { color: '#888', textAlign: 'center', fontSize: 14, lineHeight: 20, maxWidth: 280 },
+    accountsScroll: { flex: 1 },
+    accountsScrollContent: { paddingBottom: 20 },
+    emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 80, paddingHorizontal: 40 },
+    emptyTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginTop: 20, marginBottom: 8, textAlign: 'center' },
+    emptyButton: { backgroundColor: '#D97757', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 20, marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    emptyButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
+    connectedBankCard: { backgroundColor: '#111111', borderRadius: 22, marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#262626' },
+    connectedBankHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 18, backgroundColor: '#111111' },
+    bankHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    bankHeaderRight: { flexDirection: 'row', alignItems: 'center' },
+    statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(4, 211, 97, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+    statusBadgeText: { fontSize: 12, color: '#04D361', fontWeight: '600' },
+    connectorName: { fontSize: 16, fontWeight: '600', color: '#FAFAFA', letterSpacing: -0.3 },
+    connectedBankBody: { padding: 0, backgroundColor: '#0F0F0F' },
+    innerAccountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: '#1A1A1A' },
+    accountRowDivider: {},
+    accountRowInfo: { flex: 1 },
+    accountName: { fontSize: 14, color: '#E0E0E0', fontWeight: '500', marginBottom: 3 },
+    accountNumber: { fontSize: 12, color: '#606060', letterSpacing: 0.5 },
+    statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#04D361' },
+    syncButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 100, marginRight: 10, gap: 6, minWidth: 100, justifyContent: 'center', borderWidth: 1, borderColor: '#262626' },
+    syncButtonDisabled: { opacity: 0.8 },
+    syncButtonSuccess: { backgroundColor: 'rgba(4, 211, 97, 0.15)' },
+    syncButtonError: { backgroundColor: 'rgba(239, 68, 68, 0.15)' },
+    syncButtonText: { color: '#D97757', fontSize: 12, fontWeight: '600' },
+    syncProgressContainer: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#1A1A1A', borderTopWidth: 1, borderTopColor: '#2A2A2A' },
+    syncProgressBar: { height: 4, backgroundColor: '#2A2A2A', borderRadius: 2, overflow: 'hidden', marginBottom: 8 },
+    syncProgressFill: { height: '100%', backgroundColor: '#D97757', borderRadius: 2 },
+    syncProgressText: { color: '#909090', fontSize: 12, textAlign: 'center' },
 });
-
-
-

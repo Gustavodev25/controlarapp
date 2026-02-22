@@ -33,7 +33,6 @@ import {
     Check,
     Clapperboard,
     Coffee,
-    CreditCard,
     DollarSign,
     Dumbbell,
     Fuel,
@@ -509,6 +508,7 @@ interface CreditCardInvoiceProps {
     onLoadMoreHistory?: () => Promise<void> | void;
     hasMoreHistory?: boolean;
     loadingMoreHistory?: boolean;
+    onNavigateToOpenFinance?: () => void;
 }
 
 // Removed local categoryTranslations and translateCategory in favor of useCategories hook
@@ -920,11 +920,13 @@ export function CreditCardInvoice({
     refreshing = false,
     onLoadMoreHistory,
     hasMoreHistory = false,
-    loadingMoreHistory = false
+    loadingMoreHistory = false,
+    onNavigateToOpenFinance
 }: CreditCardInvoiceProps) {
     const { getCategoryName } = useCategories();
     const { lod } = usePerformanceBudget();
     const [selectedTab, setSelectedTab] = useState<InvoiceTab>('current');
+    const [invoiceData, setInvoiceData] = useState<InvoiceBuildResult | null>(null);
 
     // Sync with Firestore
     useEffect(() => {
@@ -1003,44 +1005,166 @@ export function CreditCardInvoice({
         setTransactionOptionsVisible(true);
     }, []);
 
+    const normalizeIsoDate = useCallback((rawDate: string): string | null => {
+        if (!rawDate) return null;
+        const candidate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
+        const parts = candidate.split('-');
+        if (parts.length !== 3) return null;
+
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+
+        const parsed = new Date(year, month - 1, day, 12, 0, 0);
+        if (
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== month - 1 ||
+            parsed.getDate() !== day
+        ) {
+            return null;
+        }
+
+        const y = String(year).padStart(4, '0');
+        const m = String(month).padStart(2, '0');
+        const d = String(day).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }, []);
+
+    const parseCustomDateToIso = useCallback((rawDate: string): string | null => {
+        if (!rawDate) return null;
+        const parts = rawDate.split('/');
+        if (parts.length !== 3) return null;
+
+        const day = Number(parts[0]);
+        const month = Number(parts[1]);
+        const year = Number(parts[2]);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+
+        const parsed = new Date(year, month - 1, day, 12, 0, 0);
+        if (
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== month - 1 ||
+            parsed.getDate() !== day
+        ) {
+            return null;
+        }
+
+        const y = String(year).padStart(4, '0');
+        const m = String(month).padStart(2, '0');
+        const d = String(day).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }, []);
+
+    const shiftMonthKey = useCallback((monthKey: string, deltaMonths: number): string | null => {
+        const parts = monthKey.split('-');
+        if (parts.length !== 2) return null;
+
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+
+        const shifted = new Date(year, month - 1, 1, 12, 0, 0);
+        shifted.setMonth(shifted.getMonth() + deltaMonths);
+
+        const y = shifted.getFullYear();
+        const m = String(shifted.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+    }, []);
+
+    const getSelectedTabMonthKey = useCallback((): string | null => {
+        if (!invoiceData) return null;
+
+        if (selectedTab === 'last') return invoiceData.periods.lastMonthKey;
+        if (selectedTab === 'current') return invoiceData.periods.currentMonthKey;
+        if (selectedTab.startsWith('future_')) {
+            const futureIndex = parseInt(selectedTab.split('_')[1], 10);
+            if (!Number.isNaN(futureIndex) && futureIndex >= 0) {
+                return invoiceData.futureInvoices[futureIndex]?.referenceMonth ?? null;
+            }
+        }
+
+        return null;
+    }, [invoiceData, selectedTab]);
+
     const handleMoveTransaction = useCallback(async (target: 'prev' | 'next' | 'current' | 'custom', customDate?: string) => {
         if (!selectedTransactionForOptions) return;
+        if (selectedTransactionForOptions.isProjected) {
+            console.warn('[CreditCardInvoice] Cannot move projected transaction:', selectedTransactionForOptions.id);
+            return;
+        }
 
-        let newDate = selectedTransactionForOptions.date;
-
-        if (target === 'custom' && customDate) {
-            const parts = customDate.split('/');
-            newDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-        } else if (target === 'next') {
-            const d = new Date(newDate + 'T12:00:00');
-            d.setMonth(d.getMonth() + 1);
-            newDate = d.toISOString().split('T')[0];
-        } else if (target === 'prev') {
-            const d = new Date(newDate + 'T12:00:00');
-            d.setMonth(d.getMonth() - 1);
-            newDate = d.toISOString().split('T')[0];
+        const normalizedCurrentDate = normalizeIsoDate(selectedTransactionForOptions.date);
+        if (!normalizedCurrentDate) {
+            console.error('[CreditCardInvoice] Invalid transaction date for move:', selectedTransactionForOptions.date);
+            return;
         }
 
         try {
-            // Calcular nova chave de mês
-            const [y, m] = newDate.split('-');
-            const newKey = `${y}-${m}`;
+            const updateData: {
+                date?: string;
+                invoiceMonthKey?: string;
+                invoiceMonthKeyManual?: boolean;
+                manualInvoiceMonth?: string;
+            } = {};
 
-            await databaseService.updateCreditCardTransaction(
+            if (target === 'custom') {
+                const customIsoDate = customDate ? parseCustomDateToIso(customDate) : null;
+                if (!customIsoDate) {
+                    console.error('[CreditCardInvoice] Invalid custom date for move:', customDate);
+                    return;
+                }
+
+                updateData.date = customIsoDate;
+                updateData.invoiceMonthKey = customIsoDate.slice(0, 7);
+                updateData.invoiceMonthKeyManual = false;
+                // Compatibilidade: remover manualInvoiceMonth quando não é manual
+                updateData.manualInvoiceMonth = undefined;
+            } else if (target === 'next' || target === 'prev') {
+                const selectedTabMonthKey = getSelectedTabMonthKey();
+                const baseMonthKey = selectedTabMonthKey || normalizedCurrentDate.slice(0, 7);
+                const shiftedMonthKey = shiftMonthKey(baseMonthKey, target === 'next' ? 1 : -1);
+
+                if (!shiftedMonthKey) {
+                    console.error('[CreditCardInvoice] Invalid month key for move:', baseMonthKey);
+                    return;
+                }
+
+                // Keep purchase date unchanged and override only invoice assignment.
+                updateData.invoiceMonthKey = shiftedMonthKey;
+                updateData.invoiceMonthKeyManual = true;
+                // Compatibilidade: salvar também no formato do web
+                updateData.manualInvoiceMonth = shiftedMonthKey;
+            } else {
+                // "current" clears manual override and falls back to date-based classification.
+                updateData.invoiceMonthKey = normalizedCurrentDate.slice(0, 7);
+                updateData.invoiceMonthKeyManual = false;
+                // Compatibilidade: remover manualInvoiceMonth quando não é manual
+                updateData.manualInvoiceMonth = undefined;
+            }
+
+            const result = await databaseService.updateCreditCardTransaction(
                 userId,
                 selectedTransactionForOptions.id,
-                {
-                    date: newDate,
-                    invoiceMonthKey: newKey,
-                    invoiceMonthKeyManual: true
-                }
+                updateData
             );
+            if (!result?.success) {
+                throw new Error(result?.error || 'Failed to update credit card transaction');
+            }
 
             if (onRefresh) await onRefresh();
         } catch (error) {
             console.error('Error moving transaction:', error);
         }
-    }, [selectedTransactionForOptions, userId, onRefresh]);
+    }, [
+        selectedTransactionForOptions,
+        normalizeIsoDate,
+        parseCustomDateToIso,
+        getSelectedTabMonthKey,
+        shiftMonthKey,
+        userId,
+        onRefresh
+    ]);
 
     const handleApplyFilters = (newFilters: FilterState) => {
         // Trigger LayoutAnimation for smooth transition
@@ -1195,7 +1319,6 @@ export function CreditCardInvoice({
         return filteredTransactions.slice(0, Math.min(filteredTransactions.length, MAX_INVOICE_COMPUTE_ITEMS));
     }, [filteredTransactions]);
 
-    const [invoiceData, setInvoiceData] = useState<InvoiceBuildResult | null>(null);
     const buildRunIdRef = useRef(0);
 
     useEffect(() => {
@@ -1495,9 +1618,26 @@ export function CreditCardInvoice({
 
     if (creditCards.length === 0) return (
         <View style={styles.emptyState}>
-            <View style={styles.emptyIconContainer}><CreditCard size={32} color="#D97757" /></View>
+            <View style={styles.emptyIconContainer}>
+                <DelayedLoopLottie
+                    source={require('@/assets/cartabranco.json')}
+                    style={{ width: 80, height: 80 }}
+                    delay={3000}
+                    initialDelay={100}
+                    jitterRatio={0.2}
+                    renderMode="HARDWARE"
+                />
+            </View>
             <Text style={styles.emptyTitle}>Nenhum cartão conectado</Text>
             <Text style={styles.emptyText}>Conecte seu cartão de crédito via Open Finance para visualizar suas faturas.</Text>
+            
+            <TouchableOpacity
+                style={styles.connectButton}
+                onPress={onNavigateToOpenFinance}
+                activeOpacity={0.8}
+            >
+                <Text style={styles.connectButtonText}>Conectar Conta</Text>
+            </TouchableOpacity>
         </View>
     );
 
@@ -1982,9 +2122,21 @@ const styles = StyleSheet.create({
     expandAmountContainer: { marginTop: 18, alignItems: 'flex-end' },
     expandAmount: { fontSize: 22, fontWeight: '700' },
     emptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingHorizontal: 20 },
-    emptyIconContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(217, 119, 87, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+    emptyIconContainer: { justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     emptyTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 8 },
-    emptyText: { fontSize: 14, color: '#909090', textAlign: 'center', maxWidth: 280, lineHeight: 20 },
+    emptyText: { fontSize: 14, color: '#909090', textAlign: 'center', maxWidth: 280, lineHeight: 20, marginBottom: 24 },
+    connectButton: { 
+        backgroundColor: '#D97757', 
+        paddingHorizontal: 16, 
+        paddingVertical: 8, 
+        borderRadius: 20, 
+        marginTop: 8 
+    },
+    connectButtonText: { 
+        color: '#FFFFFF', 
+        fontSize: 14, 
+        fontWeight: '600' 
+    },
     emptyListState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
     emptyListTitle: { fontSize: 16, fontWeight: '600', color: '#666', marginTop: 12 },
     emptyListText: { fontSize: 13, color: '#555', marginTop: 4 },

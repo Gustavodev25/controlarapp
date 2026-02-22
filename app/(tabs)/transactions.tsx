@@ -1,8 +1,8 @@
 import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
 import { CreditCardSettingsModal } from '@/components/CreditCardSettingsModal';
-import { OfflineWarningCard } from '@/components/OfflineWarningCard';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { WalletStackSelector } from '@/components/WalletStackSelector';
+import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useCategories } from '@/hooks/use-categories';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
@@ -13,7 +13,8 @@ import {
     dedupeTransactionsBySourceId,
     mergeSortedTransactions
 } from '@/utils/transactionsMerge';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, getDocs, limit, orderBy, query, QueryDocumentSnapshot, startAfter } from 'firebase/firestore';
 import LottieView from 'lottie-react-native';
 import {
@@ -24,7 +25,6 @@ import {
     Cat,
     Clapperboard,
     Coffee,
-    CreditCard,
     DollarSign,
     Dumbbell,
     Filter,
@@ -44,7 +44,6 @@ import {
     Smartphone,
     Stethoscope,
     Utensils,
-    Wallet,
     Wifi,
     Zap
 } from 'lucide-react-native';
@@ -254,6 +253,7 @@ const TransactionItem = React.memo(({
 TransactionItem.displayName = 'TransactionsScreenItem';
 
 export default function TransactionsScreen() {
+    const router = useRouter();
     const { user } = useAuthContext();
     const { filter } = useLocalSearchParams<{ filter: string }>();
     const { getCategoryName } = useCategories();
@@ -352,7 +352,13 @@ export default function TransactionsScreen() {
 
     // Filtrar transações
     const filteredTransactions = useMemo(() => {
-        if (activeFilterCount === 0) return transactions;
+        // Primeiro, remover estornos de todas as transações
+        const transactionsWithoutRefunds = transactions.filter(item => {
+            const isRefund = (item as any).isRefund || item.category === 'Refund';
+            return !isRefund;
+        });
+
+        if (activeFilterCount === 0) return transactionsWithoutRefunds;
 
         const parseFilterDate = (d: string) => {
             const parts = d.split('/');
@@ -364,7 +370,7 @@ export default function TransactionsScreen() {
         const startIso = parseFilterDate(filters.startDate);
         const endIso = parseFilterDate(filters.endDate);
 
-        return transactions.filter(item => {
+        return transactionsWithoutRefunds.filter(item => {
             let matches = true;
 
             // Search
@@ -631,6 +637,23 @@ export default function TransactionsScreen() {
         }
     }, [user, filter]);
 
+    // Refresh data when screen comes into focus (e.g., after connecting a bank)
+    useFocusEffect(
+        useCallback(() => {
+            if (user) {
+                // Silently refresh without showing loading state
+                setLastCheckingDoc(null);
+                setLastCreditDoc(null);
+                setHasMoreChecking(true);
+                setHasMoreCredit(true);
+                fetchTransactions(false);
+                if (isCredit) {
+                    fetchCreditAccounts();
+                }
+            }
+        }, [user, filter, isCredit])
+    );
+
     const handleSettingsSave = () => {
         fetchCreditAccounts();
         fetchTransactions();
@@ -685,43 +708,48 @@ export default function TransactionsScreen() {
             />
 
             <View style={styles.container}>
-                <View style={styles.header}>
-                    <Text style={styles.title}>Transações</Text>
-                    <View style={styles.headerButtons}>
-                        <TouchableOpacity
-                            style={[
-                                styles.filterButton,
-                                activeFilterCount > 0 && styles.filterButtonActive
-                            ]}
-                            onPress={() => setFilterModalVisible(true)}
-                        >
-                            <Filter size={18} color={activeFilterCount > 0 ? '#D97757' : '#888'} />
-                            {activeFilterCount > 0 && (
-                                <View style={styles.filterBadge}>
-                                    <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                        {isCredit && (
-                            <TouchableOpacity
-                                style={styles.settingsButton}
-                                onPress={() => setSettingsVisible(true)}
-                            >
-                                <Settings size={18} color="#888" />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
+                {/* Mostrar header apenas se tiver transações ou filtros ativos */}
+                {(filteredTransactions.length > 0 || activeFilterCount > 0 || loading || (isCredit && loadingAccount)) && (
+                    <>
+                        <View style={styles.header}>
+                            <Text style={styles.title}>Transações</Text>
+                            <View style={styles.headerButtons}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.filterButton,
+                                        activeFilterCount > 0 && styles.filterButtonActive
+                                    ]}
+                                    onPress={() => setFilterModalVisible(true)}
+                                >
+                                    <Filter size={18} color={activeFilterCount > 0 ? '#D97757' : '#888'} />
+                                    {activeFilterCount > 0 && (
+                                        <View style={styles.filterBadge}>
+                                            <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                                {isCredit && (
+                                    <TouchableOpacity
+                                        style={styles.settingsButton}
+                                        onPress={() => setSettingsVisible(true)}
+                                    >
+                                        <Settings size={18} color="#888" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </View>
 
-                {isCredit && creditAccounts.length > 0 && (
-                    <WalletStackSelector
-                        cards={creditAccounts}
-                        selectedCardId={selectedCardId}
-                        onSelectCard={setSelectedCardId}
-                    />
+                        {isCredit && creditAccounts.length > 0 && (
+                            <WalletStackSelector
+                                cards={creditAccounts}
+                                selectedCardId={selectedCardId}
+                                onSelectCard={setSelectedCardId}
+                            />
+                        )}
+                    </>
                 )}
 
-                <OfflineWarningCard style={{ marginBottom: 8 }} />
+
 
                 <View style={styles.content}>
                     {loading || (isCredit && loadingAccount) ? (
@@ -737,12 +765,27 @@ export default function TransactionsScreen() {
                     ) : isCredit && !hasSettings ? (
                         <View style={styles.emptyState}>
                             <View style={styles.emptyIconContainer}>
-                                <CreditCard size={32} color="#D97757" />
+                                <DelayedLoopLottie
+                                    source={require('@/assets/cartabranco.json')}
+                                    style={{ width: 80, height: 80 }}
+                                    delay={3000}
+                                    initialDelay={100}
+                                    jitterRatio={0.2}
+                                    renderMode="HARDWARE"
+                                />
                             </View>
                             <Text style={styles.emptyTitle}>Configure seu Cartão</Text>
                             <Text style={styles.emptyText}>
                                 Para visualizar as transações e o ciclo da fatura, configure as datas de fechamento.
                             </Text>
+                            
+                            <TouchableOpacity
+                                style={styles.connectButton}
+                                onPress={() => router.push('/(tabs)/open-finance')}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.connectButtonText}>Conectar Conta</Text>
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         <SectionList
@@ -785,7 +828,14 @@ export default function TransactionsScreen() {
                             ListEmptyComponent={
                                 <View style={styles.emptyState}>
                                     <View style={styles.emptyIconContainer}>
-                                        <Wallet size={32} color="#D97757" />
+                                        <DelayedLoopLottie
+                                            source={require('@/assets/carteirabranca.json')}
+                                            style={{ width: 80, height: 80 }}
+                                            delay={3000}
+                                            initialDelay={100}
+                                            jitterRatio={0.2}
+                                            renderMode="HARDWARE"
+                                        />
                                     </View>
                                     <Text style={styles.emptyTitle}>
                                         {activeFilterCount > 0 ? 'Nenhum resultado' : 'Nenhuma transação'}
@@ -795,6 +845,16 @@ export default function TransactionsScreen() {
                                             ? 'Tente ajustar os filtros para encontrar transações.'
                                             : 'Suas movimentações financeiras aparecerão aqui.'}
                                     </Text>
+                                    
+                                    {activeFilterCount === 0 && (
+                                        <TouchableOpacity
+                                            style={styles.connectButton}
+                                            onPress={() => router.push('/(tabs)/open-finance')}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text style={styles.connectButtonText}>Conectar Conta</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             }
                         />
@@ -1017,10 +1077,6 @@ const styles = StyleSheet.create({
         paddingTop: 80,
     },
     emptyIconContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: 'rgba(217, 119, 87, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
@@ -1037,6 +1093,19 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         maxWidth: 250,
         lineHeight: 20,
+        marginBottom: 24,
+    },
+    connectButton: { 
+        backgroundColor: '#D97757', 
+        paddingHorizontal: 16, 
+        paddingVertical: 8, 
+        borderRadius: 20, 
+        marginTop: 8 
+    },
+    connectButtonText: { 
+        color: '#FFFFFF', 
+        fontSize: 14, 
+        fontWeight: '600' 
     },
 });
 

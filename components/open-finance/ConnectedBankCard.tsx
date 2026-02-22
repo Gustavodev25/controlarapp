@@ -447,7 +447,13 @@ export const ConnectedBankCard = ({
                                 const isVisible = !(hiddenAccountIds || []).includes(acc.id);
 
                                 return (
-                                    <View key={acc.id} style={styles.accountRowContainer}>
+                                    <View 
+                                        key={acc.id} 
+                                        style={[
+                                            styles.accountRowContainer,
+                                            i === group.accounts.length - 1 && { marginBottom: 0 }
+                                        ]}
+                                    >
                                         <View style={styles.accountRow}>
                                             <View style={styles.accountIconContainer}>
                                                 <View style={[
@@ -562,31 +568,26 @@ const styles = StyleSheet.create({
     },
     accountsGroup: {
         marginTop: 12,
-        marginBottom: 12,
+        marginBottom: 0,
         marginHorizontal: 12,
-        borderRadius: 12,
-        backgroundColor: '#141414',
-        borderWidth: 1,
-        borderColor: '#262626',
-        overflow: 'hidden',
+        paddingBottom: 12,
     },
     accountRowContainer: {
         position: 'relative',
+        marginBottom: 8,
     },
     accountRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 10,
+        paddingVertical: 12,
         paddingHorizontal: 12,
-        backgroundColor: 'transparent',
+        backgroundColor: '#141414',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#262626',
     },
     accountSeparator: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 1,
-        backgroundColor: '#262626',
+        display: 'none',
     },
     accountIconContainer: {
         marginRight: 10,

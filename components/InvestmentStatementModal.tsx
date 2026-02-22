@@ -2,17 +2,18 @@ import { BottomModal } from '@/components/ui/BottomModal';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { databaseService } from '@/services/firebase';
 import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface Transaction {
     id: string;
     amount: number;
-    type: 'deposit' | 'withdraw';
-    date: string;
-    createdAt: any;
+    type: string;
+    date?: string;
+    createdAt?: any;
     description?: string;
     source?: string;
+    category?: string;
 }
 
 interface InvestmentStatementModalProps {
@@ -31,21 +32,39 @@ export function InvestmentStatementModal({
     const { user } = useAuthContext();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
+    const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
-    useEffect(() => {
-        if (visible && user && investmentId) {
-            loadTransactions();
-        }
-    }, [visible, user, investmentId]);
-
-    const loadTransactions = async () => {
+    const loadTransactions = useCallback(async () => {
         if (!user) return;
         setLoading(true);
         const result = await databaseService.getInvestmentTransactions(user.uid, investmentId);
         if (result.success) {
             setTransactions(result.data as Transaction[]);
+        } else {
+            setTransactions([]);
         }
         setLoading(false);
+    }, [investmentId, user]);
+
+    useEffect(() => {
+        if (visible && user && investmentId) {
+            loadTransactions();
+        }
+    }, [visible, user, investmentId, loadTransactions]);
+
+    const getNormalizedType = (item: Transaction): 'deposit' | 'withdraw' => {
+        const normalized = String(item.type || '').trim().toLowerCase();
+        const depositTokens = ['deposit', 'deposito', 'aplicacao', 'aporte', 'entrada', 'income', 'credit', 'credito', 'guardar'];
+        const withdrawTokens = ['withdraw', 'withdrawal', 'resgate', 'retirada', 'saque', 'saida', 'expense', 'debit', 'debito'];
+
+        if (depositTokens.some(token => normalized.includes(token))) {
+            return 'deposit';
+        }
+        if (withdrawTokens.some(token => normalized.includes(token))) {
+            return 'withdraw';
+        }
+
+        return Number(item.amount || 0) >= 0 ? 'deposit' : 'withdraw';
     };
 
     const formatDate = (dateString: string, createdAt?: any) => {
@@ -81,13 +100,18 @@ export function InvestmentStatementModal({
     };
 
     const renderTransaction = (item: Transaction, index: number, isLast: boolean) => {
-        const isDeposit = item.type === 'deposit';
+        const normalizedType = getNormalizedType(item);
+        const isDeposit = normalizedType === 'deposit';
         const color = isDeposit ? '#04D361' : '#FF453A';
         const Icon = isDeposit ? ArrowUpCircle : ArrowDownCircle;
-        const title = item.description || (isDeposit ? 'Aplicação' : 'Resgate');
+        const title = item.description || item.category || (isDeposit ? 'Aplicacao' : 'Resgate');
+        const dateLabel = formatDate(item.date || '', item.createdAt);
+        const sourceLabel = item.source ? String(item.source).trim() : '';
+        const subtitle = sourceLabel ? `${dateLabel} - ${sourceLabel}` : dateLabel;
+        const amount = Math.abs(Number(item.amount || 0));
 
         return (
-            <View key={item.id} style={styles.itemContainer}>
+            <View key={`${item.id}_${index}`} style={styles.itemContainer}>
                 <View style={[styles.itemIconContainer, { backgroundColor: isDeposit ? 'rgba(4, 211, 97, 0.1)' : 'rgba(255, 69, 58, 0.1)' }]}>
                     <Icon size={20} color={color} />
                 </View>
@@ -95,10 +119,10 @@ export function InvestmentStatementModal({
                     <View style={styles.itemContent}>
                         <View style={{ flex: 1, marginRight: 8 }}>
                             <Text style={styles.itemTitle} numberOfLines={1}>{title}</Text>
-                            <Text style={styles.itemSubtitle}>{formatDate(item.date, item.createdAt)}</Text>
+                            <Text style={styles.itemSubtitle}>{subtitle}</Text>
                         </View>
                         <Text style={[styles.itemAmount, { color }]}>
-                            {isDeposit ? '+' : '-'} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.amount)}
+                            {isDeposit ? '+' : '-'} {currencyFormatter.format(amount)}
                         </Text>
                     </View>
                 </View>
@@ -111,7 +135,7 @@ export function InvestmentStatementModal({
         <BottomModal
             visible={visible}
             onClose={onClose}
-            title={`Extrato`}
+            title={`Extrato - ${investmentName}`}
             height="60%"
         >
             <View style={styles.container}>
@@ -121,7 +145,6 @@ export function InvestmentStatementModal({
                     </View>
                 ) : transactions.length > 0 ? (
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        {/* Card de transações agrupadas */}
                         <View style={styles.sectionCard}>
                             {transactions.map((item, index) =>
                                 renderTransaction(item, index, index === transactions.length - 1)
@@ -130,8 +153,8 @@ export function InvestmentStatementModal({
                     </ScrollView>
                 ) : (
                     <View style={styles.centerContainer}>
-                        <Text style={styles.emptyTitle}>Nenhuma movimentação</Text>
-                        <Text style={styles.emptyText}>As movimentações aparecerão aqui.</Text>
+                        <Text style={styles.emptyTitle}>Nenhuma movimentacao</Text>
+                        <Text style={styles.emptyText}>As movimentacoes aparecerao aqui.</Text>
                     </View>
                 )}
             </View>
@@ -150,7 +173,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
     },
-    // Section Card (grouped items)
     sectionCard: {
         backgroundColor: '#1A1A1A',
         borderRadius: 16,
@@ -204,7 +226,6 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#2A2A2A',
     },
-    // Empty state
     emptyTitle: {
         fontSize: 18,
         fontWeight: '600',

@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import { Children, isValidElement } from "react";
 import { Dimensions } from "react-native";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -17,7 +18,37 @@ export function triggerHaptic() {
 }
 
 export function isScrollableList(element: any): boolean {
-    if (!element) return false;
-    const name = element?.type?.name || element?.type?.displayName;
-    return name === "ScrollView" || name === "FlatList" || name === "SectionList";
+    if (!isValidElement(element)) return false;
+
+    const elementType = (element as any)?.type;
+    const name = elementType?.displayName || elementType?.name || "";
+    if (
+        name === "ScrollView" ||
+        name === "FlatList" ||
+        name === "SectionList" ||
+        name === "VirtualizedList"
+    ) {
+        return true;
+    }
+
+    // Fallback para listas virtualizadas embrulhadas por HOCs/animated wrappers.
+    const props = element.props as any;
+    if (typeof props?.renderItem === "function" && props?.data !== undefined) {
+        return true;
+    }
+    if (typeof props?.getItem === "function" && typeof props?.getItemCount === "function") {
+        return true;
+    }
+
+    return false;
+}
+
+export function hasScrollableListDescendant(element: any): boolean {
+    if (!isValidElement(element)) return false;
+    if (isScrollableList(element)) return true;
+
+    const children = (element.props as any)?.children;
+    if (!children) return false;
+
+    return Children.toArray(children).some(hasScrollableListDescendant);
 }

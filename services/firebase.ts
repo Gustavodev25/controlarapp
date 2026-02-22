@@ -61,6 +61,18 @@ const normalizeConnectorForStorage = (connector: any) => {
     };
 };
 
+const deleteDocRefsInChunks = async (docRefs: any[], chunkSize: number = 200): Promise<number> => {
+    let deleted = 0;
+
+    for (let i = 0; i < docRefs.length; i += chunkSize) {
+        const chunk = docRefs.slice(i, i + chunkSize);
+        await Promise.all(chunk.map((docRef) => deleteDoc(docRef)));
+        deleted += chunk.length;
+    }
+
+    return deleted;
+};
+
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trial', 'trialing']);
 
 const normalizeSubscriptionStatus = (status: any): string => {
@@ -102,6 +114,10 @@ const parseComparableDate = (value: any): number => {
         return Number.isNaN(value.getTime()) ? 0 : value.getTime();
     }
 
+    if (typeof value === 'object' && Number.isFinite(value?.seconds)) {
+        return Number(value.seconds) * 1000;
+    }
+
     if (typeof value === 'number' && Number.isFinite(value)) {
         return value;
     }
@@ -117,6 +133,286 @@ const parseComparableDate = (value: any): number => {
 
     const parsed = new Date(asString);
     return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+};
+
+const toNonEmptyString = (value: any): string | null => {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed ? trimmed : null;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return String(value);
+    }
+    return null;
+};
+
+const parseMoneyLikeValue = (value: any): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    const sanitized = trimmed.replace(/[^\d,.-]/g, '');
+    if (!sanitized) {
+        return null;
+    }
+
+    let normalized = sanitized;
+    const lastComma = normalized.lastIndexOf(',');
+    const lastDot = normalized.lastIndexOf('.');
+
+    if (lastComma > -1 && lastDot > -1) {
+        if (lastComma > lastDot) {
+            normalized = normalized.replace(/\./g, '').replace(',', '.');
+        } else {
+            normalized = normalized.replace(/,/g, '');
+        }
+    } else if (lastComma > -1) {
+        normalized = normalized.replace(',', '.');
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const resolveInvestmentRawAmount = (item: Record<string, any>): number => {
+    const candidates = [
+        item.amount,
+        item.value,
+        item.valor,
+        item.transactionAmount,
+        item.movementAmount,
+        item.total,
+        item.balanceChange
+    ];
+
+    for (const candidate of candidates) {
+        const parsed = parseMoneyLikeValue(candidate);
+        if (parsed !== null) {
+            return parsed;
+        }
+    }
+
+    return 0;
+};
+
+const INVESTMENT_DEPOSIT_TOKENS = [
+    'deposit',
+    'deposito',
+    'aplicacao',
+    'aporte',
+    'entrada',
+    'income',
+    'credit',
+    'credito',
+    'inflow',
+    'guardar',
+    'save'
+];
+
+const INVESTMENT_WITHDRAW_TOKENS = [
+    'withdraw',
+    'withdrawal',
+    'resgate',
+    'saque',
+    'retirada',
+    'saida',
+    'expense',
+    'debit',
+    'debito',
+    'outflow',
+    'remove'
+];
+
+const resolveInvestmentMovementType = (
+    item: Record<string, any>,
+    rawAmount: number
+): 'deposit' | 'withdraw' => {
+    const typeCandidates = [
+        item.type,
+        item.kind,
+        item.transactionType,
+        item.movementType,
+        item.operationType,
+        item.direction,
+        item.nature
+    ];
+
+    for (const typeCandidate of typeCandidates) {
+        const normalized = toNonEmptyString(typeCandidate)?.toLowerCase();
+        if (!normalized) continue;
+
+        if (INVESTMENT_DEPOSIT_TOKENS.some(token => normalized.includes(token))) {
+            return 'deposit';
+        }
+        if (INVESTMENT_WITHDRAW_TOKENS.some(token => normalized.includes(token))) {
+            return 'withdraw';
+        }
+    }
+
+    return rawAmount >= 0 ? 'deposit' : 'withdraw';
+};
+
+const resolveInvestmentDescription = (item: Record<string, any>): string | undefined => {
+    const descriptionCandidates = [
+        item.description,
+        item.descriptionRaw,
+        item.title,
+        item.label,
+        item.name,
+        item.note,
+        item.notes,
+        item.memo,
+        item.details
+    ];
+
+    for (const candidate of descriptionCandidates) {
+        const value = toNonEmptyString(candidate);
+        if (value) return value;
+    }
+
+    return undefined;
+};
+
+const resolveInvestmentSource = (item: Record<string, any>): string | undefined => {
+    const sourceCandidates = [
+        item.source,
+        item.origin,
+        item.provider,
+        item.channel
+    ];
+
+    for (const candidate of sourceCandidates) {
+        const value = toNonEmptyString(candidate);
+        if (value) return value;
+    }
+
+    return undefined;
+};
+
+const resolveInvestmentDateCandidate = (item: Record<string, any>): any => {
+    const dateCandidates = [
+        item.date,
+        item.transactionDate,
+        item.movementDate,
+        item.operationDate,
+        item.occurredAt,
+        item.timestamp,
+        item.createdAt,
+        item.updatedAt
+    ];
+
+    for (const candidate of dateCandidates) {
+        if (candidate === null || candidate === undefined) continue;
+        if (typeof candidate === 'string' && !candidate.trim()) continue;
+        return candidate;
+    }
+
+    return null;
+};
+
+const resolveInvestmentSortTime = (item: Record<string, any>): number => {
+    const dateCandidates = [
+        item.date,
+        item.transactionDate,
+        item.movementDate,
+        item.operationDate,
+        item.occurredAt,
+        item.timestamp,
+        item.createdAt,
+        item.updatedAt
+    ];
+
+    for (const candidate of dateCandidates) {
+        const parsed = parseComparableDate(candidate);
+        if (parsed > 0) return parsed;
+    }
+
+    return 0;
+};
+
+const resolveInvestmentDedupeKey = (item: Record<string, any>): string => {
+    const idCandidates = [
+        item.pluggyTransactionId,
+        item.transactionId,
+        item.externalId,
+        item.id
+    ];
+
+    for (const candidate of idCandidates) {
+        const id = toNonEmptyString(candidate);
+        if (id) {
+            return `id:${id}`;
+        }
+    }
+
+    const rawAmount = resolveInvestmentRawAmount(item);
+    const movementType = resolveInvestmentMovementType(item, rawAmount);
+    const amount = Math.abs(rawAmount);
+    const sortTime = resolveInvestmentSortTime(item);
+    const description = (resolveInvestmentDescription(item) || '').toLowerCase();
+
+    return `fallback:${movementType}:${amount}:${sortTime}:${description}`;
+};
+
+const normalizeInvestmentTransactionRecord = (rawItem: any): Record<string, any> => {
+    const item = (rawItem && typeof rawItem === 'object') ? rawItem : {};
+    const rawAmount = resolveInvestmentRawAmount(item);
+    const movementType = resolveInvestmentMovementType(item, rawAmount);
+    const sortTime = resolveInvestmentSortTime(item);
+    const dateCandidate = resolveInvestmentDateCandidate(item);
+    const description = resolveInvestmentDescription(item);
+    const source = resolveInvestmentSource(item);
+
+    let date = '';
+    if (typeof dateCandidate === 'string' && dateCandidate.trim()) {
+        date = dateCandidate;
+    } else if (sortTime > 0) {
+        date = new Date(sortTime).toISOString();
+    }
+
+    const idCandidates = [
+        item.id,
+        item.pluggyTransactionId,
+        item.transactionId,
+        item.externalId
+    ];
+    let id: string | null = null;
+    for (const candidate of idCandidates) {
+        const key = toNonEmptyString(candidate);
+        if (key) {
+            id = key;
+            break;
+        }
+    }
+    if (!id) {
+        const descriptionKey = (description || 'movimento')
+            .toLowerCase()
+            .replace(/\s+/g, '-')
+            .slice(0, 24);
+        id = `${movementType}_${Math.abs(rawAmount)}_${sortTime}_${descriptionKey}`;
+    }
+
+    return {
+        ...item,
+        id,
+        amount: Math.abs(rawAmount),
+        type: movementType,
+        date,
+        createdAt: item.createdAt ?? dateCandidate ?? null,
+        description,
+        source,
+        _sortTime: sortTime,
+        _dedupeKey: resolveInvestmentDedupeKey(item)
+    };
 };
 
 const getSubscriptionCompletenessScore = (subscription: any): number => {
@@ -324,23 +620,23 @@ export const authService = {
 function getAuthErrorMessage(code: string): string {
     switch (code) {
         case 'auth/invalid-email':
-            return 'E-mail inválido.';
+            return 'E-mail invÃ¡lido.';
         case 'auth/user-disabled':
             return 'Esta conta foi desativada.';
         case 'auth/user-not-found':
-            return 'Usuário não encontrado.';
+            return 'UsuÃ¡rio nÃ£o encontrado.';
         case 'auth/wrong-password':
             return 'Senha incorreta.';
         case 'auth/invalid-credential':
             return 'E-mail ou senha incorretos.';
         case 'auth/email-already-in-use':
-            return 'Este e-mail já está em uso.';
+            return 'Este e-mail jÃ¡ estÃ¡ em uso.';
         case 'auth/weak-password':
             return 'A senha deve ter pelo menos 6 caracteres.';
         case 'auth/too-many-requests':
             return 'Muitas tentativas. Tente novamente mais tarde.';
         case 'auth/network-request-failed':
-            return 'Erro de conexão. Verifique sua internet.';
+            return 'Erro de conexÃ£o. Verifique sua internet.';
         default:
             return 'Ocorreu um erro. Tente novamente.';
     }
@@ -352,6 +648,13 @@ export const databaseService = {
     // Get user profile
     // IMPORTANT: Subscription and paymentMethod can be stored at root level OR inside profile
     getUserProfile: async (userId: string) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getProfile(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached profile');
+                return { success: true, data: cached };
+            }
+        }
         try {
             const docRef = doc(db, 'users', userId);
             const docSnap = await getDoc(docRef);
@@ -401,7 +704,7 @@ export const databaseService = {
                 offlineStorage.saveProfile(userId, mergedData);
                 return { success: true, data: mergedData };
             } else {
-                return { success: false, error: 'Perfil não encontrado' };
+                return { success: false, error: 'Perfil nÃ£o encontrado' };
             }
         } catch (error: any) {
             // OFFLINE FALLBACK: Return cached profile
@@ -465,6 +768,13 @@ export const databaseService = {
 
     // Get Dashboard Snapshot (Aggregated Data)
     getDashboardSnapshot: async (userId: string, monthKey: string): Promise<{ success: boolean; data?: DashboardSnapshot; error?: string }> => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getDashboardSnapshot(userId, monthKey);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached dashboard snapshot');
+                return { success: true, data: { ...cached, isStale: true } };
+            }
+        }
         try {
             const analyticsRef = doc(db, 'users', userId, 'analytics_monthly', monthKey);
             const analyticsSnap = await getDoc(analyticsRef);
@@ -507,6 +817,13 @@ export const databaseService = {
 
     // Get user transactions
     getTransactions: async (userId: string, limitCount: number = 50) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getTransactions(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached transactions');
+                return { success: true, data: cached };
+            }
+        }
         try {
             const transactionsRef = collection(db, 'users', userId, 'transactions');
             const q = query(
@@ -706,6 +1023,13 @@ export const databaseService = {
 
     // Get user accounts (bank accounts, credit cards)
     getAccounts: async (userId: string) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getAccounts(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached accounts');
+                return { success: true, data: cached };
+            }
+        }
         try {
             const accountsRef = collection(db, 'users', userId, 'accounts');
             const querySnapshot = await getDocs(accountsRef);
@@ -740,22 +1064,92 @@ export const databaseService = {
         }
     },
 
+    // Disconnect Open Finance bank and remove all linked data
+    deleteOpenFinanceConnection: async (userId: string, accountIds: string[]) => {
+        try {
+            const normalizedAccountIds = Array.from(
+                new Set((accountIds || []).filter(Boolean).map((id) => String(id)))
+            );
+
+            if (normalizedAccountIds.length === 0) {
+                return {
+                    success: true,
+                    deleted: {
+                        accounts: 0,
+                        checkingTransactions: 0,
+                        creditCardTransactions: 0
+                    }
+                };
+            }
+
+            const transactionsRef = collection(db, 'users', userId, 'transactions');
+            const creditCardTransactionsRef = collection(db, 'users', userId, 'creditCardTransactions');
+            const checkingDocRefs = new Map<string, any>();
+            const creditDocRefs = new Map<string, any>();
+
+            for (const accountId of normalizedAccountIds) {
+                const [
+                    checkingByAccount,
+                    checkingByPluggyAccount,
+                    creditByCardId,
+                    creditByAccountId,
+                    creditByPluggyRawAccountId
+                ] = await Promise.all([
+                    getDocs(query(transactionsRef, where('accountId', '==', accountId))),
+                    getDocs(query(transactionsRef, where('pluggyAccountId', '==', accountId))),
+                    getDocs(query(creditCardTransactionsRef, where('cardId', '==', accountId))),
+                    getDocs(query(creditCardTransactionsRef, where('accountId', '==', accountId))),
+                    getDocs(query(creditCardTransactionsRef, where('pluggyRaw.accountId', '==', accountId)))
+                ]);
+
+                [checkingByAccount, checkingByPluggyAccount].forEach((snapshot) => {
+                    snapshot.docs.forEach((snap) => {
+                        checkingDocRefs.set(snap.ref.path, snap.ref);
+                    });
+                });
+
+                [creditByCardId, creditByAccountId, creditByPluggyRawAccountId].forEach((snapshot) => {
+                    snapshot.docs.forEach((snap) => {
+                        creditDocRefs.set(snap.ref.path, snap.ref);
+                    });
+                });
+            }
+
+            const deletedCheckingTransactions = await deleteDocRefsInChunks([...checkingDocRefs.values()]);
+            const deletedCreditCardTransactions = await deleteDocRefsInChunks([...creditDocRefs.values()]);
+            const accountDocRefs = normalizedAccountIds.map((accountId) => doc(db, 'users', userId, 'accounts', accountId));
+            const deletedAccounts = await deleteDocRefsInChunks(accountDocRefs);
+
+            return {
+                success: true,
+                deleted: {
+                    accounts: deletedAccounts,
+                    checkingTransactions: deletedCheckingTransactions,
+                    creditCardTransactions: deletedCreditCardTransactions
+                }
+            };
+        } catch (error: any) {
+            console.error('[Firebase] Error deleting Open Finance connection:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
     // Update specific fields of an account
     updateAccount: async (userId: string, accountId: string, data: any) => {
         console.log('[Firebase] updateAccount chamado:', { userId, accountId, data });
         try {
             const docRef = doc(db, 'users', userId, 'accounts', accountId);
-            console.log('[Firebase] Referência do documento:', docRef.path);
-            
+            console.log('[Firebase] ReferÃªncia do documento:', docRef.path);
+
             const updateData = {
                 ...data,
                 updatedAt: Timestamp.now()
             };
             console.log('[Firebase] Dados a atualizar:', updateData);
-            
+
             await updateDoc(docRef, updateData);
             console.log('[Firebase] Documento atualizado com sucesso!');
-            
+
             return { success: true };
         } catch (error: any) {
             console.error('[Firebase] Erro ao atualizar conta:', error);
@@ -823,14 +1217,14 @@ export const databaseService = {
                     dueDate: currentBill.dueDate ? currentBill.dueDate.split('T')[0] : null,
                     // Try to get closing date from 'date' (Pluggy standard) or 'closeDate'
                     closeDate: currentBill.date ? currentBill.date.split('T')[0] : (currentBill.closeDate ? currentBill.closeDate.split('T')[0] : null),
-                    // IMPORTANTE: periodStart e periodEnd são usados pelo invoiceBuilder para cálculo preciso
+                    // IMPORTANTE: periodStart e periodEnd sÃ£o usados pelo invoiceBuilder para cÃ¡lculo preciso
                     periodStart: currentBill.periodStart ? currentBill.periodStart.split('T')[0] : null,
                     periodEnd: currentBill.periodEnd ? currentBill.periodEnd.split('T')[0] : null,
                     totalAmount: currentBill.totalAmount ?? null,
                     minimumPaymentAmount: currentBill.minimumPaymentAmount ?? null,
                     allowsInstallments: currentBill.allowsInstallments ?? null,
                 } : null,
-                // Array de todas as bills para histórico
+                // Array de todas as bills para histÃ³rico
                 bills: accountData.bills ? accountData.bills.map((bill: any) => ({
                     id: bill.id ?? null,
                     dueDate: bill.dueDate ? bill.dueDate.split('T')[0] : null,
@@ -863,6 +1257,13 @@ export const databaseService = {
 
     // Get user categories
     getCategories: async (userId: string) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getCategories(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached categories');
+                return { success: true, data: cached };
+            }
+        }
         try {
             const categoriesRef = collection(db, 'users', userId, 'categories');
             const querySnapshot = await getDocs(categoriesRef);
@@ -889,6 +1290,13 @@ export const databaseService = {
     // Get user subscription
     // IMPORTANT: Subscription can be at root OR inside profile
     getSubscription: async (userId: string) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getSubscription(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached subscription');
+                return { success: true, data: cached };
+            }
+        }
         try {
             const docRef = doc(db, 'users', userId);
             const docSnap = await getDoc(docRef);
@@ -915,6 +1323,13 @@ export const databaseService = {
     // Get full subscription data including payment methods
     // IMPORTANT: Data can be at root OR inside profile, check both
     getFullSubscription: async (userId: string) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getFullSubscription(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached full subscription');
+                return { success: true, data: cached };
+            }
+        }
         try {
             const docRef = doc(db, 'users', userId);
             const docSnap = await getDoc(docRef);
@@ -951,6 +1366,13 @@ export const databaseService = {
 
     // Get payment history from multiple possible sources
     getPaymentHistory: async (userId: string, limitCount: number = 10) => {
+        if (!offlineSync.isOnline) {
+            const cached = await offlineStorage.getPaymentHistory(userId);
+            if (cached) {
+                console.log('[Firebase] Offline (isOnline=false) - returning cached payment history');
+                return { success: true, data: cached };
+            }
+        }
         try {
             // Source 1: Try subcollection 'payments'
             let payments: any[] = [];
@@ -1055,7 +1477,7 @@ export const databaseService = {
             // Map Pluggy transaction to our transaction structure
             const transactionDoc = {
                 id: transactionId,
-                description: transaction.description || transaction.descriptionRaw || 'Transação',
+                description: transaction.description || transaction.descriptionRaw || 'TransaÃ§Ã£o',
                 amount: Math.abs(transaction.amount || 0),
                 type: (transaction.amount || 0) >= 0 ? 'income' : 'expense',
                 date: transaction.date || new Date().toISOString(),
@@ -1126,7 +1548,7 @@ export const databaseService = {
                 ? transaction.date.split('T')[0]
                 : new Date().toISOString().split('T')[0];
 
-            const description = transaction.description || transaction.descriptionRaw || 'Transação';
+            const description = transaction.description || transaction.descriptionRaw || 'TransaÃ§Ã£o';
             const ignoreInstallments = isNonInstallmentMerchant(description);
             const installmentNumber = ignoreInstallments
                 ? 1
@@ -1271,7 +1693,7 @@ export const databaseService = {
     },
 
     // Batch save Open Finance transactions - routes to correct collection based on account type
-    // Para conta corrente: filtra apenas PIX, transferências e compras com débito
+    // Para conta corrente: salva todas as transacoes retornadas pela Pluggy
     saveOpenFinanceTransactions: async (
         userId: string,
         accounts: any[],
@@ -1289,45 +1711,6 @@ export const databaseService = {
                 errors: [] as string[]
             };
 
-            // Tipos de operação permitidos para conta corrente
-            // PIX, TED, DOC, Transferência mesma instituição e Cartão (débito)
-            const ALLOWED_CHECKING_OPERATIONS = [
-                'PIX',
-                'TED',
-                'DOC',
-                'TRANSFERENCIA_MESMA_INSTITUICAO',
-                'CARTAO', // Compra com débito
-            ];
-
-            // Função para verificar se transação é relevante para conta corrente
-            const isRelevantCheckingTransaction = (tx: any): boolean => {
-                const operationType = tx.operationType?.toUpperCase();
-                const paymentMethod = tx.paymentData?.paymentMethod?.toUpperCase();
-
-                // Verifica pelo operationType (principal)
-                if (operationType && ALLOWED_CHECKING_OPERATIONS.includes(operationType)) {
-                    return true;
-                }
-
-                // Fallback: verifica pelo paymentMethod (PIX, TED)
-                if (paymentMethod && ['PIX', 'TED', 'DOC'].includes(paymentMethod)) {
-                    return true;
-                }
-
-                // Fallback: verifica se descrição contém indicadores
-                const description = (tx.description || tx.descriptionRaw || '').toUpperCase();
-                if (description.includes('PIX') ||
-                    description.includes('TED') ||
-                    description.includes('DOC') ||
-                    description.includes('TRANSF') ||
-                    description.includes('DÉBITO') ||
-                    description.includes('DEBITO')) {
-                    return true;
-                }
-
-                return false;
-            };
-
             for (const account of accounts) {
                 const transactions = account.transactions || [];
                 const isCreditCard = account.type === 'CREDIT';
@@ -1335,13 +1718,13 @@ export const databaseService = {
                 const effectiveConnector = account.connector ?? connector ?? null;
                 const normalizedConnector = normalizeConnectorForStorage(effectiveConnector);
 
-                // Processar conta poupança como Caixinha
+                // Processar conta poupanÃ§a como Caixinha
                 if (isSavingsAccount) {
                     try {
-                        // 1. Criar/Atualizar caixinha a partir da conta poupança
+                        // 1. Criar/Atualizar caixinha a partir da conta poupanÃ§a
                         await databaseService.syncSavingsAccountAsInvestment(userId, account, effectiveConnector);
 
-                        // 2. Salvar transações da poupança no histórico da caixinha
+                        // 2. Salvar transaÃ§Ãµes da poupanÃ§a no histÃ³rico da caixinha
                         if (transactions.length > 0) {
                             const txResult = await databaseService.saveSavingsAccountTransactions(
                                 userId,
@@ -1372,21 +1755,15 @@ export const databaseService = {
                 for (const tx of transactions) {
                     try {
                         if (isCreditCard) {
-                            // Cartão de crédito: salva todas as transações
+                            // CartÃ£o de crÃ©dito: salva todas as transaÃ§Ãµes
                             await databaseService.saveOpenFinanceCreditCardTransaction(userId, tx, accountInfo);
                             results.creditCardTransactions++;
                             savedCount++;
                         } else {
-                            // Conta corrente: filtra apenas PIX, transferências e débito
-                            if (isRelevantCheckingTransaction(tx)) {
-                                await databaseService.saveOpenFinanceTransaction(userId, tx, accountInfo);
-                                results.checkingTransactions++;
-                                savedCount++;
-                            } else {
-                                results.skippedTransactionTypes++;
-                                skippedCount++;
-
-                            }
+                            // Conta corrente: salva todas as transacoes retornadas pela Pluggy
+                            await databaseService.saveOpenFinanceTransaction(userId, tx, accountInfo);
+                            results.checkingTransactions++;
+                            savedCount++;
                         }
                     } catch (error: any) {
                         errorCount++;
@@ -1570,7 +1947,7 @@ export const databaseService = {
 
             if (!creditsResult.success || !creditsResult.data) {
                 console.error('[Firebase] Failed to get credits');
-                return { success: false, error: 'Não foi possível verificar os créditos' };
+                return { success: false, error: 'NÃ£o foi possÃ­vel verificar os crÃ©ditos' };
             }
 
             const currentCredits = creditsResult.data.credits;
@@ -1588,7 +1965,7 @@ export const databaseService = {
 
             if (currentCredits <= 0) {
                 console.warn('[Firebase] No credits available');
-                return { success: false, error: 'Você não tem créditos suficientes. Aguarde até meia-noite para renovar.' };
+                return { success: false, error: 'VocÃª nÃ£o tem crÃ©ditos suficientes. Aguarde atÃ© meia-noite para renovar.' };
             }
 
             const today = databaseService._getTodayDateString();
@@ -1596,7 +1973,7 @@ export const databaseService = {
             // For sync action with itemId, check if this specific bank was already synced today
             if (action === 'sync' && itemId && currentSyncedItems[itemId] === today) {
                 console.warn(`[Firebase] Bank ${itemId} already synced today`);
-                return { success: false, error: 'Este banco já foi sincronizado hoje. Tente novamente amanhã.' };
+                return { success: false, error: 'Este banco jÃ¡ foi sincronizado hoje. Tente novamente amanhÃ£.' };
             }
 
             // Update credits and syncedItems
@@ -1845,7 +2222,7 @@ export const databaseService = {
             // Prepare data compatible with Web App (which likely expects title, date, value, type='expense')
             let dataToSave: any;
 
-            // Lógica Específica para Lembretes (Estrutura Web)
+            // LÃ³gica EspecÃ­fica para Lembretes (Estrutura Web)
             if (recurrence.type === 'reminder') {
                 dataToSave = {
                     amount: Number(recurrence.amount),
@@ -1861,7 +2238,7 @@ export const databaseService = {
                     updatedAt: Timestamp.now()
                 };
             } else {
-                // Mantém lógica antiga para Assinaturas (com campos de compatibilidade)
+                // MantÃ©m lÃ³gica antiga para Assinaturas (com campos de compatibilidade)
                 dataToSave = {
                     ...recurrence,
                     title: recurrence.name,
@@ -1953,9 +2330,9 @@ export const databaseService = {
                 recurrenceId = newDocRef.id;
             }
 
-            // Lógica simplificada para Lembretes (Não cria transação)
+            // LÃ³gica simplificada para Lembretes (NÃ£o cria transaÃ§Ã£o)
             if (item.type === 'reminder') {
-                // 1. Atualizar o item ATUAL para pago (Manter histórico)
+                // 1. Atualizar o item ATUAL para pago (Manter histÃ³rico)
                 const itemRef = doc(db, 'users', userId, 'reminders', recurrenceId);
                 await updateDoc(itemRef, {
                     status: 'paid',
@@ -1966,7 +2343,7 @@ export const databaseService = {
                 const isRecurring = item.frequency && item.frequency !== 'once';
 
                 if (isRecurring) {
-                    // 2. Se recorrente: Criar um NOVO item para o próximo mês
+                    // 2. Se recorrente: Criar um NOVO item para o prÃ³ximo mÃªs
                     const [year, month, day] = (item.dueDate || new Date().toISOString().split('T')[0]).split('-').map(Number);
                     const currentDate = new Date(year, month - 1, day);
 
@@ -2232,12 +2609,41 @@ export const databaseService = {
     // Add investment transaction (history)
     addInvestmentTransaction: async (userId: string, investmentId: string, transaction: { amount: number, type: 'deposit' | 'withdraw', date: string }) => {
         try {
+            // 1. Buscar nome da caixinha
+            let investmentName = '';
+            try {
+                const investmentDoc = await getDoc(doc(db, 'users', userId, 'investments', investmentId));
+                if (investmentDoc.exists()) {
+                    investmentName = investmentDoc.data()?.name || '';
+                }
+            } catch (error) {
+                console.log('[Firebase] Erro ao buscar nome da caixinha:', error);
+            }
+
+            // 2. Salvar na subcoleÃ§Ã£o history
             const historyRef = collection(db, 'users', userId, 'investments', investmentId, 'history');
             const newDocRef = doc(historyRef);
 
             await setDoc(newDocRef, {
                 ...transaction,
+                accountId: investmentId,
+                accountType: 'SAVINGS_ACCOUNT',
+                category: `Caixinha - ${investmentName}`,
                 createdAt: Timestamp.now()
+            });
+
+            // 3. Salvar na coleÃ§Ã£o principal transactions (sincronizaÃ§Ã£o Web/App)
+            await databaseService.addTransaction(userId, {
+                amount: transaction.amount,
+                date: transaction.date,
+                description: transaction.type === 'deposit' ? 'DepÃ³sito na caixinha' : 'Retirada da caixinha',
+                accountId: investmentId,
+                accountType: 'SAVINGS_ACCOUNT',
+                isInvestment: true,
+                category: `Caixinha - ${investmentName}`,
+                // Para depÃ³sito: tira da conta real (expense)
+                // Para retirada: volta para conta real (income)
+                type: transaction.type === 'deposit' ? 'expense' : 'income',
             });
 
             return { success: true, id: newDocRef.id };
@@ -2246,116 +2652,167 @@ export const databaseService = {
             return { success: false, error: error.message };
         }
     },
-
-    // Get investment transactions (history)
-    // Para poupanças, busca também da coleção de transações
+    // Get investment transactions (statement/history)
+    // Compatibility: reads both app and web data shapes/paths.
     getInvestmentTransactions: async (userId: string, investmentId: string) => {
         try {
-            let transactions: any[] = [];
+            const rawTransactions: any[] = [];
 
-            // Se é uma poupança (id começa com savings_), buscar transações da conta
-            if (investmentId.startsWith('savings_')) {
-                const accountId = investmentId.replace('savings_', '');
-                console.log('[Firebase] Buscando transações para poupança:', accountId);
-
-                // Buscar do histórico do investment (se existir)
+            const collectInvestmentSubcollection = async (subcollectionName: 'history' | 'transactions') => {
                 try {
-                    const historyRef = collection(db, 'users', userId, 'investments', investmentId, 'history');
-                    const qHistory = query(historyRef, orderBy('createdAt', 'desc'));
-                    const historySnapshot = await getDocs(qHistory);
+                    const subcollectionRef = collection(
+                        db,
+                        'users',
+                        userId,
+                        'investments',
+                        investmentId,
+                        subcollectionName
+                    );
+                    const snapshot = await getDocs(subcollectionRef);
 
-                    const historyTransactions = historySnapshot.docs.map(doc => ({
+                    if (!snapshot.empty) {
+                        rawTransactions.push(
+                            ...snapshot.docs.map(doc => ({
+                                id: doc.id,
+                                ...doc.data()
+                            }))
+                        );
+                    }
+                } catch (subcollectionError) {
+                    // Keep this non-fatal because one of the paths can legitimately not exist.
+                    console.log(`[Firebase] Sem dados em investments/${investmentId}/${subcollectionName}:`, subcollectionError);
+                }
+            };
+
+            // Some versions write to "history", others to "transactions".
+            await collectInvestmentSubcollection('history');
+            await collectInvestmentSubcollection('transactions');
+
+            // Buscar transaÃ§Ãµes da coleÃ§Ã£o principal com accountId (sincronizaÃ§Ã£o Web/App)
+            try {
+                const transactionsRef = collection(db, 'users', userId, 'transactions');
+                const qByAccountId = query(transactionsRef, where('accountId', '==', investmentId));
+                const txSnapshot = await getDocs(qByAccountId);
+                console.log('[Firebase] Transacoes com accountId (caixinha):', txSnapshot.size);
+
+                rawTransactions.push(
+                    ...txSnapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data()
-                    }));
-                    console.log('[Firebase] Transações do histórico:', historyTransactions.length);
-                    transactions = [...historyTransactions];
-                } catch (historyError) {
-                    console.log('[Firebase] Sem histórico de investment ainda');
-                }
+                    }))
+                );
+            } catch (txError) {
+                console.log('[Firebase] Erro ao buscar transacoes por accountId (caixinha):', txError);
+            }
 
-                // Buscar também da coleção de transações (usando accountId)
+            // Buscar nome da caixinha para fallback legado
+            let investmentName = '';
+            try {
+                const investmentDoc = await getDoc(doc(db, 'users', userId, 'investments', investmentId));
+                if (investmentDoc.exists()) {
+                    investmentName = investmentDoc.data()?.name || '';
+                }
+            } catch (error) {
+                console.log('[Firebase] Erro ao buscar nome da caixinha:', error);
+            }
+
+            // Fallback: buscar por category (transaÃ§Ãµes antigas gravadas pelo nome)
+            if (investmentName) {
                 try {
                     const transactionsRef = collection(db, 'users', userId, 'transactions');
-                    const qTx = query(transactionsRef, where('accountId', '==', accountId), limit(100));
-                    const txSnapshot = await getDocs(qTx);
-                    console.log('[Firebase] Transações com accountId:', txSnapshot.size);
+                    const qByCategory = query(transactionsRef, where('category', '==', `Caixinha - ${investmentName}`));
+                    const txSnapshot = await getDocs(qByCategory);
+                    console.log('[Firebase] Transacoes com category (fallback legado):', txSnapshot.size);
 
-                    const accountTransactions = txSnapshot.docs.map(doc => {
-                        const data = doc.data();
-                        const amount = Number(data.amount ?? 0);
-                        return {
+                    rawTransactions.push(
+                        ...txSnapshot.docs.map(doc => ({
                             id: doc.id,
-                            amount: Math.abs(amount),
-                            type: amount >= 0 ? 'deposit' : 'withdraw',
-                            date: data.date || data.createdAt,
-                            description: data.description || data.descriptionRaw || null,
-                            source: 'pluggy',
-                            createdAt: data.createdAt
-                        };
-                    });
-
-                    // Evitar duplicatas
-                    const existingIds = new Set(transactions.map((t: any) => t.pluggyTransactionId || t.id));
-                    const uniqueAccountTx = accountTransactions.filter(t => !existingIds.has(t.id));
-                    transactions = [...transactions, ...uniqueAccountTx];
+                            ...doc.data()
+                        }))
+                    );
                 } catch (txError) {
-                    console.log('[Firebase] Erro ao buscar transações:', txError);
+                    console.log('[Firebase] Erro ao buscar transacoes por category:', txError);
                 }
 
-                // Buscar também da coleção de transações (usando pluggyAccountId como fallback)
+                // Fallback extra: buscar por isInvestment + description contendo o nome
                 try {
                     const transactionsRef = collection(db, 'users', userId, 'transactions');
-                    const qTx2 = query(transactionsRef, where('pluggyAccountId', '==', accountId), limit(100));
-                    const txSnapshot2 = await getDocs(qTx2);
-                    console.log('[Firebase] Transações com pluggyAccountId:', txSnapshot2.size);
+                    const qByInvestment = query(transactionsRef, where('isInvestment', '==', true));
+                    const txSnapshot = await getDocs(qByInvestment);
+                    
+                    const matchingTransactions = txSnapshot.docs
+                        .map(doc => ({ id: doc.id, ...doc.data() }))
+                        .filter((tx: any) => tx.description?.includes(investmentName));
+                    
+                    console.log('[Firebase] Transacoes com isInvestment + description:', matchingTransactions.length);
 
-                    const accountTransactions2 = txSnapshot2.docs.map(doc => {
-                        const data = doc.data();
-                        const amount = Number(data.amount ?? 0);
-                        return {
+                    rawTransactions.push(...matchingTransactions);
+                } catch (txError) {
+                    console.log('[Firebase] Erro ao buscar por isInvestment:', txError);
+                }
+            }
+
+            // Savings account: also merge bank transactions tied to this account.
+            if (investmentId.startsWith('savings_')) {
+                const accountId = investmentId.replace('savings_', '');
+                console.log('[Firebase] Buscando transacoes para poupanca:', accountId);
+
+                try {
+                    const transactionsRef = collection(db, 'users', userId, 'transactions');
+                    const qTx = query(transactionsRef, where('accountId', '==', accountId));
+                    const txSnapshot = await getDocs(qTx);
+                    console.log('[Firebase] Transacoes com accountId:', txSnapshot.size);
+
+                    rawTransactions.push(
+                        ...txSnapshot.docs.map(doc => ({
                             id: doc.id,
-                            amount: Math.abs(amount),
-                            type: amount >= 0 ? 'deposit' : 'withdraw',
-                            date: data.date || data.createdAt,
-                            description: data.description || data.descriptionRaw || null,
-                            source: 'pluggy',
-                            createdAt: data.createdAt
-                        };
-                    });
+                            ...doc.data()
+                        }))
+                    );
+                } catch (txError) {
+                    console.log('[Firebase] Erro ao buscar transacoes por accountId:', txError);
+                }
 
-                    // Evitar duplicatas
-                    const existingIds = new Set(transactions.map((t: any) => t.id));
-                    const uniqueAccountTx = accountTransactions2.filter(t => !existingIds.has(t.id));
-                    transactions = [...transactions, ...uniqueAccountTx];
+                try {
+                    const transactionsRef = collection(db, 'users', userId, 'transactions');
+                    const qTx2 = query(transactionsRef, where('pluggyAccountId', '==', accountId));
+                    const txSnapshot2 = await getDocs(qTx2);
+                    console.log('[Firebase] Transacoes com pluggyAccountId:', txSnapshot2.size);
+
+                    rawTransactions.push(
+                        ...txSnapshot2.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }))
+                    );
                 } catch (txError) {
                     console.log('[Firebase] Erro ao buscar por pluggyAccountId:', txError);
                 }
-
-                console.log('[Firebase] Total de transações encontradas:', transactions.length);
-
-                // Ordenar por data/createdAt
-                transactions.sort((a, b) => {
-                    const getTime = (item: any) => {
-                        if (item.createdAt?.toDate) return item.createdAt.toDate().getTime();
-                        if (item.createdAt?.seconds) return item.createdAt.seconds * 1000;
-                        if (item.date) return new Date(item.date).getTime();
-                        return 0;
-                    };
-                    return getTime(b) - getTime(a);
-                });
-            } else {
-                // Caixinha manual - buscar apenas do histórico
-                const historyRef = collection(db, 'users', userId, 'investments', investmentId, 'history');
-                const q = query(historyRef, orderBy('createdAt', 'desc'));
-                const snapshot = await getDocs(q);
-
-                transactions = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
             }
 
+            const deduped = new Map<string, any>();
+
+            for (const rawTransaction of rawTransactions) {
+                const normalized = normalizeInvestmentTransactionRecord(rawTransaction);
+                const dedupeKey = String(normalized._dedupeKey || normalized.id);
+
+                const existing = deduped.get(dedupeKey);
+                const existingSortTime = Number(existing?._sortTime ?? 0);
+                const nextSortTime = Number(normalized?._sortTime ?? 0);
+
+                if (!existing || nextSortTime >= existingSortTime) {
+                    deduped.set(dedupeKey, normalized);
+                }
+            }
+
+            const transactions = Array.from(deduped.values())
+                .sort((a, b) => Number(b?._sortTime ?? 0) - Number(a?._sortTime ?? 0))
+                .map((item: any) => {
+                    const { _sortTime, _dedupeKey, ...cleanItem } = item;
+                    return cleanItem;
+                });
+
+            console.log('[Firebase] Total de transacoes de investment:', transactions.length);
             return { success: true, data: transactions };
         } catch (error: any) {
             console.error('[Firebase] Error getting investment transactions:', error);
@@ -2394,7 +2851,7 @@ export const databaseService = {
 
             const investmentData = {
                 // Keep existing name if user renamed it, otherwise use bank name
-                name: existingData?.name || `Poupança ${bankName}${accountNumber}`,
+                name: existingData?.name || `PoupanÃ§a ${bankName}${accountNumber}`,
                 currentAmount: Number(account.balance ?? 0),
                 // Keep existing target if set, otherwise set to 0 (no target for synced accounts)
                 targetAmount: existingData?.targetAmount ?? 0,
@@ -2488,20 +2945,20 @@ export const databaseService = {
         let savingsAccounts: any[] = [];
 
         const notify = () => {
-            // IDs de investimentos que já foram criados a partir de contas poupança
+            // IDs de investimentos que jÃ¡ foram criados a partir de contas poupanÃ§a
             const existingSavingsIds = new Set(
                 manualInvestments
                     .filter(i => i.source === 'pluggy' && i.pluggyAccountId)
                     .map(i => i.pluggyAccountId)
             );
 
-            // Converter contas poupança que ainda não existem como investments
-            // Filtrar apenas poupanças com saldo > 0
+            // Converter contas poupanÃ§a que ainda nÃ£o existem como investments
+            // Filtrar apenas poupanÃ§as com saldo > 0
             const newSavingsAsInvestments = savingsAccounts
                 .filter(acc => !existingSavingsIds.has(acc.id) && Number(acc.balance ?? 0) > 0)
                 .map(acc => ({
                     id: `savings_${acc.id}`,
-                    name: acc.name || `Poupança ${acc.connector?.name || 'Banco'}`,
+                    name: acc.name || `PoupanÃ§a ${acc.connector?.name || 'Banco'}`,
                     currentAmount: Number(acc.balance ?? 0),
                     targetAmount: 0,
                     color: acc.connector?.primaryColor || '#D97757',
@@ -2514,7 +2971,7 @@ export const databaseService = {
                     lastSyncedAt: acc.lastSyncedAt || null
                 }));
 
-            // Combinar: investments manuais/existentes + poupanças novas
+            // Combinar: investments manuais/existentes + poupanÃ§as novas
             const allItems = [...manualInvestments, ...newSavingsAsInvestments];
 
             // Ordenar por createdAt
@@ -2527,7 +2984,7 @@ export const databaseService = {
             callback(allItems);
         };
 
-        // Listener para investments (caixinhas manuais e poupanças já convertidas)
+        // Listener para investments (caixinhas manuais e poupanÃ§as jÃ¡ convertidas)
         const unsubInvestments = onSnapshot(investmentsRef, (snapshot) => {
             manualInvestments = snapshot.docs.map(doc => ({
                 id: doc.id,
@@ -2536,7 +2993,7 @@ export const databaseService = {
             notify();
         });
 
-        // Listener para accounts (buscar contas poupança)
+        // Listener para accounts (buscar contas poupanÃ§a)
         const qSavings = query(accountsRef, where('subtype', '==', 'SAVINGS_ACCOUNT'));
         const unsubSavings = onSnapshot(qSavings, (snapshot) => {
             savingsAccounts = snapshot.docs.map(doc => ({
@@ -2546,7 +3003,7 @@ export const databaseService = {
             notify();
         });
 
-        // Retornar função para cancelar ambos os listeners
+        // Retornar funÃ§Ã£o para cancelar ambos os listeners
         return () => {
             unsubInvestments();
             unsubSavings();

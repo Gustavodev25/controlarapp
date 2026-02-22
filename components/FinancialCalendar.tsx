@@ -385,7 +385,7 @@ export function FinancialCalendar({
                         borderRadius={24}
                         onClose={() => setIsModalMounted(false)}
                     >
-                        <View style={[styles.header, { paddingHorizontal: 20, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: '#2A2A2A', backgroundColor: '#141414' }]}>
+                        <View style={[styles.header, { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, marginBottom: 0, borderBottomWidth: 1, borderBottomColor: '#2A2A2A', backgroundColor: '#141414' }]}>
                             <Text style={[styles.title, { fontSize: 18, color: '#FFFFFF' }]}>
                                 {`${selectedDate.getDate()} de ${months[selectedDate.getMonth()]}`}
                             </Text>
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     weekDayText: {
-        width: `${100 / 7}%`,
+        width: '14.28%',
         textAlign: 'center',
         fontSize: 12,
         color: '#666',
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
     },
     dayCell: {
-        width: `${100 / 7}%`,
+        width: '14.28%',
         height: 48,
         justifyContent: 'center',
         alignItems: 'center',

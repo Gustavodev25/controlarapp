@@ -43,7 +43,12 @@ import {
     SCROLL_TOP_THRESHOLD,
 } from "./conf";
 import type { BottomSheetMethods, BottomSheetProps } from "./types";
-import { isScrollableList, parseSnapPoint, triggerHaptic } from "./utils";
+import {
+    hasScrollableListDescendant,
+    isScrollableList,
+    parseSnapPoint,
+    triggerHaptic,
+} from "./utils";
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const BottomSheetComponent = forwardRef<BottomSheetMethods, BottomSheetProps>(
     (
@@ -473,7 +478,7 @@ const BottomSheetComponent = forwardRef<BottomSheetMethods, BottomSheetProps>(
                     </GestureDetector>
                 );
             }
-            const hasScrollableChild = childArray.some(isScrollableList);
+            const hasScrollableChild = childArray.some(hasScrollableListDescendant);
             if (hasScrollableChild) {
                 const enhancedChildren = childArray.map((child, index) => {
                     if (isScrollableList(child)) {

@@ -1,7 +1,7 @@
 import { InvestmentDetailsModal } from '@/components/InvestmentDetailsModal';
 import { InvestmentModal } from '@/components/InvestmentModal';
 import { InvestmentStatementModal } from '@/components/InvestmentStatementModal';
-import { OfflineWarningCard } from '@/components/OfflineWarningCard';
+
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
@@ -200,7 +200,7 @@ const InvestmentCard = React.memo(({ item, index, onPress, onHoldStart, onHoldEn
                     <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' }]} pointerEvents="none">
                         <IntervalLottie
                             source={require('../../assets/caixinhasamarelo.json')}
-                            size={24}
+                            size={18}
                             interval={5000}
                         />
                     </View>
@@ -350,11 +350,12 @@ export default function PlanningScreen() {
             currentAmount: newAmount
         });
 
-        // 2. Add Transaction History
+        // 2. Add Transaction History (subcoleção) + Transaction to main collection (sincronização Web/App)
+        // Agora addInvestmentTransaction já cria automaticamente na coleção principal
         await databaseService.addInvestmentTransaction(user.uid, selectedInvestment.id, {
             amount: amount,
             type: type,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
         });
 
         setDetailsModalVisible(false);
@@ -432,7 +433,7 @@ export default function PlanningScreen() {
                     </TouchableOpacity>
                 </View>
 
-                <OfflineWarningCard style={{ marginHorizontal: 20, marginBottom: 8 }} />
+
 
                 {loading ? (
                     <View style={styles.loadingContainer}>
@@ -654,64 +655,64 @@ const styles = StyleSheet.create({
     },
     // Card Styles
     cardContainer: {
-        marginBottom: 16,
-        borderRadius: 24,
+        marginBottom: 10,
+        borderRadius: 16,
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
         backgroundColor: '#141414',
     },
     cardContent: {
-        padding: 20,
+        padding: 12,
     },
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 20,
-        gap: 12,
+        marginBottom: 10,
+        gap: 8,
     },
     iconContainer: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
+        width: 32,
+        height: 32,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#D97757',
     },
     cardTitle: {
-        fontSize: 18,
+        fontSize: 15,
         fontWeight: '700',
         color: '#FFFFFF',
-        marginBottom: 2,
+        marginBottom: 1,
     },
     cardSubtitle: {
-        fontSize: 12,
+        fontSize: 10,
         color: '#909090',
     },
     amountContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-end',
-        marginBottom: 16,
+        marginBottom: 8,
     },
     amountLabel: {
-        fontSize: 12,
+        fontSize: 10,
         color: '#909090',
-        marginBottom: 4,
+        marginBottom: 2,
     },
     currentAmount: {
-        fontSize: 24,
+        fontSize: 18,
         fontWeight: '700',
         color: '#FFFFFF',
     },
     targetAmount: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '600',
         color: '#909090',
     },
     progressContainer: {
-        marginTop: 4,
-        gap: 6,
+        marginTop: 0,
+        gap: 4,
     },
     progressHeader: {
         flexDirection: 'row',
@@ -719,25 +720,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     progressTextLeft: {
-        fontSize: 10,
+        fontSize: 9,
         color: '#909090',
         fontWeight: '500',
     },
     progressTextRight: {
-        fontSize: 10,
+        fontSize: 9,
         color: '#909090',
         fontWeight: '500',
     },
     progressBarBg: {
         width: '100%',
-        height: 6,
+        height: 4,
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 3,
+        borderRadius: 2,
         overflow: 'hidden',
     },
     progressBarFill: {
         height: '100%',
-        borderRadius: 3,
+        borderRadius: 2,
     },
     // Empty State Styles
     emptyContainer: {
@@ -784,19 +785,19 @@ const styles = StyleSheet.create({
     // Open Finance Pill Styles
     openFinancePill: {
         backgroundColor: 'rgba(4, 211, 97, 0.15)',
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 6,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 5,
         alignSelf: 'flex-start',
-        marginTop: 4,
+        marginTop: 2,
         borderWidth: 1,
         borderColor: 'rgba(4, 211, 97, 0.3)',
     },
     openFinancePillText: {
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: '600',
         color: '#04D361',
-        letterSpacing: 0.3,
+        letterSpacing: 0.2,
     },
     // Hold Pill Styles
     holdPillContainer: {

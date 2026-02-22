@@ -1,25 +1,18 @@
+import BottomSheet from '@/components/templates/bottom-sheet';
+import { BottomSheetMethods } from '@/components/templates/bottom-sheet/types';
 import { ArrowLeft, X } from 'lucide-react-native';
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Dimensions,
-    KeyboardAvoidingView,
+    Keyboard,
+    LayoutChangeEvent,
     Modal,
-    Platform,
-    Pressable,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
+    useWindowDimensions
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-    Easing,
-    runOnJS,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-    withTiming
-} from 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 interface BottomModalProps {
     visible: boolean;
@@ -32,126 +25,141 @@ interface BottomModalProps {
     onBack?: () => void;
 }
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
 export function BottomModal({
     visible,
     onClose,
     title,
     children,
-    height = '60%', // Default height
+    height = 'auto',
     rightElement,
     subtitle,
     onBack,
 }: BottomModalProps) {
-    const [showModal, setShowModal] = React.useState(visible);
-    const translateY = useSharedValue(SCREEN_HEIGHT);
-    const opacity = useSharedValue(0);
+    const sheetRef = useRef<BottomSheetMethods>(null);
+    const [isMounted, setIsMounted] = useState(false);
+    const [calculatedHeight, setCalculatedHeight] = useState<number>(0);
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+    
+    // NOVO: Controla se a medição da altura inteligente já terminou
+    const [isReady, setIsReady] = useState(height !== 'auto');
+    
+    const { height: windowHeight } = useWindowDimensions();
 
+    // Listeners do Teclado (agrupados e otimizados)
+    useEffect(() => {
+        const handleKeyboardShow = (e: any) => setKeyboardHeight(e.endCoordinates.height);
+        const handleKeyboardHide = () => setKeyboardHeight(0);
+
+        const subscriptions = [
+            Keyboard.addListener('keyboardWillShow', handleKeyboardShow),
+            Keyboard.addListener('keyboardDidShow', handleKeyboardShow),
+            Keyboard.addListener('keyboardWillHide', handleKeyboardHide),
+            Keyboard.addListener('keyboardDidHide', handleKeyboardHide),
+        ];
+
+        return () => {
+            subscriptions.forEach((sub) => sub.remove());
+        };
+    }, []);
+
+    // Reseta e reabre o modal corretamente
     useEffect(() => {
         if (visible) {
-            setShowModal(true);
-
-            // Resetar valores antes de animar
-            translateY.value = SCREEN_HEIGHT;
-            opacity.value = 0;
-
-            // Animate immediately
-            requestAnimationFrame(() => {
-                opacity.value = withTiming(1, { duration: 300 });
-                translateY.value = withSpring(0, {
-                    damping: 30,
-                    stiffness: 250,
-                    mass: 1,
-                });
-            });
+            setIsMounted(true);
+            if (height === 'auto') {
+                setIsReady(false); // Força uma nova medição ao abrir
+                setCalculatedHeight(0);
+            } else {
+                requestAnimationFrame(() => sheetRef.current?.snapToIndex(0));
+            }
         } else {
-            opacity.value = withTiming(0, { duration: 250 });
-            translateY.value = withTiming(SCREEN_HEIGHT, {
-                duration: 300,
-                easing: Easing.in(Easing.quad),
-            }, (finished) => {
-                if (finished) {
-                    runOnJS(setShowModal)(false);
-                }
+            sheetRef.current?.close();
+        }
+    }, [visible, height]);
+
+    // Aplica a abertura apenas quando a medição inteligente terminar
+    useEffect(() => {
+        if (height === 'auto' && isReady && calculatedHeight > 0) {
+            requestAnimationFrame(() => {
+                sheetRef.current?.snapToIndex(0);
             });
         }
-    }, [visible]);
+    }, [isReady, calculatedHeight, height, keyboardHeight]);
 
-    const handleClose = React.useCallback(() => {
+    const handleClose = useCallback(() => {
+        setIsMounted(false);
         if (onClose) onClose();
     }, [onClose]);
 
-    const context = useSharedValue({ y: 0 });
-
-    const pan = React.useMemo(() => Gesture.Pan()
-        .onStart(() => {
-            context.value = { y: translateY.value };
-        })
-        .onUpdate((event) => {
-            translateY.value = Math.max(event.translationY + context.value.y, 0);
-        })
-        .onEnd((event) => {
-            if (translateY.value > 100 || event.velocityY > 500) {
-                runOnJS(handleClose)();
-            } else {
-                translateY.value = withSpring(0, {
-                    damping: 30,
-                    stiffness: 250,
-                    mass: 1,
-                });
+    // Otimização: SnapPoints precisos e sem sobras
+    const snapPoints = useMemo(() => {
+        if (height === 'auto') {
+            if (calculatedHeight > 0) {
+                // Limita a altura máxima a 90% da tela para não cobrir tudo
+                const capped = Math.min(calculatedHeight, windowHeight * 0.9);
+                
+                // Reduz o espaço do teclado, se ele estiver aberto
+                if (keyboardHeight > 0) {
+                    return [Math.min(capped, windowHeight - keyboardHeight - 20)];
+                }
+                return [capped];
             }
-        }), [handleClose, translateY, context]);
+            // NOVO: Retorna 1px enquanto mede para não mostrar um painel vazio gigante
+            return [1];
+        }
 
-    const animatedBackdropStyle = useAnimatedStyle(() => ({
-        opacity: opacity.value,
-    }));
+        // Se uma altura fixa foi passada, respeita ela e o teclado (removemos o "90%" hardcoded que gerava vazio)
+        return [
+            typeof height === 'number'
+                ? (keyboardHeight > 0 ? Math.min(height, windowHeight - keyboardHeight - 20) : height)
+                : height
+        ];
+    }, [height, calculatedHeight, windowHeight, keyboardHeight]);
 
-    const animatedContentStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-    }));
+    // Função que mede o conteúdo inteligentemente
+    const handleLayout = useCallback((e: LayoutChangeEvent) => {
+        if (height === 'auto') {
+            // Pega a altura estritamente necessária pelo conteúdo + paddings da view
+            const measuredHeight = Math.ceil(e.nativeEvent.layout.height);
+            setCalculatedHeight(measuredHeight);
+            setIsReady(true); // Medição concluída, pode mostrar!
+        }
+    }, [height]);
 
-    const isAutoHeight = height === 'auto';
-    const contentHeight = isAutoHeight
-        ? undefined
-        : (typeof height === 'number' ? height : (parseFloat(height as string) / 100) * SCREEN_HEIGHT);
+    if (!visible && !isMounted) return null;
 
-    if (!showModal) return null;
+    const containerStyle = height === 'auto' ? styles.containerAuto : styles.containerFlex;
+    const contentStyle = height === 'auto' ? styles.contentAuto : styles.content;
 
     return (
         <Modal
             transparent
-            visible={showModal}
+            visible={visible || isMounted}
             animationType="none"
             onRequestClose={handleClose}
             statusBarTranslucent
             hardwareAccelerated
         >
-            <KeyboardAvoidingView
-                style={styles.overlay}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-            >
-                {/* Backdrop */}
-                <Pressable style={StyleSheet.absoluteFill} onPress={handleClose}>
-                    <Animated.View style={[styles.backdrop, animatedBackdropStyle]} />
-                </Pressable>
-
-                {/* Modal Content */}
-                <Animated.View
-                    style={[
-                        styles.modalContainer,
-                        isAutoHeight ? { maxHeight: '90%' } : { height: contentHeight },
-                        animatedContentStyle,
-                    ]}
-                    renderToHardwareTextureAndroid
+            <GestureHandlerRootView style={styles.rootView}>
+                <BottomSheet
+                    ref={sheetRef}
+                    snapPoints={snapPoints as any}
+                    backgroundColor="#141414"
+                    backdropOpacity={0.6}
+                    borderRadius={24}
+                    onClose={handleClose}
                 >
-                    <GestureDetector gesture={pan}>
+                    <View 
+                        onLayout={handleLayout} 
+                        style={[
+                            containerStyle,
+                            // NOVO: Esconde visualmente enquanto calcula para não dar "pulo" na tela
+                            { opacity: isReady ? 1 : 0 }
+                        ]}
+                    >
                         <View style={styles.header}>
-
-                            {/* Header Content */}
                             <View style={styles.headerRow}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <View style={styles.headerLeftContainer}>
                                     {onBack && (
                                         <TouchableOpacity onPress={onBack} hitSlop={10}>
                                             <ArrowLeft size={24} color="#FFFFFF" />
@@ -166,57 +174,44 @@ export function BottomModal({
                                 </View>
                                 <View style={styles.headerRightContainer}>
                                     {rightElement}
-                                    <Pressable onPress={handleClose} style={styles.closeButton}>
+                                    <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                                         <X size={20} color="#909090" />
-                                    </Pressable>
+                                    </TouchableOpacity>
                                 </View>
                             </View>
                         </View>
-                    </GestureDetector>
 
-                    <View style={isAutoHeight ? { padding: 20 } : styles.content}>
-                        {children}
+                        <View style={contentStyle}>
+                            {children}
+                        </View>
                     </View>
-                </Animated.View>
-            </KeyboardAvoidingView>
+                </BottomSheet>
+            </GestureHandlerRootView>
         </Modal>
     );
 }
 
 const styles = StyleSheet.create({
-    overlay: {
+    rootView: {
         flex: 1,
-        justifyContent: 'flex-end',
     },
-    backdrop: {
+    containerFlex: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
     },
-    modalContainer: {
+    containerAuto: {
+        paddingBottom: 24,
+        // Propositalmente sem flex: 1 para que a view abrace apenas o conteúdo necessário
+    },
+    header: {
         backgroundColor: '#141414',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        borderWidth: 1,
-        borderColor: '#30302E',
-        paddingBottom: 40, // Safe area
-    },
-    header: {
-        backgroundColor: '#1A1A1A', // Requested header color
-        borderTopLeftRadius: 24, // Match container radius
-        borderTopRightRadius: 24, // Match container radius
         alignItems: 'center',
-        paddingTop: 20,
+        paddingTop: 16,
         paddingHorizontal: 20,
-        paddingBottom: 20,
+        paddingBottom: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#2A2A2A',
-    },
-    handle: {
-        width: 40,
-        height: 4,
-        backgroundColor: '#30302E',
-        borderRadius: 2,
-        marginBottom: 20,
     },
     headerRow: {
         flexDirection: 'row',
@@ -224,29 +219,38 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         width: '100%',
     },
+    headerLeftContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexShrink: 1,
+        gap: 12,
+    },
     headerRightContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 16
+        gap: 16,
     },
     title: {
         fontSize: 18,
         fontWeight: '600',
         color: '#FFFFFF',
     },
+    subtitle: {
+        fontSize: 13,
+        color: '#8E8E93',
+        marginTop: 2,
+        fontWeight: '500',
+        fontFamily: 'AROneSans_500Medium',
+    },
     closeButton: {
         padding: 4,
-        // backgroundColor: '#2A2A2A', // Removed as per request
         borderRadius: 20,
     },
     content: {
         flex: 1,
         padding: 20,
     },
-    subtitle: {
-        fontSize: 13,
-        color: '#8E8E93',
-        marginTop: 2,
-        fontWeight: '500',
-    }
+    contentAuto: {
+        padding: 20,
+    },
 });
