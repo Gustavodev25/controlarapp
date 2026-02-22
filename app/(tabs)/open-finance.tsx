@@ -5,6 +5,7 @@ import { ConnectedBankCard, BankSyncStatus as SyncStatus } from '@/components/op
 import { SyncCreditsDisplay, useSyncCredits } from '@/components/open-finance/SyncCreditsDisplay';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
+import { DynamicText } from '@/components/ui/DynamicText';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { useAuthContext as useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -1091,6 +1092,8 @@ export default function OpenFinanceScreen() {
                         errorMessage = 'O banco está temporariamente indisponível. Tente novamente em alguns minutos.';
                     } else if (createData.details.code === 'MFA_REQUIRED') {
                         errorMessage = 'Este banco exige autenticação de dois fatores (MFA) que ainda não é suportada.';
+                    } else if (createData.details.codeDescription === 'ITEM_IS_ALREADY_UPDATING') {
+                        errorMessage = 'Uma conexão com este banco já está em andamento. Aguarde alguns segundos e tente novamente.';
                     }
                 } else if (createData.error) {
                     errorMessage = createData.error;
@@ -1555,14 +1558,27 @@ export default function OpenFinanceScreen() {
                         <Text style={styles.statusTitle}>Sincronizando...</Text>
                         <Text style={styles.statusText}>Aguarde enquanto baixamos tudo do {selectedConnector?.name || 'seu banco'}. Não feche o aplicativo.</Text>
 
-                        <View style={styles.progressBarContainer}>
-                            <View style={[styles.progressBar, { width: `${connectionProgress}%` }]} />
-                        </View>
-                        <Text style={styles.progressText}>{connectionProgress}%</Text>
-
                         <View style={styles.stepContainer}>
-                            <ActivityIndicator size="small" color="#D97757" style={{ marginRight: 12 }} />
-                            <Text style={styles.stepText}>{connectionStatusText}</Text>
+                            <DynamicText
+                                key={`connection-status-${connectionStatusText}`}
+                                items={[{ text: connectionStatusText || 'Conectando...', id: 'status' }]}
+                                loop={false}
+                                initialIndex={0}
+                                timing={{ interval: 2000, animationDuration: 350 }}
+                                dot={{
+                                    visible: true,
+                                    size: 6,
+                                    color: '#D97757',
+                                    style: { marginRight: 4 },
+                                }}
+                                text={{
+                                    fontSize: 13,
+                                    color: '#E0E0E0',
+                                    fontWeight: '500',
+                                }}
+                                animationPreset="fade"
+                                animationDirection="up"
+                            />
                         </View>
                     </View>
                 );
@@ -1602,24 +1618,28 @@ export default function OpenFinanceScreen() {
                         <Text style={styles.statusTitle}>Aguardando autorização</Text>
                         <Text style={styles.statusText}>Você deve autorizar o acesso no aplicativo ou site do banco.</Text>
 
-                        <View style={styles.progressBarContainer}>
-                            <View style={[styles.progressBar, { width: `${connectionProgress}%` }]} />
-                        </View>
-                        <Text style={styles.progressText}>{connectionProgress}%</Text>
-
                         <View style={styles.stepContainer}>
-                            <ActivityIndicator size="small" color="#D97757" style={{ marginRight: 12 }} />
-                            <Text style={styles.stepText}>{connectionStatusText || (oauthPolling ? 'Aguardando você finalizar no app do banco...' : 'Aguardando...')}</Text>
+                            <DynamicText
+                                key={`oauth-status-${connectionStatusText}`}
+                                items={[{ text: connectionStatusText || (oauthPolling ? 'Aguardando você finalizar no app do banco...' : 'Aguardando...'), id: 'oauth-status' }]}
+                                loop={false}
+                                initialIndex={0}
+                                timing={{ interval: 2000, animationDuration: 350 }}
+                                dot={{
+                                    visible: true,
+                                    size: 6,
+                                    color: '#D97757',
+                                    style: { marginRight: 4 },
+                                }}
+                                text={{
+                                    fontSize: 13,
+                                    color: '#E0E0E0',
+                                    fontWeight: '500',
+                                }}
+                                animationPreset="fade"
+                                animationDirection="up"
+                            />
                         </View>
-
-                        {currentOauthUrl && (
-                            <TouchableOpacity
-                                style={[styles.actionButton, { marginTop: 24, width: '100%', backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#444' }]}
-                                onPress={() => Linking.openURL(currentOauthUrl)}
-                            >
-                                <Text style={[styles.actionButtonText, { color: '#E0E0E0' }]}>O app não abriu? Clique aqui manualmente</Text>
-                            </TouchableOpacity>
-                        )}
                     </View>
                 );
         }
