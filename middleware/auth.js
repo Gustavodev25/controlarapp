@@ -6,14 +6,25 @@ let isInitialized = false;
 try {
     // 1. Try environment variable (Base64 JSON)
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        const serviceAccount = JSON.parse(
-            Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('ascii')
-        );
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
-        isInitialized = true;
-        console.log('[Auth] Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT');
+        try {
+            const rawDecoded = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('ascii');
+            const sanitized = rawDecoded.trim();
+
+            console.log('[Auth] Attempting to parse FIREBASE_SERVICE_ACCOUNT. Length:', sanitized.length);
+            // DO NOT log the whole raw string to avoid leaking secrets, just first/last chars
+            console.log('[Auth] Raw content starts with:', sanitized.substring(0, 20), '...');
+
+            const serviceAccount = JSON.parse(sanitized);
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount)
+            });
+            isInitialized = true;
+            console.log('[Auth] Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT');
+        } catch (parseError) {
+            console.error('[Auth] JSON Parse error for FIREBASE_SERVICE_ACCOUNT:', parseError.message);
+            // Fallback: se falhar o parse do Base64, pode ser que a string não seja base64 (dev local por exemplo)
+            throw parseError; // Re-throw to be caught by outer catch
+        }
     }
     // 1.5 Try individual environment variables (Railway/Manual config)
     else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
