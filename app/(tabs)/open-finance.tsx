@@ -1092,7 +1092,11 @@ export default function OpenFinanceScreen() {
                         errorMessage = 'O banco está temporariamente indisponível. Tente novamente em alguns minutos.';
                     } else if (createData.details.code === 'MFA_REQUIRED') {
                         errorMessage = 'Este banco exige autenticação de dois fatores (MFA) que ainda não é suportada.';
-                    } else if (createData.details.codeDescription === 'ITEM_IS_ALREADY_UPDATING') {
+                    } else if (
+                        // 👇 MUDANÇA AQUI: Suporte para a chave "description" do novo backend
+                        createData.details.description === 'ITEM_IS_ALREADY_UPDATING' ||
+                        createData.details.codeDescription === 'ITEM_IS_ALREADY_UPDATING'
+                    ) {
                         errorMessage = 'Uma conexão com este banco já está em andamento. Aguarde alguns segundos e tente novamente.';
                     }
                 } else if (createData.error) {
@@ -1835,7 +1839,7 @@ const styles = StyleSheet.create({
     progressBarContainer: { width: '100%', height: 6, backgroundColor: '#2A2A2A', borderRadius: 3, marginTop: 20, overflow: 'hidden' },
     progressBar: { height: '100%', backgroundColor: '#D97757', borderRadius: 3 },
     progressText: { color: '#909090', fontSize: 14, marginTop: 8 },
-    stepContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', padding: 14, borderRadius: 12, marginTop: 24, width: '100%', borderWidth: 1, borderColor: '#2A2A2A' },
+    stepContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 12, marginTop: 24, width: '100%' },
     stepText: { color: '#E0E0E0', fontSize: 14, fontWeight: '500', flex: 1 },
     sseText: { color: '#909090', fontSize: 12, marginTop: 16, textAlign: 'center' },
     warningTextSimple: { color: '#FF9F0A', fontSize: 13, marginTop: 8, marginBottom: 4, textAlign: 'center' },
