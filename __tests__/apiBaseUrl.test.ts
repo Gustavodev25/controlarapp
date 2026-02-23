@@ -20,7 +20,7 @@ describe('resolveApiBaseUrl', () => {
             expoHostUri: null,
         });
 
-        expect(result).toBe('https://controlar-production.up.railway.app');
+        expect(result).toBe('https://backendcontrolarapp-production.up.railway.app');
     });
 
     test('infers LAN host from Expo host URI in development', () => {
@@ -80,11 +80,11 @@ describe('resolveApiBaseUrl', () => {
             isDev: false,
             platform: 'android',
             expoHostUri: null,
-            productionUrl: 'https://controlar-production.up.railway.app/',
+            productionUrl: 'https://backendcontrolarapp-production.up.railway.app/',
         });
 
         expect(fromEnv).toBe('http://192.168.0.163:3001');
-        expect(fromProd).toBe('https://controlar-production.up.railway.app');
+        expect(fromProd).toBe('https://backendcontrolarapp-production.up.railway.app');
     });
 
     test('returns development candidates with production fallback at the end', () => {
@@ -96,7 +96,7 @@ describe('resolveApiBaseUrl', () => {
         });
 
         expect(result[0]).toBe('http://192.168.0.163:3001');
-        expect(result[result.length - 1]).toBe('https://controlar-production.up.railway.app');
+        expect(result[result.length - 1]).toBe('https://backendcontrolarapp-production.up.railway.app');
         expect(result).toContain('http://10.0.2.2:3001');
     });
 
@@ -110,7 +110,7 @@ describe('resolveApiBaseUrl', () => {
 
         expect(result).toEqual([
             'http://10.0.2.2:3001',
-            'https://controlar-production.up.railway.app',
+            'https://backendcontrolarapp-production.up.railway.app',
         ]);
     });
 });
