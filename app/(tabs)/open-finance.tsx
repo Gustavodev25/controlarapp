@@ -1,4 +1,4 @@
-// OpenFinanceScreen.tsx - VERSÃO CORRIGIDA E CONECTADA 2026
+// OpenFinanceScreen.tsx - VERSÃO COM REDIRECIONAMENTO E SYNC CORRIGIDOS
 
 import { ConnectAccountModal } from '@/components/ConnectAccountModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
@@ -11,8 +11,10 @@ import { DynamicText } from '@/components/ui/DynamicText';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { useAuthContext as useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { API_BASE_URL_CANDIDATES } from '@/services/apiBaseUrl';
 import { databaseService } from '@/services/firebase';
 import { notificationService } from '@/services/notifications';
+import { openFinanceConnectionState } from '@/services/openFinanceConnectionState';
 import { getConnectorLogoUrl, normalizeHexColor } from '@/utils/connectorLogo';
 import * as Linking from 'expo-linking';
 import LottieView from 'lottie-react-native';
@@ -21,6 +23,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    AppState,
     Dimensions,
     Platform,
     RefreshControl,
@@ -40,8 +43,12 @@ if (Platform.OS === 'android') {
 }
 
 // ====================== CONFIGURAÇÃO DE API ======================
-const PRODUCTION_API_URL = 'https://backendcontrolarapp-production.up.railway.app';
-const BACKEND_WEBHOOK_URL = 'https://backendcontrolarapp-production.up.railway.app/api/pluggy/webhook';
+const RAILWAY_FALLBACK_API_URL = 'https://backendcontrolarapp-production.up.railway.app';
+const BACKEND_WEBHOOK_URL = `${RAILWAY_FALLBACK_API_URL}/api/pluggy/webhook`;
+const API_BASE_URL_FALLBACKS = Array.from(new Set([
+    ...API_BASE_URL_CANDIDATES,
+    RAILWAY_FALLBACK_API_URL
+]));
 
 const API_HEALTH_CHECK_TIMEOUT_MS = 20000;
 const API_HEALTH_CACHE_TTL_MS = 120000;
@@ -111,35 +118,124 @@ export default function OpenFinanceScreen() {
 
     // ====================== REFS ======================
     const lastApiHealthCheckRef = useRef(0);
-    const [apiBaseUrl, setApiBaseUrl] = useState(PRODUCTION_API_URL);
+    const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL_FALLBACKS[0] || RAILWAY_FALLBACK_API_URL);
     const pendingItemIdRef = useRef<string | null>(null);
+    const openedOAuthUrlRef = useRef(false); // Ref para evitar abrir o banco duplicado
+    const isRestoringPendingRef = useRef(false);
 
     useEffect(() => { pendingItemIdRef.current = pendingItemId; }, [pendingItemId]);
+
+    const clearPersistedOpenFinanceState = useCallback(async () => {
+        await Promise.all([
+            openFinanceConnectionState.clearPendingConnection(),
+            openFinanceConnectionState.clearCallbackPayload()
+        ]);
+    }, []);
+
+    const savePendingConnectionState = useCallback(async (itemId: string, connector?: any) => {
+        await openFinanceConnectionState.savePendingConnection({
+            itemId,
+            startedAt: Date.now(),
+            connector: connector
+                ? {
+                    id: connector.id,
+                    name: connector.name ?? null,
+                    primaryColor: connector.primaryColor ?? null,
+                    imageUrl: connector.imageUrl ?? null,
+                    type: connector.type ?? null
+                }
+                : null
+        });
+    }, []);
+
+    const openOAuthUrlSafely = useCallback(async (url: string) => {
+        if (!url) throw new Error('URL OAuth não fornecida.');
+
+        const canOpen = await Linking.canOpenURL(url);
+        const isWebUrl = /^https?:\/\//i.test(url);
+        if (!canOpen && !isWebUrl) {
+            throw new Error('Não foi possível abrir o link de autorização do banco.');
+        }
+
+        await Linking.openURL(url);
+    }, []);
+
+    const extractItemIdFromDeepLink = useCallback((url: string): string | null => {
+        try {
+            const { queryParams } = Linking.parse(url);
+            const rawItemId = queryParams?.itemId;
+            if (typeof rawItemId === 'string' && rawItemId.trim()) return rawItemId.trim();
+            if (Array.isArray(rawItemId) && rawItemId[0]?.trim()) return rawItemId[0].trim();
+        } catch {
+            // Ignore parse errors and fallback below.
+        }
+        return null;
+    }, []);
+
+    const restorePendingConnectionIfNeeded = useCallback(async () => {
+        if (!user || isRestoringPendingRef.current) return;
+        isRestoringPendingRef.current = true;
+
+        try {
+            const [pendingState, callbackPayload] = await Promise.all([
+                openFinanceConnectionState.getPendingConnection(),
+                openFinanceConnectionState.consumeCallbackPayload(),
+            ]);
+
+            const callbackItemId = callbackPayload?.itemId?.trim() || null;
+            const restoredItemId = callbackItemId || pendingState?.itemId || pendingItemIdRef.current;
+            const callbackError = callbackPayload?.error || null;
+
+            if (callbackError) {
+                setIsModalVisible(true);
+                setConnectionError('O banco recusou a conexão ou ocorreu um erro.');
+                setConnectionStep('error');
+                setPendingItemId(null);
+                await clearPersistedOpenFinanceState();
+                return;
+            }
+
+            if (!restoredItemId) return;
+
+            if (!selectedConnector && pendingState?.connector) {
+                setSelectedConnector(pendingState.connector);
+            }
+
+            setPendingItemId(restoredItemId);
+            await savePendingConnectionState(restoredItemId, pendingState?.connector || selectedConnector);
+
+            setIsModalVisible(true);
+            setConnectionStep('oauth_pending');
+            setConnectionProgress(40);
+            setConnectionStatusText('Autorização recebida do banco. Finalizando conexão...');
+        } finally {
+            isRestoringPendingRef.current = false;
+        }
+    }, [clearPersistedOpenFinanceState, savePendingConnectionState, selectedConnector, user]);
 
     // ====================== API RESOLVER ======================
     const resolveReachableApiBaseUrl = useCallback(async (): Promise<string> => {
         const now = Date.now();
         if ((now - lastApiHealthCheckRef.current) < API_HEALTH_CACHE_TTL_MS) return apiBaseUrl;
 
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        const candidates = [apiBaseUrl, ...API_BASE_URL_FALLBACKS.filter((url) => url !== apiBaseUrl)];
+        for (const candidate of candidates) {
             try {
-                const response = await fetchWithTimeout(`${PRODUCTION_API_URL}/health`, {
+                const response = await fetchWithTimeout(`${candidate}/health`, {
                     method: 'GET',
                     timeout: API_HEALTH_CHECK_TIMEOUT_MS
                 });
                 if (response.ok) {
                     lastApiHealthCheckRef.current = Date.now();
-                    setApiBaseUrl(PRODUCTION_API_URL);
-                    return PRODUCTION_API_URL;
+                    setApiBaseUrl(candidate);
+                    return candidate;
                 }
-            } catch (e) {
-                console.warn(`[API Health] Tentativa ${attempt}/2 falhou`);
-                if (attempt === 2) break;
-                await new Promise(r => setTimeout(r, 3000));
+            } catch {
+                // try next candidate
             }
         }
-        lastApiHealthCheckRef.current = Date.now();
-        return PRODUCTION_API_URL;
+
+        return apiBaseUrl;
     }, [apiBaseUrl]);
 
     const apiFetch = useCallback(async (path: string, options: RequestInit & { timeout?: number } = {}) => {
@@ -164,8 +260,23 @@ export default function OpenFinanceScreen() {
         }
     }, [user]);
 
+    useEffect(() => {
+        if (!user) return;
+        restorePendingConnectionIfNeeded();
+    }, [restorePendingConnectionIfNeeded, user]);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (nextState) => {
+            if (nextState === 'active') {
+                restorePendingConnectionIfNeeded();
+            }
+        });
+
+        return () => subscription.remove();
+    }, [restorePendingConnectionIfNeeded]);
+
     // ====================== HANDLE TOGGLE VISIBILITY ======================
-    const handleToggleVisibility = useCallback(async (accountId: string, currentlyHidden: boolean) => {
+    const handleToggleVisibility = useCallback(async (accountId: string) => {
         if (!user?.uid || !profile) {
             showError('Erro', 'Usuário não autenticado.');
             return;
@@ -175,6 +286,7 @@ export default function OpenFinanceScreen() {
             let hiddenAccountIds: string[] = Array.isArray(preferences.hiddenAccountIds)
                 ? [...preferences.hiddenAccountIds]
                 : [];
+            const currentlyHidden = hiddenAccountIds.includes(accountId);
 
             if (currentlyHidden) {
                 hiddenAccountIds = hiddenAccountIds.filter((id: string) => id !== accountId);
@@ -182,8 +294,7 @@ export default function OpenFinanceScreen() {
                 hiddenAccountIds.push(accountId);
             }
 
-            await databaseService.updateProfilePreferences?.(user.uid, { ...preferences, hiddenAccountIds }) ||
-                await databaseService.updateUserPreferences?.(user.uid, { ...preferences, hiddenAccountIds });
+            await databaseService.updatePreference(user.uid, { hiddenAccountIds });
 
             await refreshProfile();
             setDataRefreshKey(prev => prev + 1);
@@ -211,49 +322,76 @@ export default function OpenFinanceScreen() {
     };
 
     const handleOAuthCallback = useCallback(async (url: string) => {
-        console.log('[OAuth] Callback received:', url);
-        let itemId = pendingItemIdRef.current;
+        const parsedItemId = extractItemIdFromDeepLink(url);
+        const fallbackItemId = pendingItemIdRef.current;
+        let queryParams: Record<string, any> | null = null;
         try {
-            const { queryParams } = Linking.parse(url);
-            if (queryParams?.error) {
-                setConnectionError('O banco recusou a conexão ou ocorreu um erro.');
-                setConnectionStep('error');
-                setIsModalVisible(true);
-                return;
-            }
-        } catch (e) {
-            console.error('[OAuth] Failed to parse callback URL', e);
+            ({ queryParams } = Linking.parse(url));
+        } catch {
+            queryParams = null;
         }
+        const callbackError = typeof queryParams?.error === 'string' ? queryParams.error : null;
+        const callbackStatus = typeof queryParams?.status === 'string' ? queryParams.status : null;
+        const itemId = parsedItemId || fallbackItemId;
+
+        await openFinanceConnectionState.saveCallbackPayload({
+            itemId: itemId || null,
+            status: callbackStatus,
+            error: callbackError,
+            receivedAt: Date.now(),
+            rawUrl: url
+        });
+
+        if (itemId) {
+            setPendingItemId(itemId);
+            await savePendingConnectionState(itemId, selectedConnector);
+        }
+
+        if (callbackError) {
+            setConnectionError('O banco recusou a conex�o ou ocorreu um erro.');
+            setConnectionStep('error');
+            setIsModalVisible(true);
+            await clearPersistedOpenFinanceState();
+            return;
+        }
+
         if (!itemId || !user) return;
 
         setIsModalVisible(true);
         setConnectionStep('oauth_pending');
         setConnectionProgress(40);
-        setConnectionStatusText('Autorização recebida do app! Aguardando o banco finalizar o envio...');
-    }, [user]);
+        setConnectionStatusText('Autoriza��o recebida do banco. Finalizando conex�o...');
+    }, [
+        clearPersistedOpenFinanceState,
+        extractItemIdFromDeepLink,
+        savePendingConnectionState,
+        selectedConnector,
+        user
+    ]);
 
     useEffect(() => {
         const subscription = Linking.addEventListener('url', (event) => {
-            if (event.url.includes('open-finance') || event.url.includes('pluggy')) {
+            if (event.url.includes('open-finance') || event.url.includes('pluggy') || event.url.includes('oauth-callback')) {
                 handleOAuthCallback(event.url);
             }
         });
         Linking.getInitialURL().then((url) => {
-            if (url && (url.includes('open-finance') || url.includes('pluggy'))) {
+            if (url && (url.includes('open-finance') || url.includes('pluggy') || url.includes('oauth-callback'))) {
                 handleOAuthCallback(url);
             }
         });
         return () => subscription.remove();
     }, [handleOAuthCallback]);
 
-    // Polling OAuth
+    // Polling OAuth & Sync
     useEffect(() => {
-        if (connectionStep !== 'oauth_pending' || !pendingItemId || !user) return;
+        // CORREÇÃO: Fazer polling tanto no estado 'connecting' quanto no 'oauth_pending'
+        if (!['oauth_pending', 'connecting'].includes(connectionStep) || !pendingItemId || !user) return;
 
         let pollCount = 0;
         const maxPolls = 180;
         let cancelled = false;
-        let intervalId: NodeJS.Timeout | null = null;
+        let intervalId: ReturnType<typeof setInterval> | null = null;
 
         const checkStatus = async () => {
             if (cancelled) return;
@@ -264,17 +402,36 @@ export default function OpenFinanceScreen() {
                     headers: { 'Authorization': `Bearer ${token}` },
                     timeout: 15000
                 });
+
                 if (response.ok) {
                     const data = await response.json();
                     const item = data.item || data;
                     const status = item.status;
+                    const clientUrl = item.oauthUrl || item.parameter?.oauthUrl || item.userAction?.url;
+
+                    // CORREÇÃO: Redireciona para o banco se a URL aparecer só depois de alguns segundos
+                    if (status === 'WAITING_USER_INPUT' && clientUrl && !openedOAuthUrlRef.current) {
+                        try {
+                            openedOAuthUrlRef.current = true;
+                            setConnectionStep('oauth_pending');
+                            await openOAuthUrlSafely(clientUrl);
+                        } catch (openError: any) {
+                            cancelled = true;
+                            if (intervalId) clearInterval(intervalId);
+                            setConnectionError(openError?.message || 'N�o foi poss�vel abrir a autoriza��o do banco.');
+                            setConnectionStep('error');
+                            setPendingItemId(null);
+                            await clearPersistedOpenFinanceState();
+                            return;
+                        }
+                    }
 
                     if (status === 'UPDATED') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
                         setConnectionStep('connecting');
                         setConnectionProgress(60);
-                        setConnectionStatusText('Autorização confirmada! Preparando extração de dados...');
+                        setConnectionStatusText('Autorização confirmada! Extraindo suas contas e transações...');
                         await new Promise(resolve => setTimeout(resolve, 8000));
 
                         const token2 = await user.getIdToken();
@@ -315,28 +472,41 @@ export default function OpenFinanceScreen() {
                             setConnectionStatusText('Sincronização concluída com sucesso!');
                             setConnectionStep('success');
                             setPendingItemId(null);
+                            await clearPersistedOpenFinanceState();
                             setTimeout(() => {
                                 fetchAccounts();
                                 refreshCredits();
                                 setIsModalVisible(false);
                                 setConnectionStep('info');
-                            }, 1500);
+                            }, 2500);
+                        } else {
+                            const errPayload = await syncResponse.json().catch(() => null);
+                            cancelled = true;
+                            if (intervalId) clearInterval(intervalId);
+                            setConnectionError(errPayload?.error || 'Falha ao baixar transa��es do banco.');
+                            setConnectionStep('error');
+                            setPendingItemId(null);
+                            await clearPersistedOpenFinanceState();
+                            return;
                         }
                         return;
                     }
+
                     if (status === 'UPDATING' || status === 'WAITING_USER_INPUT') {
-                        if (status === 'UPDATING' && connectionProgress < 50) {
-                            setConnectionProgress(50);
+                        if (status === 'UPDATING') {
+                            setConnectionProgress((previous) => (previous < 50 ? 50 : previous));
                             setConnectionStatusText('O banco autorizou. Extraindo dados...');
                         }
                         return;
                     }
+
                     if (status === 'LOGIN_ERROR' || status === 'OUTDATED' || status === 'ERROR') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
-                        setConnectionError(status === 'LOGIN_ERROR' ? 'Credenciais inválidas.' : 'Erro ao conectar no banco.');
+                        setConnectionError(status === 'LOGIN_ERROR' ? 'Acesso negado pelo banco.' : 'Erro ao conectar no banco.');
                         setConnectionStep('error');
                         setPendingItemId(null);
+                        await clearPersistedOpenFinanceState();
                     }
                 }
             } catch (error) {
@@ -345,9 +515,10 @@ export default function OpenFinanceScreen() {
             if (pollCount >= maxPolls && !cancelled) {
                 cancelled = true;
                 if (intervalId) clearInterval(intervalId);
-                setConnectionError('Tempo expirado.');
+                setConnectionError('Tempo expirado aguardando o banco.');
                 setConnectionStep('error');
                 setPendingItemId(null);
+                await clearPersistedOpenFinanceState();
             }
         };
 
@@ -358,7 +529,14 @@ export default function OpenFinanceScreen() {
             cancelled = true;
             if (intervalId) clearInterval(intervalId);
         };
-    }, [connectionStep, pendingItemId, user, selectedConnector]);
+    }, [
+        clearPersistedOpenFinanceState,
+        connectionStep,
+        openOAuthUrlSafely,
+        pendingItemId,
+        selectedConnector,
+        user
+    ]);
 
     const onRefresh = () => {
         setRefreshing(true);
@@ -377,7 +555,6 @@ export default function OpenFinanceScreen() {
                 timeout: CONNECTORS_TIMEOUT_MS
             });
 
-            // CORREÇÃO: Pega a mensagem de erro real do backend se falhar
             if (!response.ok) {
                 const errData = await response.json().catch(() => null);
                 throw new Error(errData?.error || `HTTP error! status: ${response.status}`);
@@ -404,6 +581,7 @@ export default function OpenFinanceScreen() {
     };
 
     const handleOpenModal = () => {
+        openedOAuthUrlRef.current = false;
         setIsModalVisible(true);
         setConnectionStep('info');
         setSelectedConnector(null);
@@ -411,9 +589,11 @@ export default function OpenFinanceScreen() {
         setConnectorsFetchError(null);
         setConnectionError(null);
         setConnectionStatusText('');
+        openFinanceConnectionState.clearCallbackPayload().catch(() => null);
     };
 
     const handleCloseModal = () => {
+        openedOAuthUrlRef.current = false;
         setIsModalVisible(false);
         setConnectionStep('info');
         setSelectedConnector(null);
@@ -423,6 +603,8 @@ export default function OpenFinanceScreen() {
         setSearchQuery('');
         setUseCNPJ(false);
         setConnectionStatusText('');
+        setPendingItemId(null);
+        clearPersistedOpenFinanceState().catch(() => null);
     };
 
     const handleStartConnection = () => {
@@ -434,7 +616,7 @@ export default function OpenFinanceScreen() {
         setSelectedConnector(connector);
         setUseCNPJ(false);
         const initialValues: Record<string, string> = {};
-        (connector.credentials || []).forEach(cred => initialValues[cred.name] = '');
+        (connector.credentials || []).forEach((cred: any) => initialValues[cred.name] = '');
         setCredentialValues(initialValues);
         setConnectionStep('credentials');
     };
@@ -462,7 +644,8 @@ export default function OpenFinanceScreen() {
 
     const handleSyncBank = async (group: any, onStatusUpdate: (status: SyncStatus) => void) => {
         if (!user) return;
-        const itemId = group.accounts[0]?.pluggyItemId || group.accounts[0]?.itemId || group.connector?.id;
+        const accountWithItem = (group.accounts || []).find((account: any) => account?.pluggyItemId || account?.itemId);
+        const itemId = accountWithItem?.pluggyItemId || accountWithItem?.itemId || null;
         if (!itemId) {
             onStatusUpdate({ step: 'error', message: 'Item ID ausente', progress: 0 });
             setTimeout(() => onStatusUpdate({ step: 'idle', message: '', progress: 0 }), 3000);
@@ -519,7 +702,7 @@ export default function OpenFinanceScreen() {
             return;
         }
 
-        const missingFields = connectorCredentials.filter(cred => !credentialValues[cred.name]?.trim() && (!acceptsBothDocuments || !isDocumentCredential(cred)));
+        const missingFields = connectorCredentials.filter((cred: any) => !credentialValues[cred.name]?.trim() && (!acceptsBothDocuments || !isDocumentCredential(cred)));
         if (missingFields.length > 0) {
             showError('Campos obrigatórios', 'Preencha todos os campos.');
             return;
@@ -537,9 +720,11 @@ export default function OpenFinanceScreen() {
         setConnectionStatusText('Criando conexão...');
 
         const sanitizedCredentials = { ...credentialValues };
-        connectorCredentials.filter(isDocumentCredential).forEach(cred => {
+        connectorCredentials.filter(isDocumentCredential).forEach((cred: any) => {
             if (sanitizedCredentials[cred.name]) sanitizedCredentials[cred.name] = sanitizedCredentials[cred.name].replace(/\D/g, '');
         });
+
+        openedOAuthUrlRef.current = false; // Reset da trava de link duplo
 
         try {
             const token = await user.getIdToken();
@@ -549,6 +734,7 @@ export default function OpenFinanceScreen() {
                 body: JSON.stringify({
                     connectorId: selectedConnector.id,
                     credentials: sanitizedCredentials,
+                    appRedirectUri: OAUTH_REDIRECT_URI,
                     oauthRedirectUri: OAUTH_REDIRECT_URI,
                     webhookUrl: BACKEND_WEBHOOK_URL
                 }),
@@ -559,22 +745,46 @@ export default function OpenFinanceScreen() {
             if (!createResponse.ok) {
                 setConnectionError(createData.error || 'Falha ao criar item no servidor');
                 setConnectionStep('error');
+                setPendingItemId(null);
+                await clearPersistedOpenFinanceState();
                 return;
             }
 
             const itemId = createData.item?.id;
-            setPendingItemId(itemId);
+            if (!itemId) {
+                setConnectionError('O servidor n�o retornou o ID da conex�o.');
+                setConnectionStep('error');
+                setPendingItemId(null);
+                await clearPersistedOpenFinanceState();
+                return;
+            }
 
-            setConnectionProgress(100);
-            setConnectionStatusText('Conexão concluída!');
-            setConnectionStep('success');
-            setTimeout(() => {
-                fetchAccounts();
-                handleCloseModal();
-            }, 2000);
+            setPendingItemId(itemId);
+            await savePendingConnectionState(itemId, selectedConnector);
+
+            // CORREÇÃO: ABRE O APLICATIVO DO BANCO E AGUARDA (Polling)
+            if (createData.oauthUrl) {
+                try {
+                    openedOAuthUrlRef.current = true;
+                    setConnectionStep('oauth_pending');
+                    setConnectionStatusText('Redirecionando para o banco...');
+                    await openOAuthUrlSafely(createData.oauthUrl);
+                } catch (openError: any) {
+                    setConnectionError(openError?.message || 'N�o foi poss�vel abrir o app do banco.');
+                    setConnectionStep('error');
+                    setPendingItemId(null);
+                    await clearPersistedOpenFinanceState();
+                }
+            } else {
+                setConnectionStep('connecting');
+                setConnectionStatusText('Autenticando com o banco...');
+            }
+
         } catch (error: any) {
             setConnectionError(error?.message || 'Erro de conexão na internet');
             setConnectionStep('error');
+            setPendingItemId(null);
+            await clearPersistedOpenFinanceState();
         } finally {
             setConnecting(false);
         }
@@ -692,7 +902,7 @@ export default function OpenFinanceScreen() {
                     </View>
                 );
             case 'credentials':
-                const visibleCredentials = (selectedConnector?.credentials || []).filter((cred) => {
+                const visibleCredentials = (selectedConnector?.credentials || []).filter((cred: any) => {
                     const { acceptsBothDocuments } = getConnectorDocumentSupport(selectedConnector?.credentials);
                     if (!acceptsBothDocuments || !isDocumentCredential(cred)) return true;
                     const isCpfCredential = credentialHasCpf(cred);
@@ -717,7 +927,7 @@ export default function OpenFinanceScreen() {
                                 </View>
                             </View>
                             <View style={styles.separator} />
-                            {visibleCredentials.map((cred, index) => {
+                            {visibleCredentials.map((cred: any, index: number) => {
                                 const isCpfCredential = credentialHasCpf(cred);
                                 const isCnpjCredential = credentialHasCnpj(cred);
                                 const isDocumentField = isCpfCredential || isCnpjCredential;
@@ -784,7 +994,7 @@ export default function OpenFinanceScreen() {
                                             if (documentFields.length > 0) {
                                                 setCredentialValues(prev => {
                                                     const nextValues = { ...prev };
-                                                    documentFields.forEach(field => { nextValues[field.name] = ''; });
+                                                    documentFields.forEach((field: any) => { nextValues[field.name] = ''; });
                                                     return nextValues;
                                                 });
                                             }
@@ -912,7 +1122,6 @@ export default function OpenFinanceScreen() {
                                             onConsumeCredit={consumeCredit}
                                             hiddenAccountIds={(profile?.preferences as any)?.hiddenAccountIds}
                                             onToggleVisibility={handleToggleVisibility}
-                                            initialExpanded={false}
                                         />
                                     );
                                 })
@@ -1066,3 +1275,5 @@ const styles = StyleSheet.create({
     searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2A2A2A', height: 48, width: '100%' },
     searchInput: { flex: 1, color: '#FFFFFF', fontSize: 16, paddingVertical: 12, marginLeft: 8 },
 });
+
+

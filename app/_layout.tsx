@@ -57,6 +57,7 @@ export default function RootLayout() {
                       <Stack.Screen name="(public)" options={{ headerShown: false }} />
                       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                       <Stack.Screen name="settings" options={{ headerShown: false }} />
+                      <Stack.Screen name="open-finance/callback" options={{ headerShown: false }} />
                     </Stack>
                     <StatusBar style="light" translucent backgroundColor="transparent" />
                   </ThemeProvider>
