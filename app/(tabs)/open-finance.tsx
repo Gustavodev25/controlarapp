@@ -1,3 +1,5 @@
+// OpenFinanceScreen.tsx - VERSÃO CORRIGIDA E CONECTADA 2026
+
 import { ConnectAccountModal } from '@/components/ConnectAccountModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { BankConnectorLogo } from '@/components/open-finance/BankConnectorLogo';
@@ -9,13 +11,12 @@ import { DynamicText } from '@/components/ui/DynamicText';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { useAuthContext as useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { API_BASE_URL, API_BASE_URL_CANDIDATES } from '@/services/apiBaseUrl';
 import { databaseService } from '@/services/firebase';
 import { notificationService } from '@/services/notifications';
 import { getConnectorLogoUrl, normalizeHexColor } from '@/utils/connectorLogo';
 import * as Linking from 'expo-linking';
 import LottieView from 'lottie-react-native';
-import { ChevronRight, Eye, EyeOff, Lock, Search, ShieldCheck, User, Zap } from 'lucide-react-native';
+import { Eye, EyeOff, Lock, Search, ShieldCheck, User, Zap } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -38,28 +39,26 @@ if (Platform.OS === 'android') {
     }
 }
 
-console.log('[OpenFinance] Initial API URL:', API_BASE_URL);
-console.log('[OpenFinance] API candidates:', API_BASE_URL_CANDIDATES);
+// ====================== CONFIGURAÇÃO DE API ======================
+const PRODUCTION_API_URL = 'https://backendcontrolarapp-production.up.railway.app';
+const BACKEND_WEBHOOK_URL = 'https://backendcontrolarapp-production.up.railway.app/api/pluggy/webhook';
 
-const BACKEND_WEBHOOK_URL = 'https://backendcontrolarapp-production.up.railway.app/api/pluggy/webhook'; // ← NOVO: Webhook oficial do backend
-
-const NETWORK_TIMEOUT_REGEX = /network request timed out/i;
-const NETWORK_FAILED_REGEX = /network request failed/i;
-const API_HEALTH_CHECK_TIMEOUT_MS = 6000;
-const API_HEALTH_CACHE_TTL_MS = 30000;
-const API_DEFAULT_TIMEOUT_MS = 30000;
+const API_HEALTH_CHECK_TIMEOUT_MS = 20000;
+const API_HEALTH_CACHE_TTL_MS = 120000;
+const API_DEFAULT_TIMEOUT_MS = 60000;
+const CONNECTORS_TIMEOUT_MS = 40000;
 
 const isNetworkTransportError = (error: unknown): boolean => {
     if (error instanceof TypeError) return true;
-    const message = error instanceof Error ? error.message : String(error ?? '');
-    return NETWORK_TIMEOUT_REGEX.test(message) || NETWORK_FAILED_REGEX.test(message);
+    const msg = error instanceof Error ? error.message : String(error ?? '');
+    return /timeout|network request failed|abort/i.test(msg);
 };
 
-const getApiConnectionErrorMessage = (apiBaseUrl: string, errorMsg?: string): string =>
-    `Erro de rede: ${errorMsg || 'Falha na conexao'}. Tentando acessar: ${apiBaseUrl}. Verifique se o servidor backend esta rodando e acessivel.`;
+const getApiConnectionErrorMessage = (errorMsg?: string): string =>
+    `Erro de rede: ${errorMsg || 'Falha na conexão'}. Verifique sua internet e tente novamente.`;
 
 const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number } = {}) => {
-    const { timeout = 180000, ...fetchOptions } = options;
+    const { timeout = API_DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -71,176 +70,20 @@ const fetchWithTimeout = async (resource: string, options: RequestInit & { timeo
         return response;
     } catch (error: any) {
         clearTimeout(id);
-        if (error.name === 'AbortError') {
-            throw new TypeError('Network request timed out');
-        }
+        if (error.name === 'AbortError') throw new TypeError('Network request timed out');
         throw error;
     }
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const checkAuthRequirements = (item: any) => {
-    return {
-        url: item.connectorUrl || item.oauthUrl || item.clientUrl || item.parameter?.oauthUrl || null,
-        needsAction: item.status === 'WAITING_USER_INPUT' || item.status === 'LOGIN_ERROR' || item.status === 'WAITING_USER_ACTION',
-        status: item.status
-    };
-};
-
-const validateCPF = (cpf: string): boolean => {
-    const cleanCPF = cpf.replace(/\D/g, '');
-    if (cleanCPF.length !== 11) return false;
-    if (/^(\d)\1{10}$/.test(cleanCPF)) return false;
-    let sum = 0;
-    for (let i = 0; i < 9; i++) {
-        sum += parseInt(cleanCPF.charAt(i)) * (10 - i);
-    }
-    let remainder = (sum * 10) % 11;
-    if (remainder === 10 || remainder === 11) remainder = 0;
-    if (remainder !== parseInt(cleanCPF.charAt(9))) return false;
-    sum = 0;
-    for (let i = 0; i < 10; i++) {
-        sum += parseInt(cleanCPF.charAt(i)) * (11 - i);
-    }
-    remainder = (sum * 10) % 11;
-    if (remainder === 10 || remainder === 11) remainder = 0;
-    if (remainder !== parseInt(cleanCPF.charAt(10))) return false;
-    return true;
-};
-
-const formatCPF = (value: string): string => {
-    const numbers = value.replace(/\D/g, '').slice(0, 11);
-    if (numbers.length <= 3) return numbers;
-    if (numbers.length <= 6) return `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
-    if (numbers.length <= 9) return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
-    return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9)}`;
-};
-
-const formatCNPJ = (value: string): string => {
-    const numbers = value.replace(/\D/g, '').slice(0, 14);
-    if (numbers.length <= 2) return numbers;
-    if (numbers.length <= 5) return `${numbers.slice(0, 2)}.${numbers.slice(2)}`;
-    if (numbers.length <= 8) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5)}`;
-    if (numbers.length <= 12) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8)}`;
-    return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8, 12)}-${numbers.slice(12)}`;
-};
-
-const validateCNPJ = (cnpj: string): boolean => {
-    const cleanCNPJ = cnpj.replace(/\D/g, '');
-    if (cleanCNPJ.length !== 14) return false;
-    if (/^(\d)\1{13}$/.test(cleanCNPJ)) return false;
-    let length = cleanCNPJ.length - 2;
-    let numbers = cleanCNPJ.substring(0, length);
-    const digits = cnpj.substring(length);
-    let sum = 0;
-    let pos = length - 7;
-    for (let i = length; i >= 1; i--) {
-        sum += parseInt(numbers.charAt(length - i)) * pos--;
-        if (pos < 2) pos = 9;
-    }
-    let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
-    if (result !== parseInt(digits.charAt(0))) return false;
-    length = length + 1;
-    numbers = cleanCNPJ.substring(0, length);
-    sum = 0;
-    pos = length - 7;
-    for (let i = length; i >= 1; i--) {
-        sum += parseInt(numbers.charAt(length - i)) * pos--;
-        if (pos < 2) pos = 9;
-    }
-    result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
-    if (result !== parseInt(digits.charAt(1))) return false;
-    return true;
-};
-
-interface Connector {
-    id: number;
-    name: string;
-    imageUrl: string;
-    primaryColor: string;
-    type: string;
-    oauth?: boolean;
-    isOpenFinance?: boolean;
-    credentials: Array<{
-        name: string;
-        label: string;
-        type: string;
-        placeholder?: string;
-        validation?: string;
-        validationMessage?: string;
-    }>;
-}
-
-interface CredentialValues {
-    [key: string]: string;
-}
-
-type ConnectionStep = 'info' | 'banks' | 'credentials' | 'connecting' | 'oauth_pending' | 'success' | 'error';
-
-type ConnectorCredential = Connector['credentials'][number];
-
-const getCredentialSearchText = (credential: ConnectorCredential): string => (
-    `${credential.label || ''} ${credential.placeholder || ''} ${credential.validation || ''} ${credential.validationMessage || ''}`
-).toLowerCase();
-
-const credentialHasCpf = (credential: ConnectorCredential): boolean => (
-    getCredentialSearchText(credential).includes('cpf')
-);
-
-const credentialHasCnpj = (credential: ConnectorCredential): boolean => (
-    getCredentialSearchText(credential).includes('cnpj')
-);
-
-const isDocumentCredential = (credential: ConnectorCredential): boolean => {
-    return credentialHasCpf(credential) || credentialHasCnpj(credential);
-};
-
-const getConnectorDocumentSupport = (credentials: ConnectorCredential[] = []) => {
-    const hasCpfCredential = credentials.some(credentialHasCpf);
-    const hasCnpjCredential = credentials.some(credentialHasCnpj);
-    return {
-        hasCpfCredential,
-        hasCnpjCredential,
-        acceptsBothDocuments: hasCpfCredential && hasCnpjCredential,
-    };
-};
-
 const OAUTH_REDIRECT_URI = Linking.createURL('open-finance/callback');
 
-const ConnectorCard = ({
-    item,
-    onSelect,
-    styles
-}: {
-    item: Connector;
-    onSelect: (connector: Connector) => void;
-    styles: any;
-}) => {
-    const color = normalizeHexColor(item.primaryColor, '#30302E');
-    return (
-        <TouchableOpacity
-            style={styles.bankListRow}
-            onPress={() => onSelect(item)}
-            activeOpacity={0.7}
-        >
-            <BankConnectorLogo
-                connector={item}
-                size={36}
-                borderRadius={10}
-                iconSize={18}
-                borderColor={`${color}33`}
-                containerStyle={styles.bankListLogoContainer}
-            />
-            <Text style={styles.bankRowTitle} numberOfLines={1}>{item.name}</Text>
-            <ChevronRight size={20} color="#666" />
-        </TouchableOpacity>
-    );
-};
-
+// ====================== COMPONENTE ======================
 export default function OpenFinanceScreen() {
     const { user, profile, refreshProfile } = useAuth();
     const { showError, showWarning } = useToast();
+
+    // ====================== ESTADOS ======================
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [itemToDelete, setItemToDelete] = useState<any>(null);
@@ -248,138 +91,131 @@ export default function OpenFinanceScreen() {
     const [loading, setLoading] = useState(true);
     const [loadingDots, setLoadingDots] = useState('');
     const [dataRefreshKey, setDataRefreshKey] = useState(0);
-    useEffect(() => {
-        if (!loading) return;
-        const interval = setInterval(() => {
-            setLoadingDots(prev => {
-                if (prev === '...') return '';
-                return prev + '.';
-            });
-        }, 500);
-        return () => clearInterval(interval);
-    }, [loading]);
     const [refreshing, setRefreshing] = useState(false);
     const { credits: syncCredits, refresh: refreshCredits, consumeCredit, hasCredits, canSyncItem } = useSyncCredits(user?.uid);
-    useEffect(() => {
-        notificationService.scheduleDailySyncResetNotification();
-    }, []);
-    const [connectionStep, setConnectionStep] = useState<ConnectionStep>('info');
-    const [connectors, setConnectors] = useState<Connector[]>([]);
+
+    const [connectionStep, setConnectionStep] = useState<'info' | 'banks' | 'credentials' | 'connecting' | 'oauth_pending' | 'success' | 'error'>('info');
+    const [connectors, setConnectors] = useState<any[]>([]);
     const [loadingConnectors, setLoadingConnectors] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [connectorsFetchError, setConnectorsFetchError] = useState<string | null>(null);
-    const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
-    const [credentialValues, setCredentialValues] = useState<CredentialValues>({});
-    const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
+    const [selectedConnector, setSelectedConnector] = useState<any>(null);
+    const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
+    const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
     const [useCNPJ, setUseCNPJ] = useState(false);
     const [connecting, setConnecting] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const [connectionProgress, setConnectionProgress] = useState(0);
-    const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
-    const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
-    const [currentOauthUrl, setCurrentOauthUrl] = useState<string | null>(null);
+    const [connectionStatusText, setConnectionStatusText] = useState('');
+    const [pendingItemId, setPendingItemId] = useState<string | null>(null);
+
+    // ====================== REFS ======================
     const lastApiHealthCheckRef = useRef(0);
-    useEffect(() => {
-        console.log('[OpenFinance] Active API URL:', apiBaseUrl);
-    }, [apiBaseUrl]);
+    const [apiBaseUrl, setApiBaseUrl] = useState(PRODUCTION_API_URL);
+    const pendingItemIdRef = useRef<string | null>(null);
+
+    useEffect(() => { pendingItemIdRef.current = pendingItemId; }, [pendingItemId]);
+
+    // ====================== API RESOLVER ======================
     const resolveReachableApiBaseUrl = useCallback(async (): Promise<string> => {
         const now = Date.now();
-        if ((now - lastApiHealthCheckRef.current) < API_HEALTH_CACHE_TTL_MS) {
-            return apiBaseUrl;
-        }
-        const candidates = [apiBaseUrl, ...API_BASE_URL_CANDIDATES.filter(candidate => candidate !== apiBaseUrl)];
-        let lastTransportError: unknown = null;
-        for (const candidate of candidates) {
+        if ((now - lastApiHealthCheckRef.current) < API_HEALTH_CACHE_TTL_MS) return apiBaseUrl;
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-                const response = await fetchWithTimeout(`${candidate}/health`, {
+                const response = await fetchWithTimeout(`${PRODUCTION_API_URL}/health`, {
                     method: 'GET',
                     timeout: API_HEALTH_CHECK_TIMEOUT_MS
                 });
-                if (!response.ok) {
-                    continue;
+                if (response.ok) {
+                    lastApiHealthCheckRef.current = Date.now();
+                    setApiBaseUrl(PRODUCTION_API_URL);
+                    return PRODUCTION_API_URL;
                 }
-                lastApiHealthCheckRef.current = Date.now();
-                if (candidate !== apiBaseUrl) {
-                    console.log('[OpenFinance] Switching API URL to reachable host:', candidate);
-                    setApiBaseUrl(candidate);
-                }
-                return candidate;
-            } catch (error) {
-                if (isNetworkTransportError(error)) {
-                    lastTransportError = error;
-                    continue;
-                }
-                console.warn('[OpenFinance] Unexpected API health check error:', error);
+            } catch (e) {
+                console.warn(`[API Health] Tentativa ${attempt}/2 falhou`);
+                if (attempt === 2) break;
+                await new Promise(r => setTimeout(r, 3000));
             }
         }
-        if (lastTransportError) {
-            throw lastTransportError;
-        }
-        return apiBaseUrl;
+        lastApiHealthCheckRef.current = Date.now();
+        return PRODUCTION_API_URL;
     }, [apiBaseUrl]);
-    const apiFetch = useCallback(async (
-        path: string,
-        options: RequestInit & { timeout?: number } = {}
-    ) => {
-        const resolvedBaseUrl = await resolveReachableApiBaseUrl();
-        const timeout = options.timeout ?? API_DEFAULT_TIMEOUT_MS;
-        return fetchWithTimeout(`${resolvedBaseUrl}${path}`, { ...options, timeout });
+
+    const apiFetch = useCallback(async (path: string, options: RequestInit & { timeout?: number } = {}) => {
+        const resolved = await resolveReachableApiBaseUrl();
+        return fetchWithTimeout(`${resolved}${path}`, { ...options, timeout: options.timeout ?? API_DEFAULT_TIMEOUT_MS });
     }, [resolveReachableApiBaseUrl]);
-    const getConnectionErrorMessage = useCallback((errorMsg?: string): string => (
-        getApiConnectionErrorMessage(apiBaseUrl, errorMsg)
-    ), [apiBaseUrl]);
-    const handleToggleVisibility = async (accountId: string) => {
-        if (!user || !profile) return;
-        const prefs = (profile.preferences as any) || {};
-        const hiddenIds = (prefs.hiddenAccountIds as string[]) || [];
-        let newIds: string[];
-        if (hiddenIds.includes(accountId)) {
-            newIds = hiddenIds.filter(id => id !== accountId);
-        } else {
-            newIds = [...hiddenIds, accountId];
+
+    // ====================== EFEITOS ======================
+    useEffect(() => {
+        if (!loading) return;
+        const interval = setInterval(() => setLoadingDots(p => p === '...' ? '' : p + '.'), 500);
+        return () => clearInterval(interval);
+    }, [loading]);
+
+    useEffect(() => {
+        notificationService.scheduleDailySyncResetNotification();
+    }, []);
+
+    useEffect(() => {
+        if (user) {
+            fetchAccounts();
+        }
+    }, [user]);
+
+    // ====================== HANDLE TOGGLE VISIBILITY ======================
+    const handleToggleVisibility = useCallback(async (accountId: string, currentlyHidden: boolean) => {
+        if (!user?.uid || !profile) {
+            showError('Erro', 'Usuário não autenticado.');
+            return;
         }
         try {
-            await databaseService.updatePreference(user.uid, {
-                hiddenAccountIds: newIds
-            });
-            refreshProfile();
+            const preferences = (profile.preferences as any) || {};
+            let hiddenAccountIds: string[] = Array.isArray(preferences.hiddenAccountIds)
+                ? [...preferences.hiddenAccountIds]
+                : [];
+
+            if (currentlyHidden) {
+                hiddenAccountIds = hiddenAccountIds.filter((id: string) => id !== accountId);
+            } else if (!hiddenAccountIds.includes(accountId)) {
+                hiddenAccountIds.push(accountId);
+            }
+
+            await databaseService.updateProfilePreferences?.(user.uid, { ...preferences, hiddenAccountIds }) ||
+                await databaseService.updateUserPreferences?.(user.uid, { ...preferences, hiddenAccountIds });
+
+            await refreshProfile();
+            setDataRefreshKey(prev => prev + 1);
         } catch (error) {
-            console.error('Error toggling account visibility:', error);
-            Alert.alert('Erro', 'Não foi possível alterar a visibilidade da conta.');
+            console.error('handleToggleVisibility error:', error);
+            showError('Erro', 'Não foi possível alterar a visibilidade da conta.');
         }
-    };
-    const [pendingItemId, setPendingItemId] = useState<string | null>(null);
-    const pendingItemIdRef = useRef<string | null>(null);
-    const [oauthPolling, setOauthPolling] = useState(false);
-    const oauthPollingRef = useRef(false);
-    useEffect(() => {
-        pendingItemIdRef.current = pendingItemId;
-    }, [pendingItemId]);
-    useEffect(() => {
-        oauthPollingRef.current = oauthPolling;
-    }, [oauthPolling]);
+    }, [user, profile, refreshProfile, showError]);
+
+    // ====================== FUNÇÕES ======================
     const fetchAccounts = async () => {
         if (!user) return;
         try {
             const result = await databaseService.getAccounts(user.uid);
             if (result.success && result.data) {
                 setAccounts(result.data);
-                setDataRefreshKey(prev => prev + 1);
+                setDataRefreshKey(p => p + 1);
             }
-        } catch (error) {
-            console.error('Error fetching accounts:', error);
+        } catch (e) {
+            console.error('Error fetching accounts:', e);
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
     };
+
     const handleOAuthCallback = useCallback(async (url: string) => {
         console.log('[OAuth] Callback received:', url);
         let itemId = pendingItemIdRef.current;
         try {
             const { queryParams } = Linking.parse(url);
             if (queryParams?.error) {
-                console.error('[OAuth] Error in callback:', queryParams.error);
                 setConnectionError('O banco recusou a conexão ou ocorreu um erro.');
                 setConnectionStep('error');
                 setIsModalVisible(true);
@@ -388,16 +224,14 @@ export default function OpenFinanceScreen() {
         } catch (e) {
             console.error('[OAuth] Failed to parse callback URL', e);
         }
-        if (!itemId || !user) {
-            console.log('[OAuth] No pending item ou user to sync.');
-            return;
-        }
-        console.log('[OAuth] Processando callback para o item:', itemId);
+        if (!itemId || !user) return;
+
         setIsModalVisible(true);
         setConnectionStep('oauth_pending');
         setConnectionProgress(40);
-        setConnectionStatusText('Autorização recebida do app! Aguardando o banco finalizar o envio (isso pode levar alguns minutos)...');
+        setConnectionStatusText('Autorização recebida do app! Aguardando o banco finalizar o envio...');
     }, [user]);
+
     useEffect(() => {
         const subscription = Linking.addEventListener('url', (event) => {
             if (event.url.includes('open-finance') || event.url.includes('pluggy')) {
@@ -409,25 +243,24 @@ export default function OpenFinanceScreen() {
                 handleOAuthCallback(url);
             }
         });
-        return () => {
-            subscription.remove();
-        };
+        return () => subscription.remove();
     }, [handleOAuthCallback]);
-    // Polling effect for OAuth flow (ATUALIZADO - sem userId)
+
+    // Polling OAuth
     useEffect(() => {
-        if (connectionStep !== 'oauth_pending' || !pendingItemId || !user) {
-            return;
-        }
+        if (connectionStep !== 'oauth_pending' || !pendingItemId || !user) return;
+
         let pollCount = 0;
         const maxPolls = 180;
         let cancelled = false;
-        let intervalId: ReturnType<typeof setInterval> | null = null;
+        let intervalId: NodeJS.Timeout | null = null;
+
         const checkStatus = async () => {
             if (cancelled) return;
             pollCount++;
             try {
                 const token = await user.getIdToken();
-                const response = await apiFetch(`/api/pluggy/items/${pendingItemId}`, {  // ← SEM ?userId
+                const response = await apiFetch(`/api/pluggy/items/${pendingItemId}`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                     timeout: 15000
                 });
@@ -435,129 +268,75 @@ export default function OpenFinanceScreen() {
                     const data = await response.json();
                     const item = data.item || data;
                     const status = item.status;
+
                     if (status === 'UPDATED') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
-                        setOauthPolling(false);
                         setConnectionStep('connecting');
                         setConnectionProgress(60);
                         setConnectionStatusText('Autorização confirmada! Preparando extração de dados...');
                         await new Promise(resolve => setTimeout(resolve, 8000));
-                        try {
-                            const token = await user.getIdToken();
-                            let syncResponse = await apiFetch('/api/pluggy/sync', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${token}`
-                                },
-                                body: JSON.stringify({
-                                    itemId: pendingItemId,  // ← SEM userId
-                                    autoRefresh: true
-                                }),
-                                timeout: 240000
-                            });
-                            if (syncResponse.ok) {
-                                let syncData = await syncResponse.json();
-                                let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
-                                if (totalTx === 0 && syncData.accounts && syncData.accounts.length > 0) {
-                                    setConnectionStatusText('O banco está processando seu extrato. Por favor, aguarde mais um pouco...');
-                                    await new Promise(resolve => setTimeout(resolve, 10000));
-                                    const retryResponse = await apiFetch('/api/pluggy/sync', {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                            'Authorization': `Bearer ${token}`
-                                        },
-                                        body: JSON.stringify({
-                                            itemId: pendingItemId,
-                                            autoRefresh: true
-                                        }),
-                                        timeout: 240000
-                                    });
-                                    if (retryResponse.ok) {
-                                        syncData = await retryResponse.json();
-                                        totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
-                                    }
-                                }
-                                setConnectionProgress(80);
-                                if (syncData.accounts && syncData.accounts.length > 0) {
-                                    for (let i = 0; i < syncData.accounts.length; i++) {
-                                        const account = syncData.accounts[i];
-                                        setConnectionStatusText(`Organizando conta ${i + 1} de ${syncData.accounts.length}...`);
-                                        await databaseService.saveAccount(
-                                            user.uid,
-                                            account,
-                                            syncData.connector || selectedConnector
-                                        );
-                                    }
-                                    setConnectionStatusText(`Salvando ${totalTx} transações no banco de dados...`);
-                                    const txResult = await databaseService.saveOpenFinanceTransactions(
-                                        user.uid,
-                                        syncData.accounts,
-                                        syncData.connector || selectedConnector
-                                    );
-                                    if (!txResult.success) {
-                                        console.warn('[OAuth Polling] Erro ao salvar transações:', txResult.error);
-                                    } else {
-                                        console.log(`[OAuth Polling] ${txResult.savedCount} transações salvas com sucesso.`);
-                                    }
-                                }
-                                setConnectionProgress(100);
-                                setConnectionStatusText('Sincronização concluída com sucesso!');
-                                setConnectionStep('success');
-                                setPendingItemId(null);
-                                setCurrentOauthUrl(null);
-                                setTimeout(() => {
-                                    fetchAccounts();
-                                    refreshCredits();
-                                    setTimeout(() => {
-                                        setIsModalVisible(false);
-                                        setConnectionStep('info');
-                                    }, 1500);
-                                }, 1000);
-                            } else {
-                                throw new Error('Falha de sincronização com o servidor');
+
+                        const token2 = await user.getIdToken();
+                        let syncResponse = await apiFetch('/api/pluggy/sync', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token2}` },
+                            body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true }),
+                            timeout: 240000
+                        });
+
+                        if (syncResponse.ok) {
+                            let syncData = await syncResponse.json();
+                            let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
+
+                            if (totalTx === 0 && syncData.accounts?.length > 0) {
+                                setConnectionStatusText('O banco está processando seu extrato. Aguarde mais um pouco...');
+                                await new Promise(resolve => setTimeout(resolve, 10000));
+                                const retryResponse = await apiFetch('/api/pluggy/sync', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token2}` },
+                                    body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true }),
+                                    timeout: 240000
+                                });
+                                if (retryResponse.ok) syncData = await retryResponse.json();
                             }
-                        } catch (syncError) {
-                            console.error('[OAuth Polling] Sync error:', syncError);
-                            setConnectionError('O servidor levou muito tempo para baixar as transações e o tempo esgotou. Tente novamente.');
-                            setConnectionStep('error');
-                            setCurrentOauthUrl(null);
+
+                            setConnectionProgress(80);
+                            if (syncData.accounts && syncData.accounts.length > 0) {
+                                for (let i = 0; i < syncData.accounts.length; i++) {
+                                    const account = syncData.accounts[i];
+                                    setConnectionStatusText(`Organizando conta ${i + 1} de ${syncData.accounts.length}...`);
+                                    await databaseService.saveAccount(user.uid, account, syncData.connector || selectedConnector);
+                                }
+                                setConnectionStatusText(`Salvando ${totalTx} transações...`);
+                                await databaseService.saveOpenFinanceTransactions(user.uid, syncData.accounts, syncData.connector || selectedConnector);
+                            }
+                            setConnectionProgress(100);
+                            setConnectionStatusText('Sincronização concluída com sucesso!');
+                            setConnectionStep('success');
+                            setPendingItemId(null);
+                            setTimeout(() => {
+                                fetchAccounts();
+                                refreshCredits();
+                                setIsModalVisible(false);
+                                setConnectionStep('info');
+                            }, 1500);
                         }
                         return;
                     }
                     if (status === 'UPDATING' || status === 'WAITING_USER_INPUT') {
                         if (status === 'UPDATING' && connectionProgress < 50) {
                             setConnectionProgress(50);
-                            setConnectionStatusText('O banco autorizou. Extraindo dados (Isso leva de 1 a 3 minutos)...');
+                            setConnectionStatusText('O banco autorizou. Extraindo dados...');
                         }
                         return;
                     }
                     if (status === 'LOGIN_ERROR' || status === 'OUTDATED' || status === 'ERROR') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
-                        setOauthPolling(false);
-                        let errorMessage = 'Erro ao conectar com o banco.';
-                        if (status === 'LOGIN_ERROR') {
-                            errorMessage = 'Credenciais inválidas ou banco temporariamente indisponível. Verifique seus dados e tente novamente.';
-                        } else if (status === 'OUTDATED') {
-                            errorMessage = 'A conexão expirou. Por favor, reconecte sua conta bancária.';
-                        } else if (status === 'ERROR') {
-                            const errorDetails = item.error || item.executionErrorResult;
-                            if (errorDetails?.message?.toLowerCase().includes('mfa') ||
-                                errorDetails?.message?.toLowerCase().includes('autenticação') ||
-                                errorDetails?.message?.toLowerCase().includes('token')) {
-                                errorMessage = 'O banco exige dupla validação (MFA) que ainda não é suportada. Tente usar outro método de conexão.';
-                            } else {
-                                errorMessage = 'Erro ao processar a conexão. Tente novamente mais tarde.';
-                            }
-                        }
-                        setConnectionError(errorMessage);
+                        setConnectionError(status === 'LOGIN_ERROR' ? 'Credenciais inválidas.' : 'Erro ao conectar no banco.');
                         setConnectionStep('error');
                         setPendingItemId(null);
-                        setCurrentOauthUrl(null);
-                        return;
                     }
                 }
             } catch (error) {
@@ -566,48 +345,44 @@ export default function OpenFinanceScreen() {
             if (pollCount >= maxPolls && !cancelled) {
                 cancelled = true;
                 if (intervalId) clearInterval(intervalId);
-                setOauthPolling(false);
-                setConnectionError('Tempo expirado. O banco demorou muito para processar sua autorização.');
+                setConnectionError('Tempo expirado.');
                 setConnectionStep('error');
                 setPendingItemId(null);
-                setCurrentOauthUrl(null);
             }
         };
-        setOauthPolling(true);
+
         checkStatus();
         intervalId = setInterval(checkStatus, 3000);
+
         return () => {
             cancelled = true;
-            setOauthPolling(false);
             if (intervalId) clearInterval(intervalId);
         };
     }, [connectionStep, pendingItemId, user, selectedConnector]);
-    useEffect(() => {
-        if (user) {
-            fetchAccounts();
-            fetchConnectors();
-        }
-    }, [user]);
+
     const onRefresh = () => {
         setRefreshing(true);
         fetchAccounts();
     };
+
     const fetchConnectors = async () => {
         setLoadingConnectors(true);
         setConnectorsFetchError(null);
-        setConnectionError(null);
         try {
             if (!user) return;
             const token = await user.getIdToken();
             const response = await apiFetch('/api/pluggy/connectors', {
                 method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                timeout: 20000
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                timeout: CONNECTORS_TIMEOUT_MS
             });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            // CORREÇÃO: Pega a mensagem de erro real do backend se falhar
+            if (!response.ok) {
+                const errData = await response.json().catch(() => null);
+                throw new Error(errData?.error || `HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
             if (data.results) {
                 const bankConnectors = data.results
@@ -619,25 +394,15 @@ export default function OpenFinanceScreen() {
                         credentials: Array.isArray(c.credentials) ? c.credentials : []
                     }));
                 setConnectors(bankConnectors);
-                setConnectorsFetchError(null);
-            } else {
-                setConnectors([]);
             }
         } catch (error) {
-            if (isNetworkTransportError(error)) {
-                const connectionMessage = getConnectionErrorMessage(error instanceof Error ? error.message : undefined);
-                setConnectorsFetchError(connectionMessage);
-                setConnectionError(connectionMessage);
-            } else {
-                const fetchMessage = 'Nao foi possivel carregar os bancos agora. Tente novamente.';
-                setConnectorsFetchError(fetchMessage);
-                setConnectionError(fetchMessage);
-            }
-            setConnectors([]);
+            const msg = isNetworkTransportError(error) ? getApiConnectionErrorMessage(error instanceof Error ? error.message : undefined) : (error instanceof Error ? error.message : 'Não foi possível carregar os bancos.');
+            setConnectorsFetchError(msg);
         } finally {
             setLoadingConnectors(false);
         }
     };
+
     const handleOpenModal = () => {
         setIsModalVisible(true);
         setConnectionStep('info');
@@ -646,8 +411,8 @@ export default function OpenFinanceScreen() {
         setConnectorsFetchError(null);
         setConnectionError(null);
         setConnectionStatusText('');
-        setCurrentOauthUrl(null);
     };
+
     const handleCloseModal = () => {
         setIsModalVisible(false);
         setConnectionStep('info');
@@ -658,484 +423,173 @@ export default function OpenFinanceScreen() {
         setSearchQuery('');
         setUseCNPJ(false);
         setConnectionStatusText('');
-        setCurrentOauthUrl(null);
     };
+
     const handleStartConnection = () => {
         setConnectionStep('banks');
         fetchConnectors();
     };
-    const handleSelectConnector = (connector: Connector) => {
+
+    const handleSelectConnector = (connector: any) => {
         setSelectedConnector(connector);
         setUseCNPJ(false);
-        const initialValues: CredentialValues = {};
-        (connector.credentials || []).forEach(cred => {
-            initialValues[cred.name] = '';
-        });
+        const initialValues: Record<string, string> = {};
+        (connector.credentials || []).forEach(cred => initialValues[cred.name] = '');
         setCredentialValues(initialValues);
         setConnectionStep('credentials');
     };
+
     const handleRequestDelete = (group: any) => {
         setItemToDelete(group);
         setDeleteModalVisible(true);
     };
+
     const handleConfirmDelete = async () => {
         if (!user || !itemToDelete) return;
         setLoading(true);
         setDeleteModalVisible(false);
         try {
-            const accountIds = (itemToDelete.accounts || [])
-                .map((acc: any) => acc?.id)
-                .filter(Boolean);
-            const deleteResult = await databaseService.deleteOpenFinanceConnection(user.uid, accountIds);
-            if (!deleteResult.success) {
-                throw new Error(deleteResult.error || 'Falha ao remover dados da conexao');
-            }
+            const accountIds = (itemToDelete.accounts || []).map((acc: any) => acc?.id).filter(Boolean);
+            await databaseService.deleteOpenFinanceConnection(user.uid, accountIds);
             await fetchAccounts();
             setItemToDelete(null);
         } catch (error) {
-            Alert.alert('Erro', 'Não foi possível desconectar a instituição.');
+            Alert.alert('Erro', 'Não foi possível desconectar.');
         } finally {
             setLoading(false);
         }
     };
-    // ==================== handleSyncBank ATUALIZADO (FORCE REFRESH + AUTOREFRESH) ====================
-    const handleSyncBank = async (
-        group: any,
-        onStatusUpdate: (status: SyncStatus) => void
-    ): Promise<void> => {
+
+    const handleSyncBank = async (group: any, onStatusUpdate: (status: SyncStatus) => void) => {
         if (!user) return;
-        const firstAccount = group.accounts[0];
-        const itemId = firstAccount?.pluggyItemId ||
-            firstAccount?.itemId ||
-            firstAccount?.connector?.itemId ||
-            null;
+        const itemId = group.accounts[0]?.pluggyItemId || group.accounts[0]?.itemId || group.connector?.id;
         if (!itemId) {
-            onStatusUpdate({ step: 'error', message: 'Conexão não identificada - itemId ausente', progress: 0 });
-            setTimeout(() => {
-                onStatusUpdate({ step: 'idle', message: '', progress: 0 });
-            }, 3000);
+            onStatusUpdate({ step: 'error', message: 'Item ID ausente', progress: 0 });
+            setTimeout(() => onStatusUpdate({ step: 'idle', message: '', progress: 0 }), 3000);
             return;
         }
         try {
-            onStatusUpdate({
-                step: 'connecting',
-                message: 'Atualizando no banco...',
-                progress: 10
-            });
+            onStatusUpdate({ step: 'connecting', message: 'Atualizando no banco...', progress: 10 });
             const token = await user.getIdToken();
 
-            // 1. FORCE REFRESH (sincroniza o banco de verdade)
             await apiFetch(`/api/pluggy/force-refresh/${itemId}`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            // 2. SYNC com autoRefresh
-            const syncPayload = {
-                itemId: itemId,
-                autoRefresh: true
-            };
-
             const syncResponse = await apiFetch('/api/pluggy/sync', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(syncPayload),
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ itemId, autoRefresh: true }),
                 timeout: 240000
             });
+
             if (syncResponse.ok) {
                 const syncData = await syncResponse.json();
-                onStatusUpdate({
-                    step: 'fetching_accounts',
-                    message: `${syncData.accounts?.length || 0} contas`,
-                    progress: 30
-                });
-                if (syncData.accounts && syncData.accounts.length > 0) {
-                    onStatusUpdate({
-                        step: 'saving_accounts',
-                        message: 'Salvando contas...',
-                        progress: 40
-                    });
+                onStatusUpdate({ step: 'fetching_accounts', message: `${syncData.accounts?.length || 0} contas`, progress: 30 });
+
+                if (syncData.accounts?.length) {
                     for (let i = 0; i < syncData.accounts.length; i++) {
-                        const account = syncData.accounts[i];
-                        await databaseService.saveAccount(
-                            user.uid,
-                            account,
-                            syncData.connector || group.connector
-                        );
-                        const accountProgress = 40 + ((i + 1) / syncData.accounts.length) * 20;
-                        onStatusUpdate({
-                            step: 'saving_accounts',
-                            message: `Salvando conta ${i + 1}/${syncData.accounts.length}...`,
-                            progress: accountProgress
-                        });
+                        await databaseService.saveAccount(user.uid, syncData.accounts[i], syncData.connector || group.connector);
                     }
-                    let totalTransactions = 0;
-                    syncData.accounts.forEach((acc: any) => {
-                        totalTransactions += (acc.transactions?.length || 0);
-                    });
-                    onStatusUpdate({
-                        step: 'fetching_transactions',
-                        message: `${totalTransactions} transações`,
-                        progress: 65
-                    });
-                    onStatusUpdate({
-                        step: 'saving_transactions',
-                        message: 'Salvando transações...',
-                        progress: 70
-                    });
-                    const txResult = await databaseService.saveOpenFinanceTransactions(
-                        user.uid,
-                        syncData.accounts,
-                        syncData.connector || group.connector
-                    );
-                    if (txResult.success) {
-                        const total = txResult.savedCount || 0;
-                        const checking = txResult.details?.checkingTransactions || 0;
-                        const credit = txResult.details?.creditCardTransactions || 0;
-                        onStatusUpdate({
-                            step: 'done',
-                            message: `${total} salvas!`,
-                            progress: 100,
-                            details: { checking, credit }
-                        });
-                        setTimeout(() => {
-                            onStatusUpdate({ step: 'idle', message: '', progress: 0 });
-                        }, 3000);
-                    } else {
-                        throw new Error('Falha ao salvar transações');
-                    }
-                } else {
-                    onStatusUpdate({
-                        step: 'done',
-                        message: 'Nenhuma transação nova',
-                        progress: 100
-                    });
-                    setTimeout(() => {
-                        onStatusUpdate({ step: 'idle', message: '', progress: 0 });
-                    }, 3000);
+                    await databaseService.saveOpenFinanceTransactions(user.uid, syncData.accounts, syncData.connector || group.connector);
                 }
-                await fetchAccounts();
+
+                onStatusUpdate({ step: 'done', message: 'Sincronizado!', progress: 100 });
+                setTimeout(() => onStatusUpdate({ step: 'idle', message: '', progress: 0 }), 3000);
+                fetchAccounts();
             } else {
-                let errorBody: any = {};
-                try {
-                    errorBody = await syncResponse.json();
-                } catch (e) { }
-                const serverMessage = errorBody.error || `Erro do servidor (HTTP ${syncResponse.status})`;
-                throw new Error(serverMessage);
+                const errData = await syncResponse.json().catch(() => null);
+                throw new Error(errData?.error || 'Falha na resposta do servidor');
             }
         } catch (error: any) {
-            const errorMessage = isNetworkTransportError(error)
-                ? getConnectionErrorMessage(error.message)
-                : error.message || 'Erro na sincronização';
-            console.error('[handleSyncBank] Erro:', errorMessage);
-            onStatusUpdate({ step: 'error', message: errorMessage, progress: 0 });
-            setTimeout(() => {
-                onStatusUpdate({ step: 'idle', message: '', progress: 0 });
-            }, 5000);
+            onStatusUpdate({ step: 'error', message: error.message || 'Erro na sincronização', progress: 0 });
         }
     };
+
     const handleConnect = async () => {
         if (!user || !selectedConnector) return;
+
         const connectorCredentials = selectedConnector.credentials || [];
         const { acceptsBothDocuments } = getConnectorDocumentSupport(connectorCredentials);
+
         if (!hasCredits) {
             const resetTime = databaseService.getTimeUntilReset();
-            showWarning(
-                'Creditos esgotados',
-                `Voce nao tem mais creditos de sincronizacao hoje. Seus creditos serao renovados em ${resetTime.formatted}.`
-            );
+            showWarning('Créditos esgotados', `Seus créditos renovam em ${resetTime.formatted}.`);
             return;
         }
-        const missingFields = connectorCredentials.filter(cred => {
-            if (credentialValues[cred.name]?.trim()) return false;
-            if (!acceptsBothDocuments || !isDocumentCredential(cred)) return true;
-            const isCpfCredential = credentialHasCpf(cred);
-            const isCnpjCredential = credentialHasCnpj(cred);
-            const acceptsBothInSameField = isCpfCredential && isCnpjCredential;
-            if (acceptsBothInSameField) return true;
-            return useCNPJ ? isCnpjCredential : isCpfCredential;
-        });
+
+        const missingFields = connectorCredentials.filter(cred => !credentialValues[cred.name]?.trim() && (!acceptsBothDocuments || !isDocumentCredential(cred)));
         if (missingFields.length > 0) {
-            showError('Campos obrigatorios', 'Por favor, preencha todos os campos obrigatorios.');
+            showError('Campos obrigatórios', 'Preencha todos os campos.');
             return;
         }
-        const documentCredential = connectorCredentials.find(cred => {
-            if (!isDocumentCredential(cred)) return false;
-            if (!acceptsBothDocuments) return true;
-            const isCpfCredential = credentialHasCpf(cred);
-            const isCnpjCredential = credentialHasCnpj(cred);
-            const acceptsBothInSameField = isCpfCredential && isCnpjCredential;
-            if (acceptsBothInSameField) return true;
-            return useCNPJ ? isCnpjCredential : isCpfCredential;
-        });
-        const documentCredentialValue = documentCredential ? credentialValues[documentCredential.name] : '';
-        if (documentCredential && documentCredentialValue) {
-            const supportsCPF = credentialHasCpf(documentCredential);
-            const supportsCNPJ = credentialHasCnpj(documentCredential);
-            const shouldValidateAsCNPJ = supportsCNPJ && (!supportsCPF || useCNPJ);
-            const cleanDoc = documentCredentialValue.replace(/\D/g, '');
-            if (shouldValidateAsCNPJ) {
-                if (cleanDoc.length !== 14 || !validateCNPJ(cleanDoc)) {
-                    showError('CNPJ invalido', 'O CNPJ informado nao e valido.');
-                    return;
-                }
-            } else {
-                if (cleanDoc.length !== 11 || !validateCPF(cleanDoc)) {
-                    showError('CPF invalido', 'O CPF informado nao e valido.');
-                    return;
-                }
-            }
-        }
+
         const creditResult = await consumeCredit('connect');
         if (!creditResult.success) {
-            showError('Erro', creditResult.error || 'Erro ao consumir credito.');
+            showError('Erro', creditResult.error || 'Erro ao consumir crédito.');
             return;
         }
+
         setConnecting(true);
         setConnectionStep('connecting');
         setConnectionProgress(5);
-        setConnectionStatusText('Autenticando com a instituição...');
-        const isOAuthConnector = Boolean(selectedConnector.oauth || selectedConnector.isOpenFinance);
-        let progressInterval: ReturnType<typeof setInterval> | null = null;
+        setConnectionStatusText('Criando conexão...');
+
+        const sanitizedCredentials = { ...credentialValues };
+        connectorCredentials.filter(isDocumentCredential).forEach(cred => {
+            if (sanitizedCredentials[cred.name]) sanitizedCredentials[cred.name] = sanitizedCredentials[cred.name].replace(/\D/g, '');
+        });
+
         try {
-            progressInterval = setInterval(() => {
-                setConnectionProgress(prev => Math.min(prev + 40, 40));
-            }, 500);
-            const sanitizedCredentials = { ...credentialValues };
-            connectorCredentials
-                .filter(isDocumentCredential)
-                .forEach((credential) => {
-                    if (sanitizedCredentials[credential.name]) {
-                        sanitizedCredentials[credential.name] = sanitizedCredentials[credential.name].replace(/\D/g, '');
-                    }
-                });
             const token = await user.getIdToken();
-            setConnectionProgress(15);
-            setConnectionStatusText('Criando conexão segura com a Pluggy...');
             const createResponse = await apiFetch('/api/pluggy/create-item', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     connectorId: selectedConnector.id,
                     credentials: sanitizedCredentials,
-                    oauthRedirectUri: OAUTH_REDIRECT_URI,  // ← Deep link do app
-                    webhookUrl: BACKEND_WEBHOOK_URL       // ← Webhook oficial
+                    oauthRedirectUri: OAUTH_REDIRECT_URI,
+                    webhookUrl: BACKEND_WEBHOOK_URL
                 }),
                 timeout: 90000
             });
+
             const createData = await createResponse.json();
             if (!createResponse.ok) {
-                let errorMessage = 'Falha ao conectar. Verifique suas credenciais.';
-                if (createData.details) {
-                    if (Array.isArray(createData.details)) {
-                        errorMessage = `Erro de validação nos dados enviados ao banco.`;
-                    } else if (createData.details.code === 'INVALID_CREDENTIALS') {
-                        errorMessage = 'Credenciais inválidas. Verifique seu usuário e senha.';
-                    } else if (createData.details.code === 'INSTITUTION_UNAVAILABLE') {
-                        errorMessage = 'O banco está temporariamente indisponível. Tente novamente em alguns minutos.';
-                    } else if (createData.details.code === 'MFA_REQUIRED') {
-                        errorMessage = 'Este banco exige autenticação de dois fatores (MFA) que ainda não é suportada.';
-                    } else if (
-                        createData.details.description === 'ITEM_IS_ALREADY_UPDATING' ||
-                        createData.details.codeDescription === 'ITEM_IS_ALREADY_UPDATING'
-                    ) {
-                        errorMessage = 'Uma conexão com este banco já está em andamento. Aguarde alguns segundos e tente novamente.';
-                    }
-                } else if (createData.error) {
-                    errorMessage = createData.error;
-                }
-                console.error('[Connect] Create item failed:', {
-                    status: createResponse.status,
-                    error: errorMessage,
-                    details: createData.details
-                });
-                setConnectionError(errorMessage);
+                setConnectionError(createData.error || 'Falha ao criar item no servidor');
                 setConnectionStep('error');
                 return;
             }
-            const item = createData.item;
-            const itemId = item?.id;
-            if (!itemId) {
-                throw new Error('Item ID nao retornado pelo servidor');
-            }
-            setConnectionProgress(25);
-            setConnectionStatusText('Analisando requisitos de acesso do banco...');
-            const resolveAuthRequirements = (currentItem: any) => {
-                const url =
-                    currentItem.oauthUrl ||
-                    currentItem.clientUrl ||
-                    currentItem.redirectUrl ||
-                    currentItem.parameter?.data ||
-                    currentItem.parameter?.oauthUrl ||
-                    currentItem.parameter?.authorizationUrl ||
-                    currentItem.parameter?.url ||
-                    currentItem.userAction?.url ||
-                    currentItem.userAction?.oauthUrl ||
-                    currentItem.authorizationUrl ||
-                    currentItem.executionResult?.oauthUrl ||
-                    currentItem.executionResult?.authorizationUrl;
-                const needsAction =
-                    currentItem.status === 'WAITING_USER_INPUT' ||
-                    currentItem.status === 'WAITING_USER_ACTION' ||
-                    currentItem.status === 'LOGIN_ERROR';
-                return { url, needsAction, status: currentItem.status };
-            };
-            let { url: oauthUrl, needsAction, status } = resolveAuthRequirements(item);
-            if (isOAuthConnector && !oauthUrl) {
-                let attempts = 0;
-                const maxAttempts = 60;
-                const shouldContinuePolling = () => {
-                    if (oauthUrl) return false;
-                    if (status === 'LOGIN_ERROR' || status === 'OUTDATED' || status === 'ERROR') return false;
-                    if (status === 'UPDATED') return false;
-                    if (attempts >= maxAttempts) return false;
-                    return true;
-                };
-                while (shouldContinuePolling()) {
-                    attempts++;
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    try {
-                        const pollingToken = await user.getIdToken();
-                        const pollResponse = await apiFetch(`/api/pluggy/items/${itemId}`, {  // ← SEM userId
-                            headers: { 'Authorization': `Bearer ${pollingToken}` },
-                            timeout: 15000
-                        });
-                        if (!pollResponse.ok) continue;
-                        const pollData = await pollResponse.json();
-                        const updatedItem = pollData.item || pollData;
-                        if (!updatedItem || updatedItem.id !== itemId) continue;
-                        const check = resolveAuthRequirements(updatedItem);
-                        oauthUrl = check.url;
-                        needsAction = check.needsAction;
-                        status = check.status;
-                    } catch (pollError) {
-                        console.warn('[Connect] Polling error:', pollError);
-                    }
-                }
-            }
-            const shouldHandleOAuth = Boolean(
-                oauthUrl || (isOAuthConnector && (needsAction || status === 'UPDATING'))
-            );
-            if (shouldHandleOAuth) {
-                if (!oauthUrl && status !== 'UPDATED') {
-                    showError('Erro', 'O banco não retornou o link de autorização. Tente novamente mais tarde.');
-                    setConnectionError('O servidor do banco demorou muito para responder (Tempo limite excedido). Tente novamente em alguns minutos.');
-                    setConnectionStep('error');
-                    setPendingItemId(null);
-                    return;
-                }
-                if (status !== 'UPDATED') {
-                    setConnectionProgress(30);
-                    setConnectionStatusText('Aguardando autorização no app do banco...');
-                    setPendingItemId(itemId);
-                    setCurrentOauthUrl(oauthUrl);
-                    setConnectionStep('oauth_pending');
-                    try {
-                        await Linking.openURL(oauthUrl);
-                    } catch (openError) {
-                        console.warn('[Connect] Failed automatic redirect, user must click manual button.');
-                    }
-                    return;
-                }
-            }
-            setConnectionProgress(50);
-            setConnectionStatusText('Conexão autorizada. Preparando extração de dados (Aguarde alguns segundos)...');
-            await new Promise(resolve => setTimeout(resolve, 8000));
-            let syncResponse = await apiFetch('/api/pluggy/sync', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    itemId,
-                    autoRefresh: true
-                }),
-                timeout: 240000
-            });
-            if (!syncResponse.ok) {
-                throw new Error(`O servidor demorou muito para responder ou houve uma falha. Tente novamente.`);
-            }
-            let syncData = await syncResponse.json();
-            let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
-            if (totalTx === 0 && syncData.accounts && syncData.accounts.length > 0) {
-                setConnectionStatusText('O banco está processando seu extrato. Por favor, aguarde mais um pouco...');
-                await new Promise(resolve => setTimeout(resolve, 10000));
-                const retryResponse = await apiFetch('/api/pluggy/sync', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        itemId,
-                        autoRefresh: true
-                    }),
-                    timeout: 240000
-                });
-                if (retryResponse.ok) {
-                    syncData = await retryResponse.json();
-                    totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
-                }
-            }
-            setConnectionProgress(80);
-            if (syncData.accounts && syncData.accounts.length > 0) {
-                for (let i = 0; i < syncData.accounts.length; i++) {
-                    const account = syncData.accounts[i];
-                    setConnectionStatusText(`Organizando dados da conta ${i + 1} de ${syncData.accounts.length}...`);
-                    await databaseService.saveAccount(
-                        user.uid,
-                        account,
-                        syncData.connector || selectedConnector
-                    );
-                }
-                setConnectionStatusText(`Protegendo e salvando ${totalTx} transações...`);
-                const txResult = await databaseService.saveOpenFinanceTransactions(
-                    user.uid,
-                    syncData.accounts,
-                    syncData.connector || selectedConnector
-                );
-                if (!txResult.success) {
-                    console.warn('[Connect] Erro ao salvar transações:', txResult.error);
-                } else {
-                    console.log(`[Connect] ${txResult.savedCount} transações salvas com sucesso.`);
-                }
-            }
+
+            const itemId = createData.item?.id;
+            setPendingItemId(itemId);
+
             setConnectionProgress(100);
-            setConnectionStatusText('Tudo pronto! Sincronização concluída.');
+            setConnectionStatusText('Conexão concluída!');
             setConnectionStep('success');
             setTimeout(() => {
                 fetchAccounts();
                 handleCloseModal();
             }, 2000);
         } catch (error: any) {
-            setConnectionError(error?.message || 'Erro de conexao com o servidor ou limite de tempo excedido. Suas transações podem não ter salvo por completo.');
+            setConnectionError(error?.message || 'Erro de conexão na internet');
             setConnectionStep('error');
         } finally {
-            if (progressInterval) clearInterval(progressInterval);
             setConnecting(false);
         }
     };
-    const filteredConnectors = connectors.filter(connector =>
-        connector.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    const shouldShowConnectorsNetworkError =
-        !loadingConnectors && filteredConnectors.length === 0 && Boolean(connectorsFetchError);
+
+    const filteredConnectors = connectors.filter(connector => connector.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const shouldShowConnectorsNetworkError = !loadingConnectors && filteredConnectors.length === 0 && Boolean(connectorsFetchError);
+
     const groupedAccounts = accounts.reduce((acc, account) => {
-        const connectorData = account.connector || null;
-        const connectorName = connectorData?.name || account.name || 'Outros';
-        if (!acc[connectorName]) {
-            acc[connectorName] = { connector: connectorData, accounts: [] };
-        }
+        const connectorName = account.connector?.name || account.name || 'Outros';
+        if (!acc[connectorName]) acc[connectorName] = { connector: account.connector, accounts: [] };
         acc[connectorName].accounts.push(account);
         return acc;
     }, {} as Record<string, any>);
+
     const renderModalContent = () => {
         switch (connectionStep) {
             case 'info':
@@ -1213,7 +667,7 @@ export default function OpenFinanceScreen() {
                 if (shouldShowConnectorsNetworkError) {
                     return (
                         <View style={styles.connectorsErrorContainer}>
-                            <Text style={styles.connectorsErrorTitle}>Falha ao conectar com o backend</Text>
+                            <Text style={styles.connectorsErrorTitle}>Falha na comunicação</Text>
                             <Text style={styles.connectorsErrorText}>{connectorsFetchError}</Text>
                             <TouchableOpacity style={styles.connectorsRetryButton} onPress={fetchConnectors} activeOpacity={0.8}>
                                 <Text style={styles.connectorsRetryButtonText}>Tentar novamente</Text>
@@ -1296,7 +750,7 @@ export default function OpenFinanceScreen() {
                                                                     else if (isCnpjCredential) formattedText = formatCNPJ(text);
                                                                     else formattedText = formatCPF(text);
                                                                 }
-                                                                setCredentialValues(prev => ({ ...prev, [cred.name]: formattedText }))
+                                                                setCredentialValues(prev => ({ ...prev, [cred.name]: formattedText }));
                                                             }}
                                                             secureTextEntry={cred.type === 'password' && !showPasswords[cred.name]}
                                                             autoCapitalize="none"
@@ -1359,17 +813,8 @@ export default function OpenFinanceScreen() {
                                 loop={false}
                                 initialIndex={0}
                                 timing={{ interval: 2000, animationDuration: 350 }}
-                                dot={{
-                                    visible: true,
-                                    size: 6,
-                                    color: '#D97757',
-                                    style: { marginRight: 4 },
-                                }}
-                                text={{
-                                    fontSize: 13,
-                                    color: '#E0E0E0',
-                                    fontWeight: '500',
-                                }}
+                                dot={{ visible: true, size: 6, color: '#D97757', style: { marginRight: 4 } }}
+                                text={{ fontSize: 13, color: '#E0E0E0', fontWeight: '500' }}
                                 animationPreset="fade"
                                 animationDirection="up"
                             />
@@ -1383,7 +828,7 @@ export default function OpenFinanceScreen() {
                             <LottieView source={require('@/assets/check.json')} autoPlay loop={false} style={{ width: 60, height: 60 }} />
                         </View>
                         <Text style={styles.statusTitle}>Conexão realizada!</Text>
-                        <Text style={styles.statusText}>Sua conta do {selectedConnector?.name || 'banco'} foi conectada com sucesso. Os dados estão sendo atualizados no painel.</Text>
+                        <Text style={styles.statusText}>Sua conta do {selectedConnector?.name || 'banco'} foi conectada com sucesso.</Text>
                     </View>
                 );
             case 'error':
@@ -1410,21 +855,12 @@ export default function OpenFinanceScreen() {
                         <View style={styles.stepContainer}>
                             <DynamicText
                                 key={`oauth-status-${connectionStatusText}`}
-                                items={[{ text: connectionStatusText || (oauthPolling ? 'Aguardando você finalizar no app do banco...' : 'Aguardando...'), id: 'oauth-status' }]}
+                                items={[{ text: connectionStatusText || 'Aguardando você finalizar no app do banco...', id: 'oauth-status' }]}
                                 loop={false}
                                 initialIndex={0}
                                 timing={{ interval: 2000, animationDuration: 350 }}
-                                dot={{
-                                    visible: true,
-                                    size: 6,
-                                    color: '#D97757',
-                                    style: { marginRight: 4 },
-                                }}
-                                text={{
-                                    fontSize: 13,
-                                    color: '#E0E0E0',
-                                    fontWeight: '500',
-                                }}
+                                dot={{ visible: true, size: 6, color: '#D97757', style: { marginRight: 4 } }}
+                                text={{ fontSize: 13, color: '#E0E0E0', fontWeight: '500' }}
                                 animationPreset="fade"
                                 animationDirection="up"
                             />
@@ -1433,6 +869,7 @@ export default function OpenFinanceScreen() {
                 );
         }
     };
+
     return (
         <View style={styles.mainContainer}>
             <UniversalBackground backgroundColor="#0C0C0C" glowSize={350} height={320} showParticles={true} particleCount={15} />
@@ -1546,6 +983,30 @@ export default function OpenFinanceScreen() {
     );
 }
 
+// ====================== HELPERS OBRIGATÓRIOS ======================
+const formatCPF = (value: string) => value.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4').slice(0, 14);
+const formatCNPJ = (value: string) => value.replace(/\D/g, '').replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5').slice(0, 18);
+
+const credentialHasCpf = (cred: any) => /cpf|documento/i.test(cred.label || cred.name || '');
+const credentialHasCnpj = (cred: any) => /cnpj/i.test(cred.label || cred.name || '');
+const isDocumentCredential = (cred: any) => credentialHasCpf(cred) || credentialHasCnpj(cred);
+
+const getConnectorDocumentSupport = (credentials: any[]) => {
+    const hasCpf = credentials.some(credentialHasCpf);
+    const hasCnpj = credentials.some(credentialHasCnpj);
+    return { acceptsBothDocuments: hasCpf && hasCnpj };
+};
+
+// ====================== COMPONENTE ConnectorCard ======================
+const ConnectorCard = ({ item, onSelect, styles }: any) => (
+    <TouchableOpacity onPress={() => onSelect(item)} style={styles.bankListRow} activeOpacity={0.7}>
+        <View style={styles.bankListLogoContainer}>
+            <BankConnectorLogo connector={item} size={40} />
+        </View>
+        <Text style={styles.bankRowTitle}>{item.name}</Text>
+    </TouchableOpacity>
+);
+
 const styles = StyleSheet.create({
     mainContainer: { flex: 1, backgroundColor: '#0C0C0C' },
     container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingTop: 60, paddingHorizontal: 20, zIndex: 10 },
@@ -1564,10 +1025,6 @@ const styles = StyleSheet.create({
     itemTitle: { fontSize: 16, color: '#FFFFFF', fontWeight: '500' },
     itemSubtitle: { fontSize: 13, color: '#909090', marginTop: 2 },
     separator: { height: 1, backgroundColor: '#2A2A2A', width: '100%' },
-    helpContainer: { backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A', marginTop: 4, marginBottom: 20 },
-    helpHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-    helpTitle: { fontSize: 14, color: '#D97757', fontWeight: '600' },
-    helpText: { fontSize: 13, color: '#CCC', lineHeight: 20 },
     actionButton: { backgroundColor: '#D97757', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 10 },
     actionButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
     headerConnectButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 4, paddingHorizontal: 8 },
