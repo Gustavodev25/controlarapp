@@ -64,6 +64,90 @@ const isNetworkTransportError = (error: unknown): boolean => {
 const getApiConnectionErrorMessage = (errorMsg?: string): string =>
     `Erro de rede: ${errorMsg || 'Falha na conexão'}. Verifique sua internet e tente novamente.`;
 
+const toNonEmptyString = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const extractPluggyItemError = (item: any) => {
+    const directError = item?.error && typeof item.error === 'object' ? item.error : {};
+    const statusDetail = item?.statusDetail && typeof item.statusDetail === 'object' ? item.statusDetail : {};
+    const statusDetailError = statusDetail?.error && typeof statusDetail.error === 'object' ? statusDetail.error : {};
+
+    const code = toNonEmptyString(
+        directError.code ||
+        statusDetailError.code ||
+        item?.errorCode ||
+        item?.code
+    );
+    const message = toNonEmptyString(
+        directError.message ||
+        statusDetailError.message ||
+        item?.message
+    );
+    const providerMessage = toNonEmptyString(
+        directError.providerMessage ||
+        statusDetailError.providerMessage
+    );
+
+    return { code, message, providerMessage };
+};
+
+const buildPluggyConnectionErrorMessage = (item: any): string => {
+    const status = String(item?.status || '').toUpperCase();
+    const executionStatus = String(item?.executionStatus || '').toUpperCase();
+    const { code, message, providerMessage } = extractPluggyItemError(item);
+    const normalizedCode = String(code || executionStatus || status).toUpperCase();
+
+    if (normalizedCode.includes('INVALID_CREDENTIALS') || status === 'LOGIN_ERROR') {
+        return 'Credenciais invalidas. Confira usuario e senha do banco e tente novamente.';
+    }
+    if (
+        normalizedCode.includes('SITE_NOT_AVAILABLE') ||
+        normalizedCode.includes('INSTITUTION_UNAVAILABLE')
+    ) {
+        return 'O banco esta temporariamente indisponivel. Tente novamente em alguns minutos.';
+    }
+    if (
+        normalizedCode.includes('MFA') ||
+        normalizedCode.includes('OTP') ||
+        normalizedCode.includes('2FA')
+    ) {
+        return 'O banco pediu validacao adicional. Finalize no app do banco e tente novamente.';
+    }
+    if (status === 'OUTDATED') {
+        return 'A conexao expirou ou o banco recusou a atualizacao. Tente reconectar.';
+    }
+
+    const bestDetail = providerMessage || message;
+    if (bestDetail) return `O banco retornou erro: ${bestDetail}`;
+    return status === 'LOGIN_ERROR' ? 'Acesso negado pelo banco.' : 'Erro ao conectar no banco.';
+};
+
+const getItemOAuthUrl = (payload: any): string | null => {
+    const candidates = [
+        payload?.oauthUrl,
+        payload?.clientUrl,
+        payload?.parameter?.oauthUrl,
+        payload?.parameter?.data,
+        payload?.userAction?.url,
+        payload?.userAction?.attributes?.url,
+        payload?.item?.oauthUrl,
+        payload?.item?.clientUrl,
+        payload?.item?.parameter?.oauthUrl,
+        payload?.item?.parameter?.data,
+        payload?.item?.userAction?.url,
+        payload?.item?.userAction?.attributes?.url
+    ];
+
+    for (const candidate of candidates) {
+        const normalized = toNonEmptyString(candidate);
+        if (normalized) return normalized;
+    }
+    return null;
+};
+
 const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number } = {}) => {
     const { timeout = API_DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
     const controller = new AbortController();
@@ -407,10 +491,11 @@ export default function OpenFinanceScreen() {
                     const data = await response.json();
                     const item = data.item || data;
                     const status = item.status;
-                    const clientUrl = item.oauthUrl || item.parameter?.oauthUrl || item.userAction?.url;
+                    const normalizedStatus = String(status || '').toUpperCase();
+                    const clientUrl = getItemOAuthUrl(item);
 
                     // CORREÇÃO: Redireciona para o banco se a URL aparecer só depois de alguns segundos
-                    if (status === 'WAITING_USER_INPUT' && clientUrl && !openedOAuthUrlRef.current) {
+                    if (normalizedStatus === 'WAITING_USER_INPUT' && clientUrl && !openedOAuthUrlRef.current) {
                         try {
                             openedOAuthUrlRef.current = true;
                             setConnectionStep('oauth_pending');
@@ -426,7 +511,16 @@ export default function OpenFinanceScreen() {
                         }
                     }
 
-                    if (status === 'UPDATED') {
+                    if (normalizedStatus === 'WAITING_USER_INPUT') {
+                        setConnectionStep('oauth_pending');
+                        setConnectionProgress((previous) => (previous < 35 ? 35 : previous));
+                        setConnectionStatusText(clientUrl
+                            ? 'Abra o app do banco para aprovar a conexao.'
+                            : 'Aguardando voce concluir a autorizacao no banco...');
+                        return;
+                    }
+
+                    if (normalizedStatus === 'UPDATED') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
                         setConnectionStep('connecting');
@@ -492,22 +586,39 @@ export default function OpenFinanceScreen() {
                         return;
                     }
 
-                    if (status === 'UPDATING' || status === 'WAITING_USER_INPUT') {
-                        if (status === 'UPDATING') {
-                            setConnectionProgress((previous) => (previous < 50 ? 50 : previous));
-                            setConnectionStatusText('O banco autorizou. Extraindo dados...');
-                        }
+                    if (normalizedStatus === 'UPDATING') {
+                        setConnectionStep('connecting');
+                        setConnectionProgress((previous) => (previous < 50 ? 50 : previous));
+                        setConnectionStatusText('O banco autorizou. Extraindo dados...');
                         return;
                     }
 
-                    if (status === 'LOGIN_ERROR' || status === 'OUTDATED' || status === 'ERROR') {
+                    if (normalizedStatus === 'LOGIN_ERROR' || normalizedStatus === 'OUTDATED' || normalizedStatus === 'ERROR') {
                         cancelled = true;
                         if (intervalId) clearInterval(intervalId);
-                        setConnectionError(status === 'LOGIN_ERROR' ? 'Acesso negado pelo banco.' : 'Erro ao conectar no banco.');
+                        const resolvedError = buildPluggyConnectionErrorMessage(item);
+                        console.warn('[OAuth Polling] Item com erro:', {
+                            itemId: pendingItemId,
+                            status: normalizedStatus,
+                            executionStatus: item?.executionStatus || null,
+                            errorCode: item?.error?.code || null,
+                            errorMessage: item?.error?.message || null
+                        });
+                        setConnectionError(resolvedError);
                         setConnectionStep('error');
                         setPendingItemId(null);
                         await clearPersistedOpenFinanceState();
+                        return;
                     }
+                } else {
+                    const errPayload = await response.json().catch(() => null);
+                    cancelled = true;
+                    if (intervalId) clearInterval(intervalId);
+                    setConnectionError(errPayload?.error || `Falha ao consultar status da conexao (HTTP ${response.status}).`);
+                    setConnectionStep('error');
+                    setPendingItemId(null);
+                    await clearPersistedOpenFinanceState();
+                    return;
                 }
             } catch (error) {
                 console.warn('[OAuth Polling] Error:', error);
@@ -750,6 +861,7 @@ export default function OpenFinanceScreen() {
                 return;
             }
 
+            const createItemOAuthUrl = getItemOAuthUrl(createData);
             const itemId = createData.item?.id;
             if (!itemId) {
                 setConnectionError('O servidor n�o retornou o ID da conex�o.');
@@ -763,12 +875,12 @@ export default function OpenFinanceScreen() {
             await savePendingConnectionState(itemId, selectedConnector);
 
             // CORREÇÃO: ABRE O APLICATIVO DO BANCO E AGUARDA (Polling)
-            if (createData.oauthUrl) {
+            if (createItemOAuthUrl) {
                 try {
                     openedOAuthUrlRef.current = true;
                     setConnectionStep('oauth_pending');
                     setConnectionStatusText('Redirecionando para o banco...');
-                    await openOAuthUrlSafely(createData.oauthUrl);
+                    await openOAuthUrlSafely(createItemOAuthUrl);
                 } catch (openError: any) {
                     setConnectionError(openError?.message || 'N�o foi poss�vel abrir o app do banco.');
                     setConnectionStep('error');
@@ -776,8 +888,8 @@ export default function OpenFinanceScreen() {
                     await clearPersistedOpenFinanceState();
                 }
             } else {
-                setConnectionStep('connecting');
-                setConnectionStatusText('Autenticando com o banco...');
+                setConnectionStep('oauth_pending');
+                setConnectionStatusText('Aguardando voce autorizar no banco...');
             }
 
         } catch (error: any) {
