@@ -532,7 +532,7 @@ export default function OpenFinanceScreen() {
                         let syncResponse = await apiFetch('/api/pluggy/sync', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token2}` },
-                            body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true }),
+                            body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true, fullHistory: true }),
                             timeout: 240000
                         });
 
@@ -546,7 +546,7 @@ export default function OpenFinanceScreen() {
                                 const retryResponse = await apiFetch('/api/pluggy/sync', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token2}` },
-                                    body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true }),
+                                    body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true, fullHistory: true }),
                                     timeout: 240000
                                 });
                                 if (retryResponse.ok) syncData = await retryResponse.json();

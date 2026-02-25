@@ -1,18 +1,14 @@
-import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { CreditCardAccount } from '@/services/invoiceBuilder';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-
-import { StyleProp, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
+import Animated, { LinearTransition } from 'react-native-reanimated';
 
 interface BankSelectorProps {
     currentCardId: string | null;
     cards: CreditCardAccount[];
     onSelectCard: (cardId: string | null) => void;
     style?: StyleProp<ViewStyle>;
-    delay?: number;
 }
 
 export default function BankSelector({
@@ -20,7 +16,6 @@ export default function BankSelector({
     cards,
     onSelectCard,
     style,
-    delay = 4000,
 }: BankSelectorProps) {
 
     // Current Index in the cards array. -1 means "All" (null).
@@ -31,75 +26,49 @@ export default function BankSelector({
 
     const handlePrevious = useCallback(() => {
         if (currentIndex <= -1) {
-            // If currently showing All (-1), go to the Last card
             if (cards.length > 0) {
                 onSelectCard(cards[cards.length - 1].id);
             }
         } else if (currentIndex === 0) {
-            // If currently showing First card (0), go to All (-1)
             onSelectCard(null);
         } else {
-            // Go to previous card
             onSelectCard(cards[currentIndex - 1].id);
         }
     }, [currentIndex, cards, onSelectCard]);
 
     const handleNext = useCallback(() => {
         if (currentIndex === -1) {
-            // If currently showing All, go to First card
             if (cards.length > 0) {
                 onSelectCard(cards[0].id);
             }
         } else if (currentIndex === cards.length - 1) {
-            // If currently showing Last card, go to All
             onSelectCard(null);
         } else {
-            // Go to next card
             onSelectCard(cards[currentIndex + 1].id);
         }
     }, [currentIndex, cards, onSelectCard]);
-
-    const handleReset = useCallback(() => {
-        onSelectCard(null);
-    }, [onSelectCard]);
 
     const displayName = useMemo(() => {
         if (currentIndex === -1 || !currentCardId) return 'Todas as Faturas';
         const card = cards[currentIndex];
         const name = card?.name || 'Cartão';
-        // Limit text length as requested ("not whole card text")
-        if (name.length > 10) {
-            return name.substring(0, 10) + '...';
+
+        // Limita o tamanho para manter o componente contido, 
+        // mas permitindo a variação de tamanho para o efeito morph
+        if (name.length > 12) {
+            return name.substring(0, 12) + '...';
         }
         return name;
     }, [currentIndex, currentCardId, cards]);
 
     return (
-        <View style={[styles.container, style]}>
-            {/* Reset Button (Only visible when a specific card is selected) */}
-            {currentCardId && (
-                <Animated.View
-                    entering={FadeIn.duration(200)}
-                    exiting={FadeOut.duration(200)}
-                    style={styles.resetContainer}
-                >
-                    <TouchableOpacity
-                        onPress={handleReset}
-                        activeOpacity={0.7}
-                        style={styles.resetButton}
-                    >
-                        <DelayedLoopLottie
-                            source={require('../assets/cartabranco.json')} // Using the requested navbar credit card icon
-                            style={{ width: 18, height: 18 }}
-                            delay={delay}
-                            initialDelay={delay}
-                            throttleMultiplier={1}
-                        />
-                    </TouchableOpacity>
-                </Animated.View>
-            )}
-
-            {/* Navigation Controls */}
+        <Animated.View
+            style={[styles.container, style]}
+            // Aqui acontece a mágica do "Physics-based Expansion / Fluid Morphing":
+            // Sempre que o tamanho do texto mudar, o container vai adaptar a largura 
+            // usando um efeito de "mola" (spring) elástico e orgânico.
+            layout={LinearTransition.springify().damping(14).stiffness(120).mass(0.8)}
+        >
             <TouchableOpacity
                 onPress={handlePrevious}
                 style={styles.navButton}
@@ -119,7 +88,7 @@ export default function BankSelector({
             >
                 <ChevronRight size={16} color="#FFF" />
             </TouchableOpacity>
-        </View>
+        </Animated.View>
     );
 }
 
@@ -127,25 +96,18 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#000', // Black pill background
+        justifyContent: 'center',
+        backgroundColor: '#141414',
+        borderColor: '#2B2B2B',
+        borderWidth: 1,
         borderRadius: 24,
         paddingVertical: 4,
-        paddingRight: 6,
-        paddingLeft: 8, // More padding on left to push icon right
-        gap: 2,
-        // Minimum height to match MonthSelector feel
+        paddingHorizontal: 6,
+        gap: 4,
         height: 32,
-    },
-    resetContainer: {
-        marginRight: 4, // More space after icon
-    },
-    resetButton: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'transparent',
+        // Remover larguras fixas no container permite que ele abrace o conteúdo (hug contents)
+        // e possibilita a animação física de expansão.
+        alignSelf: 'flex-start',
     },
     navButton: {
         padding: 2,
@@ -155,7 +117,8 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         textAlign: 'center',
+        // O minWidth garante que ele não fique pequeno demais entre transições curtas
         minWidth: 40,
-        maxWidth: 100,
+        marginHorizontal: 4,
     },
 });
