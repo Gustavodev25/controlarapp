@@ -21,6 +21,7 @@ import {
     collection,
     deleteDoc,
     doc,
+    documentId,
     Firestore,
     getDoc,
     getDocs,
@@ -33,7 +34,8 @@ import {
     setDoc,
     Timestamp,
     updateDoc,
-    where
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import { getConnectorLogoUrl } from '../utils/connectorLogo';
 import { isNonInstallmentMerchant } from './installmentRules';
@@ -71,6 +73,88 @@ const deleteDocRefsInChunks = async (docRefs: any[], chunkSize: number = 200): P
     }
 
     return deleted;
+};
+
+const FIRESTORE_WRITE_BATCH_LIMIT = 450;
+const FIRESTORE_ID_LOOKUP_CHUNK_SIZE = 30;
+const FIRESTORE_ID_LOOKUP_CONCURRENCY = 6;
+
+const splitIntoChunks = <T>(items: T[], chunkSize: number): T[][] => {
+    if (!Array.isArray(items) || items.length === 0 || chunkSize <= 0) return [];
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+        chunks.push(items.slice(i, i + chunkSize));
+    }
+    return chunks;
+};
+
+const normalizeDateForStorage = (value: any): string => {
+    if (typeof value === 'string' && value.trim()) return value;
+    return new Date().toISOString();
+};
+
+const getMonthKeyFromDate = (value: any): string => {
+    const dateValue = normalizeDateForStorage(value);
+    const datePart = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
+    return datePart.substring(0, 7);
+};
+
+const getExistingDocumentIds = async (collectionRef: any, candidateIds: string[]): Promise<Set<string>> => {
+    const uniqueIds = Array.from(new Set(
+        (candidateIds || [])
+            .map((id) => String(id || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (uniqueIds.length === 0) {
+        return new Set<string>();
+    }
+
+    const idChunks = splitIntoChunks(uniqueIds, FIRESTORE_ID_LOOKUP_CHUNK_SIZE);
+    const existingIds = new Set<string>();
+
+    for (let i = 0; i < idChunks.length; i += FIRESTORE_ID_LOOKUP_CONCURRENCY) {
+        const lookupBatch = idChunks.slice(i, i + FIRESTORE_ID_LOOKUP_CONCURRENCY);
+        const snapshots = await Promise.all(
+            lookupBatch.map((chunk) => getDocs(query(collectionRef, where(documentId(), 'in', chunk))))
+        );
+        snapshots.forEach((snapshot) => {
+            snapshot.docs.forEach((docSnap) => existingIds.add(docSnap.id));
+        });
+    }
+
+    return existingIds;
+};
+
+const commitSetDocsInBatches = async (
+    firestore: Firestore,
+    writes: { docRef: any; data: Record<string, any>; merge?: boolean }[]
+): Promise<number> => {
+    if (!writes.length) return 0;
+
+    let batch = writeBatch(firestore);
+    let opCount = 0;
+    const commitPromises: Promise<void>[] = [];
+
+    const flushBatch = () => {
+        if (opCount === 0) return;
+        commitPromises.push(batch.commit());
+        batch = writeBatch(firestore);
+        opCount = 0;
+    };
+
+    for (const write of writes) {
+        batch.set(write.docRef, write.data, { merge: write.merge ?? true });
+        opCount += 1;
+
+        if (opCount >= FIRESTORE_WRITE_BATCH_LIMIT) {
+            flushBatch();
+        }
+    }
+
+    flushBatch();
+    await Promise.all(commitPromises);
+    return writes.length;
 };
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trial', 'trialing']);
@@ -1711,20 +1795,35 @@ export const databaseService = {
                 errors: [] as string[]
             };
 
+            const checkingCandidatesById = new Map<string, {
+                id: string;
+                data: Record<string, any>;
+                amount: number;
+                type: 'income' | 'expense';
+                monthKey: string;
+                category: string;
+            }>();
+            const creditCandidatesById = new Map<string, {
+                id: string;
+                data: Record<string, any>;
+                amount: number;
+                monthKey: string;
+                category: string;
+                cardId: string;
+            }>();
+
             for (const account of accounts) {
-                const transactions = account.transactions || [];
-                const isCreditCard = account.type === 'CREDIT';
-                const isSavingsAccount = account.subtype === 'SAVINGS_ACCOUNT';
-                const effectiveConnector = account.connector ?? connector ?? null;
+                const transactions = Array.isArray(account?.transactions) ? account.transactions : [];
+                const isCreditCard = account?.type === 'CREDIT';
+                const isSavingsAccount = account?.subtype === 'SAVINGS_ACCOUNT';
+                const effectiveConnector = account?.connector ?? connector ?? null;
                 const normalizedConnector = normalizeConnectorForStorage(effectiveConnector);
 
-                // Processar conta poupanÃ§a como Caixinha
+                // Processa conta poupanca como Caixinha
                 if (isSavingsAccount) {
                     try {
-                        // 1. Criar/Atualizar caixinha a partir da conta poupanÃ§a
                         await databaseService.syncSavingsAccountAsInvestment(userId, account, effectiveConnector);
 
-                        // 2. Salvar transaÃ§Ãµes da poupanÃ§a no histÃ³rico da caixinha
                         if (transactions.length > 0) {
                             const txResult = await databaseService.saveSavingsAccountTransactions(
                                 userId,
@@ -1735,15 +1834,15 @@ export const databaseService = {
                             skippedCount += txResult.skippedCount || 0;
                         }
 
-                        results.savingsAccountTransactions = (results.savingsAccountTransactions || 0) + transactions.length;
+                        results.savingsAccountTransactions += transactions.length;
                     } catch (savingsError: any) {
+                        errorCount++;
                         console.error('[Firebase] Error processing savings account:', savingsError);
                         results.errors.push(`Savings ${account.id}: ${savingsError.message}`);
                     }
                     continue;
                 }
 
-                // Prepare account info for transaction context
                 const accountInfo = {
                     id: account.id,
                     name: account.name || normalizedConnector?.name,
@@ -1751,27 +1850,294 @@ export const databaseService = {
                     creditData: account.creditData,
                     connector: normalizedConnector
                 };
+                const syncedAt = new Date().toISOString();
 
                 for (const tx of transactions) {
                     try {
+                        const transactionId = String(tx?.id || '').trim();
+                        if (!transactionId) {
+                            skippedCount++;
+                            results.skippedTransactionTypes++;
+                            continue;
+                        }
+
+                        const rawAmount = Number(tx?.amount ?? 0);
+                        const amount = Math.abs(rawAmount);
+                        const type: 'income' | 'expense' = rawAmount >= 0 ? 'income' : 'expense';
+
                         if (isCreditCard) {
-                            // CartÃ£o de crÃ©dito: salva todas as transaÃ§Ãµes
-                            await databaseService.saveOpenFinanceCreditCardTransaction(userId, tx, accountInfo);
-                            results.creditCardTransactions++;
-                            savedCount++;
+                            const transactionDateRaw = normalizeDateForStorage(tx?.date);
+                            const transactionDate = transactionDateRaw.split('T')[0];
+                            const description = tx.description || tx.descriptionRaw || 'Transacao';
+                            const ignoreInstallments = isNonInstallmentMerchant(description);
+                            const installmentNumber = ignoreInstallments
+                                ? 1
+                                : (tx.creditCardMetadata?.installmentNumber || 1);
+                            const totalInstallments = ignoreInstallments
+                                ? 1
+                                : (tx.creditCardMetadata?.totalInstallments || 1);
+                            const [year, month] = transactionDate.split('-');
+                            const invoiceMonthKey = `${year}-${month}`;
+
+                            const transactionDoc = {
+                                amount,
+                                cardId: tx.accountId || accountInfo?.id || null,
+                                category: tx.category || null,
+                                date: transactionDate,
+                                description,
+                                installmentNumber,
+                                invoiceMonthKey,
+                                invoiceMonthKeyManual: false,
+                                isRefund: tx.isRefund || false,
+                                originalTransactionId: tx.originalTransactionId || null,
+                                pluggyRaw: {
+                                    accountId: tx.accountId || null,
+                                    acquirerData: tx.acquirerData ?? null,
+                                    amount: rawAmount,
+                                    amountInAccountCurrency: tx.amountInAccountCurrency ?? null,
+                                    balance: tx.balance ?? null,
+                                    category: tx.category || null,
+                                    categoryId: tx.categoryId || null,
+                                    createdAt: tx.createdAt || syncedAt,
+                                    creditCardMetadata: tx.creditCardMetadata ? {
+                                        billId: tx.creditCardMetadata.billId ?? null,
+                                        cardNumber: tx.creditCardMetadata.cardNumber ?? null,
+                                        payeeMCC: tx.creditCardMetadata.payeeMCC ?? null,
+                                    } : null,
+                                    currencyCode: tx.currencyCode || 'BRL',
+                                    date: tx.date || syncedAt,
+                                    description: tx.description || null,
+                                    descriptionRaw: tx.descriptionRaw || null,
+                                    id: transactionId,
+                                    merchant: tx.merchant ?? null,
+                                    operationType: tx.operationType ?? null,
+                                    order: tx.order ?? 0,
+                                    paymentData: tx.paymentData ?? null,
+                                    providerCode: tx.providerCode ?? null,
+                                    providerId: tx.providerId || null,
+                                    status: tx.status || 'POSTED',
+                                    type: tx.type || 'DEBIT',
+                                    updatedAt: tx.updatedAt || syncedAt,
+                                },
+                                status: 'completed',
+                                totalInstallments,
+                                type,
+                                updatedAt: Timestamp.now(),
+                                syncedAt
+                            };
+
+                            if (!creditCandidatesById.has(transactionId)) {
+                                creditCandidatesById.set(transactionId, {
+                                    id: transactionId,
+                                    data: transactionDoc,
+                                    amount,
+                                    monthKey: getMonthKeyFromDate(transactionDate),
+                                    category: transactionDoc.category || 'Outros',
+                                    cardId: transactionDoc.cardId || 'unknown'
+                                });
+                            } else {
+                                skippedCount++;
+                                results.skippedTransactionTypes++;
+                            }
                         } else {
-                            // Conta corrente: salva todas as transacoes retornadas pela Pluggy
-                            await databaseService.saveOpenFinanceTransaction(userId, tx, accountInfo);
-                            results.checkingTransactions++;
-                            savedCount++;
+                            const transactionDate = normalizeDateForStorage(tx?.date);
+                            const transactionDoc = {
+                                id: transactionId,
+                                description: tx.description || tx.descriptionRaw || 'Transacao',
+                                amount,
+                                type,
+                                date: transactionDate,
+                                category: tx.category || null,
+                                categoryId: tx.categoryId || null,
+                                accountId: tx.accountId || accountInfo?.id || null,
+                                accountName: accountInfo?.name || null,
+                                source: 'openfinance',
+                                pluggyTransactionId: transactionId,
+                                pluggyAccountId: tx.accountId || null,
+                                currencyCode: tx.currencyCode || 'BRL',
+                                merchant: tx.merchant || null,
+                                paymentMethod: tx.paymentData?.paymentMethod || null,
+                                connector: normalizeConnectorForStorage(accountInfo?.connector),
+                                createdAt: Timestamp.now(),
+                                updatedAt: Timestamp.now(),
+                                syncedAt
+                            };
+
+                            if (!checkingCandidatesById.has(transactionId)) {
+                                checkingCandidatesById.set(transactionId, {
+                                    id: transactionId,
+                                    data: transactionDoc,
+                                    amount,
+                                    type,
+                                    monthKey: getMonthKeyFromDate(transactionDate),
+                                    category: transactionDoc.category || 'Outros'
+                                });
+                            } else {
+                                skippedCount++;
+                                results.skippedTransactionTypes++;
+                            }
                         }
                     } catch (error: any) {
                         errorCount++;
-                        results.errors.push(`Transaction ${tx.id}: ${error.message}`);
+                        results.errors.push(`Transaction ${tx?.id || 'unknown'}: ${error.message}`);
                     }
                 }
             }
 
+            const checkingCandidates = Array.from(checkingCandidatesById.values());
+            const creditCandidates = Array.from(creditCandidatesById.values());
+
+            const checkingRef = collection(db, 'users', userId, 'transactions');
+            const creditRef = collection(db, 'users', userId, 'creditCardTransactions');
+
+            const [existingCheckingIds, existingCreditIds] = await Promise.all([
+                getExistingDocumentIds(checkingRef, checkingCandidates.map((candidate) => candidate.id)),
+                getExistingDocumentIds(creditRef, creditCandidates.map((candidate) => candidate.id))
+            ]);
+
+            const checkingWrites: { docRef: any; data: Record<string, any>; merge?: boolean }[] = [];
+            const creditWrites: { docRef: any; data: Record<string, any>; merge?: boolean }[] = [];
+
+            const checkingMonthlyTotals: Record<string, {
+                income: number;
+                expense: number;
+                count: number;
+                categoryTotals: Record<string, number>;
+            }> = {};
+
+            const creditMonthlyTotals: Record<string, {
+                total: number;
+                count: number;
+                categoryTotals: Record<string, number>;
+                creditByCard: Record<string, { total: number; count: number }>;
+            }> = {};
+
+            for (const candidate of checkingCandidates) {
+                checkingWrites.push({
+                    docRef: doc(checkingRef, candidate.id),
+                    data: candidate.data,
+                    merge: true
+                });
+
+                if (existingCheckingIds.has(candidate.id)) {
+                    skippedCount++;
+                    continue;
+                }
+
+                savedCount++;
+                results.checkingTransactions++;
+
+                const monthKey = candidate.monthKey;
+                if (!checkingMonthlyTotals[monthKey]) {
+                    checkingMonthlyTotals[monthKey] = {
+                        income: 0,
+                        expense: 0,
+                        count: 0,
+                        categoryTotals: {}
+                    };
+                }
+
+                if (candidate.type === 'expense') {
+                    checkingMonthlyTotals[monthKey].expense += candidate.amount;
+                } else {
+                    checkingMonthlyTotals[monthKey].income += candidate.amount;
+                }
+
+                checkingMonthlyTotals[monthKey].count += 1;
+                checkingMonthlyTotals[monthKey].categoryTotals[candidate.category] =
+                    (checkingMonthlyTotals[monthKey].categoryTotals[candidate.category] || 0) + candidate.amount;
+            }
+
+            for (const candidate of creditCandidates) {
+                creditWrites.push({
+                    docRef: doc(creditRef, candidate.id),
+                    data: candidate.data,
+                    merge: true
+                });
+
+                if (existingCreditIds.has(candidate.id)) {
+                    skippedCount++;
+                    continue;
+                }
+
+                savedCount++;
+                results.creditCardTransactions++;
+
+                const monthKey = candidate.monthKey;
+                if (!creditMonthlyTotals[monthKey]) {
+                    creditMonthlyTotals[monthKey] = {
+                        total: 0,
+                        count: 0,
+                        categoryTotals: {},
+                        creditByCard: {}
+                    };
+                }
+
+                creditMonthlyTotals[monthKey].total += candidate.amount;
+                creditMonthlyTotals[monthKey].count += 1;
+                creditMonthlyTotals[monthKey].categoryTotals[candidate.category] =
+                    (creditMonthlyTotals[monthKey].categoryTotals[candidate.category] || 0) + candidate.amount;
+
+                if (!creditMonthlyTotals[monthKey].creditByCard[candidate.cardId]) {
+                    creditMonthlyTotals[monthKey].creditByCard[candidate.cardId] = { total: 0, count: 0 };
+                }
+                creditMonthlyTotals[monthKey].creditByCard[candidate.cardId].total += candidate.amount;
+                creditMonthlyTotals[monthKey].creditByCard[candidate.cardId].count += 1;
+            }
+
+            await Promise.all([
+                commitSetDocsInBatches(db, checkingWrites),
+                commitSetDocsInBatches(db, creditWrites)
+            ]);
+
+            const aggregateUpdates: Promise<any>[] = [];
+
+            for (const [monthKey, totals] of Object.entries(checkingMonthlyTotals)) {
+                const categoryTotals: Record<string, any> = {};
+                for (const [category, value] of Object.entries(totals.categoryTotals)) {
+                    categoryTotals[category] = increment(value);
+                }
+
+                const updates: Record<string, any> = {
+                    checkingCount: increment(totals.count) as any,
+                    categoryTotals: categoryTotals as any
+                };
+
+                if (totals.income > 0) {
+                    updates.checkingIncome = increment(totals.income) as any;
+                }
+                if (totals.expense > 0) {
+                    updates.checkingExpense = increment(totals.expense) as any;
+                }
+
+                aggregateUpdates.push(databaseService.updateMonthlyAggregates(userId, `${monthKey}-01`, updates as any));
+            }
+
+            for (const [monthKey, totals] of Object.entries(creditMonthlyTotals)) {
+                const categoryTotals: Record<string, any> = {};
+                for (const [category, value] of Object.entries(totals.categoryTotals)) {
+                    categoryTotals[category] = increment(value);
+                }
+
+                const creditByCard: Record<string, any> = {};
+                for (const [cardId, cardTotals] of Object.entries(totals.creditByCard)) {
+                    creditByCard[cardId] = {
+                        total: increment(cardTotals.total),
+                        count: increment(cardTotals.count)
+                    };
+                }
+
+                aggregateUpdates.push(
+                    databaseService.updateMonthlyAggregates(userId, `${monthKey}-01`, {
+                        creditTotal: increment(totals.total),
+                        creditCount: increment(totals.count),
+                        creditByCard: creditByCard as any,
+                        categoryTotals: categoryTotals as any
+                    } as any)
+                );
+            }
+
+            await Promise.all(aggregateUpdates);
 
             return {
                 success: true,
@@ -1785,7 +2151,6 @@ export const databaseService = {
             return { success: false, error: error.message };
         }
     },
-
     // ===== Sync Credits System =====
     // Users get 3 credits per day, reset at midnight (00:00)
     // 1 credit = 1 connection OR 1 sync
@@ -2889,44 +3254,68 @@ export const databaseService = {
             let savedCount = 0;
             let skippedCount = 0;
 
-            for (const tx of transactions) {
-                try {
-                    // Use Pluggy transaction ID as document ID to avoid duplicates
-                    const txId = tx.id || `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    const docRef = doc(historyRef, txId);
+            const candidatesById = new Map<string, { id: string; data: Record<string, any> }>();
 
-                    // Check if transaction already exists
-                    const existingDoc = await getDoc(docRef);
-                    if (existingDoc.exists()) {
+            for (const tx of Array.isArray(transactions) ? transactions : []) {
+                try {
+                    const txId = String(
+                        tx?.id || `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                    ).trim();
+
+                    if (!txId) {
                         skippedCount++;
                         continue;
                     }
 
-                    // Determine if it's a deposit or withdraw based on amount
-                    // Positive amount = deposit, Negative amount = withdraw
-                    const amount = Number(tx.amount ?? 0);
+                    if (candidatesById.has(txId)) {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    const amount = Number(tx?.amount ?? 0);
                     const type: 'deposit' | 'withdraw' = amount >= 0 ? 'deposit' : 'withdraw';
 
-                    const transactionData = {
-                        amount: Math.abs(amount),
-                        type,
-                        date: tx.date || new Date().toISOString(),
-                        description: tx.description || tx.descriptionRaw || null,
-                        category: tx.category || null,
-
-                        // Pluggy metadata
-                        pluggyTransactionId: txId,
-                        source: 'pluggy',
-
-                        createdAt: Timestamp.now()
-                    };
-
-                    await setDoc(docRef, transactionData);
-                    savedCount++;
+                    candidatesById.set(txId, {
+                        id: txId,
+                        data: {
+                            amount: Math.abs(amount),
+                            type,
+                            date: tx?.date || new Date().toISOString(),
+                            description: tx?.description || tx?.descriptionRaw || null,
+                            category: tx?.category || null,
+                            pluggyTransactionId: txId,
+                            source: 'pluggy',
+                            createdAt: Timestamp.now()
+                        }
+                    });
                 } catch (txError: any) {
-                    console.error('[Firebase] Error saving savings transaction:', txError);
+                    console.error('[Firebase] Error preparing savings transaction:', txError);
                 }
             }
+
+            const candidates = Array.from(candidatesById.values());
+            const existingIds = await getExistingDocumentIds(
+                historyRef,
+                candidates.map((candidate) => candidate.id)
+            );
+
+            const writes: { docRef: any; data: Record<string, any>; merge?: boolean }[] = [];
+
+            for (const candidate of candidates) {
+                if (existingIds.has(candidate.id)) {
+                    skippedCount++;
+                    continue;
+                }
+
+                writes.push({
+                    docRef: doc(historyRef, candidate.id),
+                    data: candidate.data,
+                    merge: false
+                });
+                savedCount++;
+            }
+
+            await commitSetDocsInBatches(db, writes);
 
             return { success: true, savedCount, skippedCount };
         } catch (error: any) {

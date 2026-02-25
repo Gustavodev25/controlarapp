@@ -797,423 +797,100 @@ const processInstallments = (
 // ============================================================
 
 export const buildInvoices = (
-    card: CreditCardAccount | null,
-    transactions: Transaction[],
-    cardId: string = 'all'
+  card: CreditCardAccount | null,
+  transactions: Transaction[],
+  cardId: string = 'all'
 ): InvoiceBuildResult => {
-    const today = new Date();
-    const periods = calculateInvoicePeriodDates(card, today);
 
-    // Debug logs removed for performance - enable __DEV__ if needed
+  const today = new Date();
+  const periods = calculateInvoicePeriodDates(card, today);
 
-    // Initialize invoice data
-    const lastInvoiceItems: InvoiceItem[] = [];
-    const currentInvoiceItems: InvoiceItem[] = [];
+  const dateToNumber = (d: Date) =>
+    d.getFullYear() * 10000 +
+    (d.getMonth() + 1) * 100 + // FIX month index
+    d.getDate();
 
-    let lastTotal = 0;
-    let currentTotal = 0;
-    let allFutureTotal = 0;
+  const lastInvoiceItems: InvoiceItem[] = [];
+  const currentInvoiceItems: InvoiceItem[] = [];
 
-    // Helper to check date ranges
-    const dateToNumber = (d: Date) => d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
-    const lastInvoiceStartNum = dateToNumber(periods.lastInvoiceStart);
-    const lastClosingDateNum = dateToNumber(periods.lastClosingDate);
-    const currentInvoiceStartNum = dateToNumber(periods.currentInvoiceStart);
-    const currentClosingDateNum = dateToNumber(periods.currentClosingDate);
+  let calculatedLastTotal = 0;
+  let calculatedCurrentTotal = 0;
 
-    // Process installments
-    const { series, nonInstallmentTxs } = processInstallments(transactions, cardId);
+  const lastStart = dateToNumber(periods.lastInvoiceStart);
+  const lastEnd = dateToNumber(periods.lastClosingDate);
+  const currentStart = dateToNumber(periods.currentInvoiceStart);
+  const currentEnd = dateToNumber(periods.currentClosingDate);
 
-    // Debug log removed for performance
+  transactions.forEach(tx => {
 
-    // ============================================================
-    // GERAR FATURAS FUTURAS PARA PROJEÇÃO DE PARCELAS
-    // ============================================================
+    if (isCreditCardPayment(tx)) return;
 
-    // Determinar quantas faturas futuras precisamos (baseado nas parcelas)
-    let maxFutureMonths = 1; // Mínimo 1 (próxima fatura)
-    series.forEach((seriesData) => {
-        const totalInst = seriesData.transactions[0]?.totalInstallments || 1;
-        const firstInstNum = seriesData.transactions[0]?.installmentNumber || 1;
-        const remainingInst = totalInst - firstInstNum;
-        if (remainingInst > maxFutureMonths) {
-            maxFutureMonths = remainingInst;
-        }
-    });
+    const txCardId = tx.cardId || tx.accountId || '';
+    if (cardId !== 'all' && txCardId !== cardId) return;
 
-    // Limitar a 24 faturas futuras (2 anos) para garantir que parcelas longas sejam incluídas
-    maxFutureMonths = Math.min(maxFutureMonths, 24);
+    const txDate = parseDate(tx.date);
+    const txDateNum = dateToNumber(txDate);
 
-    // Debug log removed for performance
+    // 🔥 NÃO usar Math.abs
+    const rawAmount = Number(tx.amount) || 0;
 
-    // Gerar estrutura de faturas futuras
-    interface FutureInvoice {
-        start: Date;
-        closing: Date;
-        due: Date;
-        monthKey: string;
-        items: InvoiceItem[];
-        total: number;
+    // Padrão:
+    // expense = positivo
+    // income/refund = negativo
+    const signed =
+      tx.type === 'expense'
+        ? Math.abs(rawAmount)
+        : -Math.abs(rawAmount);
+
+    const item = transactionToInvoiceItem(tx);
+
+    if (txDateNum >= lastStart && txDateNum <= lastEnd) {
+      calculatedLastTotal += signed;
+      lastInvoiceItems.push(item);
     }
 
-    interface FutureInvoiceRange {
-        inv: FutureInvoice;
-        startNum: number;
-        closingNum: number;
+    if (txDateNum >= currentStart && txDateNum <= currentEnd) {
+      calculatedCurrentTotal += signed;
+      currentInvoiceItems.push(item);
     }
+  });
 
-    const futureInvoicesMap: FutureInvoice[] = [];
-    let tempClosing = new Date(periods.currentClosingDate);
+  // 🔥 SE EXISTE VALOR DO BANCO, ELE É A VERDADE
+  const bankClosedTotal =
+    card?.currentBill?.totalAmount ?? null;
 
-    for (let i = 0; i < maxFutureMonths; i++) {
-        const futureStart = new Date(tempClosing);
-        futureStart.setDate(futureStart.getDate() + 1);
+  const closedTotal =
+    bankClosedTotal !== null
+      ? bankClosedTotal
+      : calculatedLastTotal;
 
-        const futureClosing = new Date(tempClosing);
-        futureClosing.setMonth(futureClosing.getMonth() + 1);
+  return {
+    closedInvoice: {
+      id: `inv_${periods.lastMonthKey}`,
+      referenceMonth: periods.lastMonthKey,
+      status: 'CLOSED',
+      startDate: toDateStr(periods.lastInvoiceStart),
+      closingDate: toDateStr(periods.lastClosingDate),
+      dueDate: toDateStr(periods.lastDueDate),
+      total: closedTotal,
+      items: lastInvoiceItems
+    },
 
-        // Ajustar para o dia de fechamento correto
-        const lastDayOfMonth = new Date(futureClosing.getFullYear(), futureClosing.getMonth() + 1, 0).getDate();
-        futureClosing.setDate(Math.min(periods.closingDay, lastDayOfMonth));
+    currentInvoice: {
+      id: `inv_${periods.currentMonthKey}`,
+      referenceMonth: periods.currentMonthKey,
+      status: 'OPEN',
+      startDate: toDateStr(periods.currentInvoiceStart),
+      closingDate: toDateStr(periods.currentClosingDate),
+      dueDate: toDateStr(periods.currentDueDate),
+      total: calculatedCurrentTotal,
+      items: currentInvoiceItems
+    },
 
-        const futureDue = new Date(futureClosing);
-        futureDue.setMonth(futureDue.getMonth() + 1);
-        const lastDayOfDueMonth = new Date(futureDue.getFullYear(), futureDue.getMonth() + 1, 0).getDate();
-        futureDue.setDate(Math.min(periods.dueDay, lastDayOfDueMonth));
-
-        futureInvoicesMap.push({
-            start: futureStart,
-            closing: futureClosing,
-            due: futureDue,
-            monthKey: toMonthKey(futureDue),
-            items: [],
-            total: 0
-        });
-
-        tempClosing = new Date(futureClosing);
-    }
-
-    const futureInvoiceRanges: FutureInvoiceRange[] = futureInvoicesMap.map((inv) => ({
-        inv,
-        startNum: dateToNumber(inv.start),
-        closingNum: dateToNumber(inv.closing),
-    }));
-
-    // Process non-installment transactions
-    nonInstallmentTxs.forEach(tx => {
-        if (isCreditCardPayment(tx)) return;
-
-        const amt = Math.abs(Number(tx.amount) || 0);
-        // Expense -> positive, Income/Refund -> negative
-        const isTxRefund = tx.isRefund || tx.category === 'Refund';
-        const signedAmt = (tx.type === 'expense' && !isTxRefund) ? amt : -amt;
-
-        const txDate = parseDate(tx.date);
-        const txDateNum = dateToNumber(txDate);
-        const txInLastRange = txDateNum >= lastInvoiceStartNum && txDateNum <= lastClosingDateNum;
-        const txInCurrentRange = txDateNum >= currentInvoiceStartNum && txDateNum <= currentClosingDateNum;
-        // COMPATIBILIDADE: Verificar ambos os campos
-        // - App Mobile usa: invoiceMonthKeyManual
-        // - Web usa: manualInvoiceMonth (presença do campo indica manual)
-        const hasManualInvoiceMonthOverride = tx.invoiceMonthKeyManual === true || !!(tx as any).manualInvoiceMonth;
-
-        const effectiveInvoiceMonthKey = getEffectiveInvoiceMonthKey(tx);
-
-        // MANUAL OVERRIDE: Check invoiceMonthKey
-        if (effectiveInvoiceMonthKey) {
-            if (effectiveInvoiceMonthKey === periods.lastMonthKey) {
-                // Safeguard for due-month vs closing-month conventions from providers.
-                if (!hasManualInvoiceMonthOverride && txInCurrentRange) {
-                    currentTotal += signedAmt;
-                    currentInvoiceItems.push(transactionToInvoiceItem(tx));
-                    return;
-                }
-                lastTotal += signedAmt;
-                lastInvoiceItems.push(transactionToInvoiceItem(tx));
-                return;
-            } else if (effectiveInvoiceMonthKey === periods.currentMonthKey) {
-                if (!hasManualInvoiceMonthOverride && txInLastRange) {
-                    lastTotal += signedAmt;
-                    lastInvoiceItems.push(transactionToInvoiceItem(tx));
-                    return;
-                }
-                currentTotal += signedAmt;
-                currentInvoiceItems.push(transactionToInvoiceItem(tx));
-                return;
-            } else {
-                // Check future invoices
-                let foundInFuture = false;
-                for (const range of futureInvoiceRanges) {
-                    if (effectiveInvoiceMonthKey === range.inv.monthKey) {
-                        // FIX: If key says Future but Date says Current, assume naming mismatch (Due Date vs Closing Date)
-                        // and keep it in Current to avoid disappearance.
-                        if (!hasManualInvoiceMonthOverride && txInCurrentRange) {
-                            currentTotal += signedAmt;
-                            currentInvoiceItems.push(transactionToInvoiceItem(tx));
-                            foundInFuture = true;
-                            break;
-                        }
-                        if (!hasManualInvoiceMonthOverride && txInLastRange) {
-                            lastTotal += signedAmt;
-                            lastInvoiceItems.push(transactionToInvoiceItem(tx));
-                            foundInFuture = true;
-                            break;
-                        }
-
-                        range.inv.total += signedAmt;
-                        range.inv.items.push(transactionToInvoiceItem(tx));
-                        foundInFuture = true;
-                        break;
-                    }
-                }
-                if (foundInFuture) return;
-            }
-            // If manual key exists but doesn't match any active period, 
-            // we fall back to date logic or maybe it belongs to history (older than last).
-            // For now, let's fall back to date logic to be safe, 
-            // or we could check if it's older than lastMonthKey.
-        }
-
-        if (txDateNum >= lastInvoiceStartNum && txDateNum <= lastClosingDateNum) {
-            lastTotal += signedAmt;
-            lastInvoiceItems.push(transactionToInvoiceItem(tx));
-        } else if (txDateNum >= currentInvoiceStartNum && txDateNum <= currentClosingDateNum) {
-            currentTotal += signedAmt;
-            currentInvoiceItems.push(transactionToInvoiceItem(tx));
-        } else {
-            // Verificar se cai em alguma fatura futura
-            for (const range of futureInvoiceRanges) {
-                if (txDateNum >= range.startNum && txDateNum <= range.closingNum) {
-                    range.inv.total += signedAmt;
-                    range.inv.items.push(transactionToInvoiceItem(tx));
-                    break;
-                }
-            }
-        }
-
-        if (txDate > periods.currentClosingDate) {
-            allFutureTotal += signedAmt;
-        }
-    });
-
-    // Process installment series - PROJETAR PARA TODAS AS FATURAS FUTURAS
-    // CORREÇÃO: Para parcelas, SEMPRE calcular a data baseada no firstInstDate + número da parcela
-    // Isso garante que cada parcela vai para uma fatura diferente, mesmo que a API retorne
-    // transações com datas que cairiam no mesmo período de fatura
-    series.forEach((seriesData) => {
-        const { firstInstDate, transactions: seriesTxs } = seriesData;
-        const totalInst = seriesTxs[0]?.totalInstallments || 1;
-        const amt = Math.abs(Number(seriesTxs[0]?.amount) || 0);
-        const baseTx = seriesTxs[0];
-        const txByInstallment = new Map<number, Transaction>();
-        seriesTxs.forEach((tx) => {
-            const key = tx.installmentNumber || 1;
-            if (!txByInstallment.has(key)) {
-                txByInstallment.set(key, tx);
-            }
-        });
-        // Expense -> positive, Income/Refund -> negative
-        const isSeriesRefund = baseTx.isRefund || baseTx.category === 'Refund';
-        const signedAmt = (baseTx.type === 'expense' && !isSeriesRefund) ? amt : -amt;
-
-        // MANUAL OVERRIDE FOR SERIES
-        // If the base transaction has invoiceMonthKey, it shifts the start of the series
-        let effectiveFirstInstDate = firstInstDate;
-        const baseInvoiceMonthKey = getEffectiveInvoiceMonthKey(baseTx);
-        // COMPATIBILIDADE: Verificar ambos os campos para override manual
-        if (baseInvoiceMonthKey && (baseTx.invoiceMonthKeyManual === true || !!(baseTx as any).manualInvoiceMonth)) {
-            const [y, m] = baseInvoiceMonthKey.split('-').map(Number);
-            // Reconstruct date with overridden Year/Month, preserving original day
-            // Note: Month in Date constructor is 0-indexed (m - 1)
-            effectiveFirstInstDate = new Date(firstInstDate);
-            effectiveFirstInstDate.setFullYear(y);
-            effectiveFirstInstDate.setMonth(m - 1);
-        }
-
-        // Debug log removed for performance
-
-        for (let instNum = 1; instNum <= totalInst; instNum++) {
-            // Verificar se já existe uma transação REAL para esta parcela
-            const existingTx = txByInstallment.get(instNum);
-
-            let item: InvoiceItem;
-            let classificationDate: Date;
-
-            // SEMPRE calcular a data de classificação baseada no effectiveFirstInstDate + número da parcela
-            // Isso garante que parcela 1 vai para fatura do mês 1, parcela 2 para o mês 2, etc.
-            const calculatedDate = new Date(effectiveFirstInstDate);
-            calculatedDate.setMonth(calculatedDate.getMonth() + (instNum - 1));
-            classificationDate = calculatedDate;
-
-            if (existingTx) {
-                // Usar a transação REAL para os dados, mas a data CALCULADA para classificação
-                item = {
-                    ...transactionToInvoiceItem(existingTx),
-                    // Manter a data original para exibição, mas a classificação usa calculatedDate
-                };
-                // Debug log removed for performance
-            } else {
-                // Criar parcela PROJETADA - calcular data baseado no effectiveFirstInstDate
-                item = {
-                    id: `proj_${baseTx.id}_${instNum}`,
-                    description: baseTx.description,
-                    amount: amt,
-                    date: toDateStr(calculatedDate),
-                    category: baseTx.category,
-                    type: baseTx.type,
-                    installmentNumber: instNum,
-                    totalInstallments: totalInst,
-                    isProjected: true
-                };
-                // Debug log removed for performance
-            }
-
-            const classificationDateNum = dateToNumber(classificationDate);
-
-            // Classificar em qual fatura cai
-            let classified = false;
-
-            // Check MANUAL OVERRIDE again for specific installment transaction if it exists
-            // This allows overriding a specific installment in the middle of a series
-            const existingInvoiceMonthKey = existingTx ? getEffectiveInvoiceMonthKey(existingTx) : null;
-            if (existingTx && existingInvoiceMonthKey) {
-                const installmentInLastRange = classificationDateNum >= lastInvoiceStartNum && classificationDateNum <= lastClosingDateNum;
-                const installmentInCurrentRange = classificationDateNum >= currentInvoiceStartNum && classificationDateNum <= currentClosingDateNum;
-                // COMPATIBILIDADE: Verificar ambos os campos para override manual
-                const hasManualInvoiceMonthOverride = existingTx.invoiceMonthKeyManual === true || !!(existingTx as any).manualInvoiceMonth;
-
-                if (existingInvoiceMonthKey === periods.lastMonthKey) {
-                    if (!hasManualInvoiceMonthOverride && installmentInCurrentRange) {
-                        currentTotal += signedAmt;
-                        currentInvoiceItems.push(item);
-                        classified = true;
-                    } else {
-                        lastTotal += signedAmt;
-                        lastInvoiceItems.push(item);
-                        classified = true;
-                    }
-                } else if (existingInvoiceMonthKey === periods.currentMonthKey) {
-                    if (!hasManualInvoiceMonthOverride && installmentInLastRange) {
-                        lastTotal += signedAmt;
-                        lastInvoiceItems.push(item);
-                        classified = true;
-                    } else {
-                        currentTotal += signedAmt;
-                        currentInvoiceItems.push(item);
-                        classified = true;
-                    }
-                } else {
-                    for (const range of futureInvoiceRanges) {
-                        if (existingInvoiceMonthKey === range.inv.monthKey) {
-                            // FIX: Naming mismatch safeguard for installments too
-                            if (!hasManualInvoiceMonthOverride && installmentInCurrentRange) {
-                                currentTotal += signedAmt;
-                                currentInvoiceItems.push(item);
-                                classified = true;
-                                break;
-                            }
-                            if (!hasManualInvoiceMonthOverride && installmentInLastRange) {
-                                lastTotal += signedAmt;
-                                lastInvoiceItems.push(item);
-                                classified = true;
-                                break;
-                            }
-
-                            range.inv.total += signedAmt;
-                            range.inv.items.push(item);
-                            classified = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!classified) {
-                if (classificationDateNum >= lastInvoiceStartNum && classificationDateNum <= lastClosingDateNum) {
-                    lastTotal += signedAmt;
-                    lastInvoiceItems.push(item);
-                    classified = true;
-                    // Debug log removed for performance
-                } else if (classificationDateNum >= currentInvoiceStartNum && classificationDateNum <= currentClosingDateNum) {
-                    currentTotal += signedAmt;
-                    currentInvoiceItems.push(item);
-                    classified = true;
-                    // Debug log removed for performance
-                } else {
-                    // Verificar faturas futuras
-                    for (const range of futureInvoiceRanges) {
-                        if (classificationDateNum >= range.startNum && classificationDateNum <= range.closingNum) {
-                            range.inv.total += signedAmt;
-                            range.inv.items.push(item);
-                            classified = true;
-                            // Debug log removed for performance
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Se não classificou mas é após a fatura atual, adiciona ao total futuro
-            if (!classified && classificationDate > periods.currentClosingDate) {
-                allFutureTotal += signedAmt;
-            } else if (classificationDate > periods.currentClosingDate) {
-                allFutureTotal += signedAmt;
-            }
-        }
-    });
-
-    // Sort items by date
-    const sortByDate = (a: InvoiceItem, b: InvoiceItem) => b.date.localeCompare(a.date);
-    lastInvoiceItems.sort(sortByDate);
-    currentInvoiceItems.sort(sortByDate);
-    futureInvoicesMap.forEach(inv => inv.items.sort(sortByDate));
-
-    // Determine statuses
-    const determineStatus = (closing: Date, due: Date, isPast: boolean): 'OPEN' | 'CLOSED' | 'PAID' | 'OVERDUE' => {
-        if (!isPast) return 'OPEN';
-        if (due < today) return 'OVERDUE'; // Simplification - should check if paid
-        return 'CLOSED';
-    };
-
-    // Converter faturas futuras para o formato de saída
-    const futureInvoices: Invoice[] = futureInvoicesMap.map((inv, idx) => ({
-        id: `inv_${inv.monthKey}`,
-        referenceMonth: inv.monthKey,
-        status: 'OPEN' as const,
-        startDate: toDateStr(inv.start),
-        closingDate: toDateStr(inv.closing),
-        dueDate: toDateStr(inv.due),
-        total: inv.total,
-        items: inv.items
-    }));
-
-    // Debug log removed for performance
-
-    return {
-        closedInvoice: {
-            id: `inv_${periods.lastMonthKey}`,
-            referenceMonth: periods.lastMonthKey,
-            status: determineStatus(periods.lastClosingDate, periods.lastDueDate, true),
-            startDate: toDateStr(periods.lastInvoiceStart),
-            closingDate: toDateStr(periods.lastClosingDate),
-            dueDate: toDateStr(periods.lastDueDate),
-            total: lastTotal,
-            items: lastInvoiceItems
-        },
-        currentInvoice: {
-            id: `inv_${periods.currentMonthKey}`,
-            referenceMonth: periods.currentMonthKey,
-            status: 'OPEN',
-            startDate: toDateStr(periods.currentInvoiceStart),
-            closingDate: toDateStr(periods.currentClosingDate),
-            dueDate: toDateStr(periods.currentDueDate),
-            total: currentTotal,
-            items: currentInvoiceItems
-        },
-        futureInvoices,
-        allFutureTotal,
-        periods
-    };
+    futureInvoices: [],
+    allFutureTotal: 0,
+    periods
+  };
 };
 
 // ============================================================

@@ -525,8 +525,7 @@ export default function OpenFinanceScreen() {
                         if (intervalId) clearInterval(intervalId);
                         setConnectionStep('connecting');
                         setConnectionProgress(60);
-                        setConnectionStatusText('Autorização confirmada! Extraindo suas contas e transações...');
-                        await new Promise(resolve => setTimeout(resolve, 8000));
+                        setConnectionStatusText('Autorizacao confirmada! Extraindo suas contas e transacoes...');
 
                         const token2 = await user.getIdToken();
                         let syncResponse = await apiFetch('/api/pluggy/sync', {
@@ -541,29 +540,33 @@ export default function OpenFinanceScreen() {
                             let totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
 
                             if (totalTx === 0 && syncData.accounts?.length > 0) {
-                                setConnectionStatusText('O banco está processando seu extrato. Aguarde mais um pouco...');
-                                await new Promise(resolve => setTimeout(resolve, 10000));
+                                setConnectionStatusText('O banco ainda esta processando seu extrato. Tentando novamente...');
+                                await new Promise(resolve => setTimeout(resolve, 3000));
                                 const retryResponse = await apiFetch('/api/pluggy/sync', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token2}` },
                                     body: JSON.stringify({ itemId: pendingItemId, autoRefresh: true, fullHistory: true }),
                                     timeout: 240000
                                 });
-                                if (retryResponse.ok) syncData = await retryResponse.json();
+                                if (retryResponse.ok) {
+                                    syncData = await retryResponse.json();
+                                    totalTx = syncData.accounts?.reduce((acc: any, a: any) => acc + (a.transactions?.length || 0), 0) || 0;
+                                }
                             }
 
                             setConnectionProgress(80);
                             if (syncData.accounts && syncData.accounts.length > 0) {
-                                for (let i = 0; i < syncData.accounts.length; i++) {
-                                    const account = syncData.accounts[i];
-                                    setConnectionStatusText(`Organizando conta ${i + 1} de ${syncData.accounts.length}...`);
-                                    await databaseService.saveAccount(user.uid, account, syncData.connector || selectedConnector);
-                                }
-                                setConnectionStatusText(`Salvando ${totalTx} transações...`);
+                                setConnectionStatusText(`Organizando ${syncData.accounts.length} contas...`);
+                                await Promise.all(
+                                    syncData.accounts.map((account: any) =>
+                                        databaseService.saveAccount(user.uid, account, syncData.connector || selectedConnector)
+                                    )
+                                );
+                                setConnectionStatusText(`Salvando ${totalTx} transacoes...`);
                                 await databaseService.saveOpenFinanceTransactions(user.uid, syncData.accounts, syncData.connector || selectedConnector);
                             }
                             setConnectionProgress(100);
-                            setConnectionStatusText('Sincronização concluída com sucesso!');
+                            setConnectionStatusText('Sincronizacao concluida com sucesso!');
                             setConnectionStep('success');
                             setPendingItemId(null);
                             await clearPersistedOpenFinanceState();
@@ -577,7 +580,7 @@ export default function OpenFinanceScreen() {
                             const errPayload = await syncResponse.json().catch(() => null);
                             cancelled = true;
                             if (intervalId) clearInterval(intervalId);
-                            setConnectionError(errPayload?.error || 'Falha ao baixar transa��es do banco.');
+                            setConnectionError(errPayload?.error || 'Falha ao baixar transacoes do banco.');
                             setConnectionStep('error');
                             setPendingItemId(null);
                             await clearPersistedOpenFinanceState();
@@ -585,7 +588,6 @@ export default function OpenFinanceScreen() {
                         }
                         return;
                     }
-
                     if (normalizedStatus === 'UPDATING') {
                         setConnectionStep('connecting');
                         setConnectionProgress((previous) => (previous < 50 ? 50 : previous));
@@ -783,9 +785,12 @@ export default function OpenFinanceScreen() {
                 onStatusUpdate({ step: 'fetching_accounts', message: `${syncData.accounts?.length || 0} contas`, progress: 30 });
 
                 if (syncData.accounts?.length) {
-                    for (let i = 0; i < syncData.accounts.length; i++) {
-                        await databaseService.saveAccount(user.uid, syncData.accounts[i], syncData.connector || group.connector);
-                    }
+                    onStatusUpdate({ step: 'fetching_accounts', message: 'Organizando contas...', progress: 45 });
+                    await Promise.all(
+                        syncData.accounts.map((account: any) =>
+                            databaseService.saveAccount(user.uid, account, syncData.connector || group.connector)
+                        )
+                    );
                     await databaseService.saveOpenFinanceTransactions(user.uid, syncData.accounts, syncData.connector || group.connector);
                 }
 
