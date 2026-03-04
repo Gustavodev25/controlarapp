@@ -1,22 +1,18 @@
 ﻿import BankSelector from '@/components/BankSelector';
-import { CategorySelectorModal } from '@/components/CategorySelectorModal';
-import { ClosingDateItem, ClosingDateModal } from '@/components/ClosingDateModal';
-import { FilterState } from '@/components/CreditCardFilterModal';
+import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
 
+import { DeleteConfirmCard } from '@/components/DeleteConfirmCard';
 import { RefundModal } from '@/components/RefundModal';
 import { SwipeTutorial } from '@/components/SwipeTutorial';
 import { TransactionOptionsModal } from '@/components/TransactionOptionsModal';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
-import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
-import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { useStackCardStyle } from '@/components/ui/StackCarousel';
-import { DEFAULT_CATEGORIES } from '@/constants/defaultCategories';
 import { useCategories } from '@/hooks/use-categories';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
 import { databaseService, db } from '@/services/firebase';
 import { isNonInstallmentMerchant } from '@/services/installmentRules';
 import {
-    buildInvoicesPluggyFirst,
+    buildInvoices,
     CreditCardAccount,
     formatCurrency,
     formatDateFull,
@@ -27,7 +23,6 @@ import {
     Transaction
 } from '@/services/invoiceBuilder';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient'; // Added
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
@@ -51,7 +46,6 @@ import {
     Music,
     Plane,
     RotateCcw,
-    Search,
     Settings,
     Shirt,
     ShoppingBag,
@@ -71,11 +65,9 @@ import {
     LayoutAnimation,
     Platform,
     RefreshControl,
-    ScrollView,
     SectionList,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     UIManager,
     View
@@ -94,9 +86,6 @@ import Animated, {
     withSpring,
     withTiming
 } from 'react-native-reanimated';
-
-
-
 
 // Habilitar LayoutAnimation no Android
 if (Platform.OS === 'android') {
@@ -118,37 +107,6 @@ const TimedLottieIcon = React.memo(({ source, style }: { source: any; style: any
     />
 ));
 TimedLottieIcon.displayName = 'TimedLottieIcon';
-
-interface NeedsConfigurationStateProps {
-    onOpenSettings: () => void;
-}
-
-const NeedsConfigurationState = ({ onOpenSettings }: NeedsConfigurationStateProps) => {
-    return (
-        <View style={styles.configNeededContainer}>
-            <View style={styles.configIconWrapper}>
-                <TimedLottieIcon
-                    source={require('@/assets/fatura.json')}
-                    style={{ width: 120, height: 120 }}
-                />
-            </View>
-
-            <Text style={styles.configNeededTitle}>Fatura não configurada</Text>
-
-            <Text style={styles.configNeededText}>
-                Para visualizar seus gastos organizados por mês, informe a data de fechamento do cartão.
-            </Text>
-
-            <TouchableOpacity
-                style={styles.configNeededButton}
-                onPress={onOpenSettings}
-                activeOpacity={0.8}
-            >
-                <Text style={styles.configNeededButtonText}>Configurar agora</Text>
-            </TouchableOpacity>
-        </View>
-    );
-};
 
 type InvoiceTab = 'all' | 'last' | 'current' | `future_${number}`;
 
@@ -183,48 +141,6 @@ const SPRING_CONFIG = {
 const INVOICE_COMPUTE_WINDOW_MONTHS = 24;
 const MAX_INVOICE_COMPUTE_ITEMS = 2000;
 const INVOICE_BUILD_DEBOUNCE_MS = 80;
-
-const toIsoDateValue = (date: Date): string => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-
-const parseIsoDateValue = (rawDate?: string | null): Date | null => {
-    const normalized = normalizePluggyDate(rawDate || null);
-    if (!normalized) return null;
-    const [year, month, day] = normalized.split('-').map(Number);
-    const parsed = new Date(year, month - 1, day, 12, 0, 0);
-    return isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const normalizeIsoDateValue = (rawDate?: string | null): string | null => {
-    const parsed = parseIsoDateValue(rawDate);
-    return parsed ? toIsoDateValue(parsed) : null;
-};
-
-const shiftIsoDateByMonths = (isoDate: string, deltaMonths: number, preferredDay?: number): string | null => {
-    const parsed = parseIsoDateValue(isoDate);
-    if (!parsed) return null;
-
-    const target = new Date(parsed.getFullYear(), parsed.getMonth() + deltaMonths, 1, 12, 0, 0);
-    const targetDay = preferredDay ?? parsed.getDate();
-    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-    target.setDate(Math.min(targetDay, lastDay));
-
-    return toIsoDateValue(target);
-};
-
-const formatShortMonthPt = (isoDate: string): string => {
-    const parsed = parseIsoDateValue(isoDate);
-    if (!parsed) return '';
-    const shortMonth = new Intl.DateTimeFormat('pt-BR', { month: 'short' })
-        .format(parsed)
-        .replace('.', '');
-    const capitalized = shortMonth.charAt(0).toUpperCase() + shortMonth.slice(1);
-    return `${capitalized}.`;
-};
 
 // Vertical Stack Animation Hook
 const useVerticalStackCardStyle = (
@@ -403,14 +319,12 @@ const InvoiceCarousel = React.memo(({
     invoiceData,
     selectedTab,
     onTabChange,
-    historyTotal,
-    selectedCard
+    historyTotal
 }: {
     invoiceData: InvoiceBuildResult;
     selectedTab: InvoiceTab;
     onTabChange: (tab: InvoiceTab) => void;
     historyTotal: number;
-    selectedCard: CreditCardAccount | null;
 }) => {
     const [currentIndex, setCurrentIndex] = useState(2); // Come├ºa em "Fatura Atual"
     const animatedIndex = useSharedValue(2);
@@ -426,89 +340,26 @@ const InvoiceCarousel = React.memo(({
     }, []);
 
     const data = useMemo(() => {
-        const isManual = !!selectedCard?.closingDateSettings?.applyToAll || Object.keys(selectedCard?.closingDateSettings?.monthOverrides || {}).length > 0;
-
-        const getFallbackDueInfo = () => {
-            let closingDay = String(invoiceData.periods?.closingDay || '-');
-            let dueDay = String(invoiceData.periods?.dueDay || '-');
-
-            // Tenta pegar do Pluggy primeiro (fatura atual)
-            if (selectedCard?.currentBill?.closeDate) {
-                const closeDateParsed = parseIsoDateValue(selectedCard.currentBill.closeDate);
-                if (closeDateParsed) {
-                    closingDay = String(closeDateParsed.getDate());
-                }
-            } else if (selectedCard?.balanceCloseDate) {
-                const balanceClose = parseIsoDateValue(selectedCard.balanceCloseDate);
-                if (balanceClose) {
-                    closingDay = String(balanceClose.getDate());
-                }
-            }
-
-            if (selectedCard?.currentBill?.dueDate) {
-                const dueDateParsed = parseIsoDateValue(selectedCard.currentBill.dueDate);
-                if (dueDateParsed) {
-                    dueDay = String(dueDateParsed.getDate());
-                }
-            } else if (selectedCard?.balanceDueDate) {
-                const balanceDue = parseIsoDateValue(selectedCard.balanceDueDate);
-                if (balanceDue) {
-                    dueDay = String(balanceDue.getDate());
-                }
-            }
-
-            // FALLBACK PARA CONFIGURAÇÃO MANUAL (Se ativado)
-            if (selectedCard?.closingDateSettings?.lastClosingDate) {
-                const manualDate = parseIsoDateValue(selectedCard.closingDateSettings.lastClosingDate);
-                if (manualDate) {
-                    closingDay = String(manualDate.getDate());
-                    // Estimar vencimento (fechamento + 10 dias)
-                    const estimatedDue = new Date(manualDate);
-                    estimatedDue.setDate(estimatedDue.getDate() + 10);
-                    dueDay = String(estimatedDue.getDate());
-                }
-            }
-
-            return `Fecha ${closingDay} - Vence ${dueDay}`;
-        };
-
-        const formatDueInfo = (closingDate: Date, dueDate: Date) => {
-            if (isManual) {
-                const manualParsed = parseIsoDateValue(selectedCard?.closingDateSettings?.lastClosingDate);
-                if (manualParsed) {
-                    return `Fechamento manual ${formatDateShort(manualParsed)}`;
-                }
-                return `Fechamento manual ${formatDateShort(closingDate)}`;
-            }
-
-            // Fallback para exibir certinho como antes se a engine não calculou um date válido
-            if (isNaN(closingDate.getTime()) || isNaN(dueDate.getTime())) {
-                return getFallbackDueInfo();
-            }
-
-            return `Fecha ${closingDate.getDate()} - Vence ${dueDate.getDate()}`;
-        };
-
         const items: CarouselItemData[] = [
             {
                 key: 'history',
                 type: 'history',
-                label: 'Histórico',
-                subLabel: 'Transações passadas',
+                label: 'Hist├│rico',
+                subLabel: 'Transa├º├Áes passadas',
                 amount: historyTotal,
-                dateRange: 'Todas as transações',
+                dateRange: 'Todas as transa├º├Áes',
                 status: 'all',
                 tabId: 'all'
             },
             {
                 key: 'last',
                 type: 'invoice',
-                label: 'Última Fatura',
+                label: '├Ültima Fatura',
                 // Soma o valor absoluto de todos os items (exceto pagamentos)
                 // Soma os valores reais (despesas aumentam, estornos diminuem)
                 amount: Math.abs(invoiceData.closedInvoice.total || 0),
-                dateRange: `${formatDateShort(invoiceData.periods.lastInvoiceStart)} - ${formatDateShort(invoiceData.periods.lastClosingDate)}`,
-                dueInfo: formatDueInfo(invoiceData.periods.lastClosingDate, invoiceData.periods.lastDueDate),
+                dateRange: `${formatDateShort(invoiceData.periods.lastInvoiceStart)} ÔÇô  ${formatDateShort(invoiceData.periods.lastClosingDate)}`,
+                dueInfo: `Venceu ${formatDateFull(invoiceData.periods.lastDueDate)}`,
                 status: invoiceData.closedInvoice.status,
                 tabId: 'last',
                 itemCount: invoiceData.closedInvoice.items.length
@@ -520,16 +371,35 @@ const InvoiceCarousel = React.memo(({
                 // Soma o valor absoluto de todos os items (exceto pagamentos)
                 // Soma os valores reais (despesas aumentam, estornos diminuem)
                 amount: Math.abs(invoiceData.currentInvoice.total || 0),
-                dateRange: `${formatDateShort(invoiceData.periods.currentInvoiceStart)} - ${formatDateShort(invoiceData.periods.currentClosingDate)}`,
-                dueInfo: formatDueInfo(invoiceData.periods.currentClosingDate, invoiceData.periods.currentDueDate),
+                dateRange: `${formatDateShort(invoiceData.periods.currentInvoiceStart)} ÔÇô  ${formatDateShort(invoiceData.periods.currentClosingDate)}`,
+                dueInfo: `Vence ${formatDateFull(invoiceData.periods.currentDueDate)}`,
                 status: 'OPEN',
                 tabId: 'current',
                 itemCount: invoiceData.currentInvoice.items.length
             }
         ];
 
+        // Future invoices - Show ONLY the immediate next invoice
+        if (invoiceData.futureInvoices.length > 0) {
+            const inv = invoiceData.futureInvoices[0];
+            items.push({
+                key: 'future_0',
+                type: 'invoice',
+                label: 'Pr├│xima Fatura',
+                // Soma o valor absoluto de todos os items (exceto pagamentos)
+                // Soma os valores reais (despesas aumentam, estornos diminuem)
+                amount: Math.abs(inv.total || 0),
+                dateRange: `${formatDateShort(new Date(inv.startDate))} ÔÇô  ${formatDateShort(new Date(inv.closingDate))}`,
+                dueInfo: `Vence ${formatDateFull(new Date(inv.dueDate))}`,
+                status: 'OPEN',
+                tabId: 'future_0' as InvoiceTab,
+                futureTotal: invoiceData.allFutureTotal,
+                itemCount: inv.items.length
+            });
+        }
+
         return items;
-    }, [invoiceData, historyTotal, selectedCard]);
+    }, [invoiceData, historyTotal]);
 
     const goToCard = useCallback((index: number, emit = true) => {
         if (index >= 0 && index < data.length && index !== currentIndex) {
@@ -775,11 +645,9 @@ const TransactionItem = React.memo(({
     onRefund,
     onLongPress,
     getCategoryName,
-    animateRow = true,
-    isMoving = false,
-    movingLabel = 'Movendo...',
-    refundedAmount,
-    refundSourceItem
+    isConfirmingDelete,
+    onCancelDelete,
+    animateRow = true
 }: {
     item: InvoiceItem;
     index: number;
@@ -788,19 +656,25 @@ const TransactionItem = React.memo(({
     onRefund?: (item: InvoiceItem) => void;
     onLongPress?: (item: InvoiceItem) => void;
     getCategoryName: (key?: string) => string;
+    isConfirmingDelete?: boolean;
+    onCancelDelete?: () => void;
     animateRow?: boolean;
-    isMoving?: boolean;
-    movingLabel?: string;
-    refundedAmount?: number;
-    refundSourceItem?: InvoiceItem;
 }) => {
     const [showActions, setShowActions] = useState(false);
+
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    // Efeito para sincronizar pedido de exclus├úo externo
+    useEffect(() => {
+        if (isConfirmingDelete) {
+            setShowDeleteConfirm(true);
+        }
+    }, [isConfirmingDelete]);
 
     const isExpense = item.type === 'expense';
     const isPayment = item.isPayment;
     const isProjected = item.isProjected;
     const isRefund = item.isRefund;
-    const hasRefundTag = !isRefund && (refundedAmount ?? 0) > 0;
     const isFirst = index === 0;
     const isLast = index === total - 1;
     const cardRef = React.useRef<View>(null);
@@ -811,10 +685,42 @@ const TransactionItem = React.memo(({
 
     const amountColor = isPayment || isRefund ? '#04D361' : (isProjected ? '#60BC57' : '#FFFFFF');
 
+    // Se estiver confirmando exclus├úo, mostra o card de confirma├º├úo
+    if (showDeleteConfirm) {
+        return (
+            <View style={{ marginBottom: isLast ? 0 : 1, marginHorizontal: 20 }}>
+                <DeleteConfirmCard
+                    title="Excluir transa├º├úo?"
+                    onCancel={() => {
+                        setShowDeleteConfirm(false);
+                        if (onCancelDelete) onCancelDelete();
+                    }}
+                    onConfirm={() => {
+                        onDelete?.(item);
+                        setShowDeleteConfirm(false);
+                        setShowActions(false);
+                        if (onCancelDelete) onCancelDelete(); // Limpa estado pai tamb├®m
+                    }}
+                    style={{
+                        borderRadius: 16,
+                        height: 72,
+                        borderTopLeftRadius: isFirst ? 16 : 0,
+                        borderTopRightRadius: isFirst ? 16 : 0,
+                        borderBottomLeftRadius: isLast ? 16 : 0,
+                        borderBottomRightRadius: isLast ? 16 : 0,
+                        backgroundColor: '#151515',
+                        borderWidth: 1,
+                        borderColor: '#252525'
+                    }}
+                />
+            </View>
+        );
+    }
+
     // Margens aplicadas aos cards individuais
     const borderStyle = {
-        borderTopLeftRadius: hasRefundTag ? 0 : (isFirst ? 16 : 0),
-        borderTopRightRadius: hasRefundTag ? 0 : (isFirst ? 16 : 0),
+        borderTopLeftRadius: isFirst ? 16 : 0,
+        borderTopRightRadius: isFirst ? 16 : 0,
         borderBottomLeftRadius: isLast ? 16 : 0,
         borderBottomRightRadius: isLast ? 16 : 0,
         marginTop: index === 0 ? 0 : -1,
@@ -826,11 +732,13 @@ const TransactionItem = React.memo(({
     const { icon: CategoryIcon, color: categoryColor, backgroundColor: categoryBg } = getCategoryConfig(item.category || item.description);
 
     const handlePress = () => {
-        if (isMoving) return;
         if (showActions) {
             setShowActions(false);
             return;
         }
+    };
+
+    const handleLongPress = () => {
         if (onLongPress) {
             onLongPress(item);
         } else if (onDelete) {
@@ -839,169 +747,123 @@ const TransactionItem = React.memo(({
     };
 
     const handleDelete = () => {
-        if (onDelete) {
-            onDelete(item);
-            setShowActions(false);
-        }
-    };
-
-    const handleRefundCardPress = () => {
-        if (isMoving) return;
-        if (refundSourceItem && onLongPress) {
-            onLongPress(refundSourceItem);
-            return;
-        }
-        if (onLongPress) {
-            onLongPress(item);
-        }
+        setShowDeleteConfirm(true); // Show local confirm card
     };
 
     return (
-        <View style={styles.transactionCardWrapper}>
-            {hasRefundTag && (
-                <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={styles.refundTopCardPressable}
-                    onPress={handleRefundCardPress}
-                    disabled={isMoving}
-                >
-                    <View style={styles.refundTopCard}>
-                        <TimedLottieIcon
-                            source={require('@/assets/assinaturabranco.json')}
-                            style={styles.refundTopCardIcon}
-                        />
-                        <Text numberOfLines={1} style={styles.refundTopCardText}>
-                            {`Transação reembolsada no valor de ${formatCurrency(refundedAmount ?? 0)}`}
-                        </Text>
-                    </View>
-                </TouchableOpacity>
-            )}
-            <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handlePress}
-                disabled={isMoving}
-                style={{ width: '100%' }}
+        <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handlePress}
+            onLongPress={handleLongPress}
+            delayLongPress={300} // Slightly faster than default
+            disabled={false}
+            style={{ width: '100%' }}
+        >
+            <Animated.View
+                ref={cardRef}
+                layout={animateRow ? LinearTransition.duration(300) : undefined}
+                entering={animateRow ? FadeIn.duration(400) : undefined}
+                exiting={animateRow ? FadeOut.duration(200) : undefined}
+                style={[
+                    styles.transactionCard,
+                    borderStyle
+                ]}
             >
-                <Animated.View
-                    ref={cardRef}
-                    layout={animateRow ? LinearTransition.duration(300) : undefined}
-                    entering={animateRow ? FadeIn.duration(400) : undefined}
-                    exiting={animateRow ? FadeOut.duration(200) : undefined}
-                    style={[
-                        styles.transactionCard,
-                        borderStyle
-                    ]}
-                >
-                    <View style={{
-                        width: 40, height: 40, borderRadius: 12,
-                        backgroundColor: categoryBg,
-                        justifyContent: 'center', alignItems: 'center',
-                        marginRight: 12,
-                        borderWidth: 1,
-                        borderColor: categoryColor + '20' // Subtle border
-                    }}>
-                        <CategoryIcon size={20} color={categoryColor} strokeWidth={2.5} />
-                    </View>
+                <View style={{
+                    width: 40, height: 40, borderRadius: 12,
+                    backgroundColor: categoryBg,
+                    justifyContent: 'center', alignItems: 'center',
+                    marginRight: 12,
+                    borderWidth: 1,
+                    borderColor: categoryColor + '20' // Subtle border
+                }}>
+                    <CategoryIcon size={20} color={categoryColor} strokeWidth={2.5} />
+                </View>
 
-                    <View style={styles.detailsContainer}>
-                        <View style={styles.descriptionRow}>
-                            <Text style={styles.description} numberOfLines={1}>
-                                {item.description}
-                            </Text>
-                            {isPayment && (
-                                <View style={styles.paymentBadge}>
-                                    <Check size={10} color="#04D361" />
-                                    <Text style={styles.paymentBadgeText}>PAGO</Text>
-                                </View>
-                            )}
-                            {isRefund && (
-                                <View style={[styles.paymentBadge, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
-                                    <RotateCcw size={10} color="#4ADE80" />
-                                    <Text style={[styles.paymentBadgeText, { color: '#4ADE80' }]}>ESTORNO</Text>
-                                </View>
-                            )}
-                        </View>
-                        <View style={styles.subDetails}>
-                            <Text style={styles.category}>{getCategoryName(item.category)}</Text>
-                        </View>
+                <View style={styles.detailsContainer}>
+                    <View style={styles.descriptionRow}>
+                        <Text style={styles.description} numberOfLines={1}>
+                            {item.description}
+                        </Text>
+                        {isPayment && (
+                            <View style={styles.paymentBadge}>
+                                <Check size={10} color="#04D361" />
+                                <Text style={styles.paymentBadgeText}>PAGO</Text>
+                            </View>
+                        )}
+                        {isRefund && (
+                            <View style={[styles.paymentBadge, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
+                                <RotateCcw size={10} color="#4ADE80" />
+                                <Text style={[styles.paymentBadgeText, { color: '#4ADE80' }]}>ESTORNO</Text>
+                            </View>
+                        )}
                     </View>
+                    <View style={styles.subDetails}>
+                        <Text style={styles.category}>{getCategoryName(item.category)}</Text>
+                    </View>
+                </View>
 
-                    {showActions ? (
-                        <Animated.View
-                            entering={FadeIn.duration(200)}
-                            style={[styles.actionsContainer, { overflow: 'hidden' }]}
-                        >
-                            <LinearGradient
-                                colors={['transparent', '#151515']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 0.5, y: 0 }}
-                                style={{ position: 'absolute', top: 0, bottom: 0, left: -40, right: 0 }}
-                            />
-                            {canRefund && onRefund && (
-                                <TouchableOpacity
-                                    style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 0, marginRight: 8 }]}
-                                    onPress={() => {
-                                        setShowActions(false);
-                                        onRefund(item);
-                                    }}
-                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                >
-                                    <RotateCcw size={20} color="#4ADE80" />
-                                </TouchableOpacity>
-                            )}
+                {showActions ? (
+                    <Animated.View
+                        entering={FadeIn.duration(200)}
+                        style={[styles.actionsContainer, { overflow: 'hidden' }]}
+                    >
+                        <LinearGradient
+                            colors={['transparent', '#151515']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0.5, y: 0 }}
+                            style={{ position: 'absolute', top: 0, bottom: 0, left: -40, right: 0 }}
+                        />
+                        {canRefund && onRefund && (
                             <TouchableOpacity
-                                style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 0 }]}
-                                onPress={handleDelete}
+                                style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 0, marginRight: 8 }]}
+                                onPress={() => {
+                                    setShowActions(false);
+                                    onRefund(item);
+                                }}
                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             >
-                                <Trash2 size={20} color="#FF453A" />
+                                <RotateCcw size={20} color="#4ADE80" />
                             </TouchableOpacity>
-                        </Animated.View>
-                    ) : (
-                        <View style={styles.amountContainer}>
-                            <Text style={[
-                                styles.amount,
-                                {
-                                    color: amountColor,
-                                    textShadowColor: amountColor + '40',
-                                    textShadowOffset: { width: 0, height: 0 },
-                                    textShadowRadius: 8,
-                                }
-                            ]}>
-                                {isPayment || isRefund ? '+ ' : '- '}{formatCurrency(item.amount)}
+                        )}
+                        <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 0 }]}
+                            onPress={handleDelete}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            <Trash2 size={20} color="#FF453A" />
+                        </TouchableOpacity>
+                    </Animated.View>
+                ) : (
+                    <View style={styles.amountContainer}>
+                        <Text style={[
+                            styles.amount,
+                            {
+                                color: amountColor,
+                                textShadowColor: amountColor + '40',
+                                textShadowOffset: { width: 0, height: 0 },
+                                textShadowRadius: 8,
+                            }
+                        ]}>
+                            {isPayment || isRefund ? '+ ' : '- '}{formatCurrency(item.amount)}
+                        </Text>
+
+                        {!hideInstallments && (item.totalInstallments && item.totalInstallments > 1) && (
+                            <Text style={{ fontSize: 10, color: '#666', marginTop: 2, textAlign: 'right', fontWeight: '500' }}>
+                                {item.installmentNumber}/{item.totalInstallments}
                             </Text>
+                        )}
 
-                            {!hideInstallments && (item.totalInstallments && item.totalInstallments > 1) && (
-                                <Text style={{ fontSize: 10, color: '#666', marginTop: 2, textAlign: 'right', fontWeight: '500' }}>
-                                    {item.installmentNumber}/{item.totalInstallments}
-                                </Text>
-                            )}
-
-                            {!hideInstallments && isProjected && (!item.totalInstallments || item.totalInstallments <= 1) && (
-                                <Text style={{ fontSize: 9, color: '#60BC57', marginTop: 2, textAlign: 'right', fontWeight: '600' }}>
-                                    PARCELADO
-                                </Text>
-                            )}
-                        </View>
-                    )}
-                    {isMoving && (
-                        <View style={styles.transactionMovingOverlay} pointerEvents="none">
-                            <BlurView
-                                intensity={35}
-                                tint="dark"
-                                experimentalBlurMethod="dimezisBlurView"
-                                style={StyleSheet.absoluteFill}
-                            />
-                            <View style={styles.transactionMovingContent}>
-                                <ActivityIndicator size="small" color="#D97757" />
-                                <Text style={styles.transactionMovingText}>{movingLabel}</Text>
-                            </View>
-                        </View>
-                    )}
-                    {!isLast && <View style={styles.separator} />}
-                </Animated.View>
-            </TouchableOpacity>
-        </View>
+                        {!hideInstallments && isProjected && (!item.totalInstallments || item.totalInstallments <= 1) && (
+                            <Text style={{ fontSize: 9, color: '#60BC57', marginTop: 2, textAlign: 'right', fontWeight: '600' }}>
+                                PARCELADO
+                            </Text>
+                        )}
+                    </View>
+                )}
+                {!isLast && <View style={styles.separator} />}
+            </Animated.View>
+        </TouchableOpacity>
     );
 });
 TransactionItem.displayName = 'CreditCardInvoiceTransactionItem';
@@ -1016,6 +878,40 @@ const EmptyTransactionsState = () => {
     );
 };
 
+interface NeedsConfigurationStateProps {
+    onOpenSettings: () => void;
+}
+
+const NeedsConfigurationState = ({ onOpenSettings }: NeedsConfigurationStateProps) => {
+    return (
+        <View style={styles.configNeededContainer}>
+            <View style={styles.configIconWrapper}>
+                <DelayedLoopLottie
+                    source={require('@/assets/fatura.json')}
+                    style={{ width: 120, height: 120 }}
+                    delay={3000}
+                    initialDelay={100}
+                    jitterRatio={0.2}
+                    renderMode="HARDWARE"
+                />
+            </View>
+
+            <Text style={styles.configNeededTitle}>Fatura n├úo configurada</Text>
+
+            <Text style={styles.configNeededText}>
+                Para visualizar seus gastos organizados por m├¬s, informe a data de fechamento do cart├úo.
+            </Text>
+
+            <TouchableOpacity
+                style={styles.configNeededButton}
+                onPress={onOpenSettings}
+                activeOpacity={0.8}
+            >
+                <Text style={styles.configNeededButtonText}>Configurar agora</Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
 
 export function CreditCardInvoice({
     transactions,
@@ -1103,69 +999,12 @@ export function CreditCardInvoice({
     // Transaction Options State
     const [transactionOptionsVisible, setTransactionOptionsVisible] = useState(false);
     const [selectedTransactionForOptions, setSelectedTransactionForOptions] = useState<InvoiceItem | null>(null);
-    const [deleteConfirmationVisible, setDeleteConfirmationVisible] = useState(false);
-    const [transactionToDelete, setTransactionToDelete] = useState<InvoiceItem | null>(null);
-
-    // Closing Date Modal State
-    const [closingDateModalVisible, setClosingDateModalVisible] = useState(false);
-
-    // Category Selector Modal State
-    const [categorySelectorVisible, setCategorySelectorVisible] = useState(false);
-    const [categoryChangeTarget, setCategoryChangeTarget] = useState<InvoiceItem | null>(null);
-    const [pendingTransactionAction, setPendingTransactionAction] = useState<{ id: string; label: string } | null>(null);
-    const [localTransactionOverrides, setLocalTransactionOverrides] = useState<Record<string, Partial<Transaction>>>({});
-    const [localRemovedTransactionIds, setLocalRemovedTransactionIds] = useState<Record<string, true>>({});
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     const handleOpenTransactionOptions = useCallback((item: InvoiceItem) => {
         setSelectedTransactionForOptions(item);
         setTransactionOptionsVisible(true);
     }, []);
-
-    // Handler para abrir o seletor de categoria
-    const handleOpenCategorySelector = useCallback((item: InvoiceItem) => {
-        setTransactionOptionsVisible(false);
-        setCategoryChangeTarget(item);
-        setCategorySelectorVisible(true);
-    }, []);
-
-    // Handler para salvar a nova categoria
-    const handleCategoryChange = useCallback(async (categoryKey: string) => {
-        if (!categoryChangeTarget) return;
-        const target = categoryChangeTarget;
-        const actionStartedAt = Date.now();
-        setCategorySelectorVisible(false);
-        setCategoryChangeTarget(null);
-        setPendingTransactionAction({ id: target.id, label: 'Editando categoria...' });
-        try {
-            const result = await databaseService.updateCreditCardTransaction(
-                userId,
-                target.id,
-                { category: categoryKey }
-            );
-            if (!result?.success) {
-                throw new Error(result?.error || 'Erro ao alterar categoria');
-            }
-
-            setLocalTransactionOverrides((prev) => ({
-                ...prev,
-                [target.id]: {
-                    ...(prev[target.id] || {}),
-                    category: categoryKey
-                }
-            }));
-        } catch (error) {
-            console.error('Erro ao alterar categoria:', error);
-        } finally {
-            const elapsed = Date.now() - actionStartedAt;
-            if (elapsed < 350) {
-                await new Promise((resolve) => setTimeout(resolve, 350 - elapsed));
-            }
-            setPendingTransactionAction((current) => (
-                current?.id === target.id ? null : current
-            ));
-        }
-    }, [categoryChangeTarget, userId]);
-
 
     const normalizeIsoDate = useCallback((rawDate: string): string | null => {
         if (!rawDate) return null;
@@ -1249,49 +1088,19 @@ export function CreditCardInvoice({
         return null;
     }, [invoiceData, selectedTab]);
 
-    // Move options para o TransactionOptionsModal
-    const transactionMoveOptions = useMemo(() => {
-        if (!selectedTransactionForOptions || !invoiceData) return [];
-        const tabMonthKey = getSelectedTabMonthKey();
-        if (!tabMonthKey) return [];
-
-        const prevMonth = shiftMonthKey(tabMonthKey, -1);
-        const nextMonth = shiftMonthKey(tabMonthKey, 1);
-
-        const formatMonthLabel = (mk: string | null): string => {
-            if (!mk) return '';
-            const [y, m] = mk.split('-');
-            const d = new Date(Number(y), Number(m) - 1, 1);
-            let monthName = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(d);
-            monthName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-            return `${monthName} de ${y}`;
-        };
-
-        const options: { target: 'prev' | 'next'; label: string; date?: string; icon?: 'prev' | 'next' }[] = [];
-        if (prevMonth && selectedTab === 'current') {
-            options.push({ target: 'prev', label: `Fatura Anterior (${formatMonthLabel(prevMonth)})`, icon: 'prev' });
-        }
-        if (nextMonth && selectedTab === 'last') {
-            options.push({ target: 'next', label: `Próxima Fatura (${formatMonthLabel(nextMonth)})`, icon: 'next' });
-        }
-        return options;
-    }, [selectedTransactionForOptions, invoiceData, getSelectedTabMonthKey, shiftMonthKey, selectedTab]);
-
     const handleMoveTransaction = useCallback(async (target: 'prev' | 'next' | 'current' | 'custom', customDate?: string) => {
         if (!selectedTransactionForOptions) return;
-        const transactionToMove = selectedTransactionForOptions;
-        if (transactionToMove.isProjected && !((transactionToMove.totalInstallments ?? 0) > 1)) {
-            console.warn('[CreditCardInvoice] Cannot move projected non-installment transaction:', transactionToMove.id);
+        if (selectedTransactionForOptions.isProjected) {
+            console.warn('[CreditCardInvoice] Cannot move projected transaction:', selectedTransactionForOptions.id);
             return;
         }
 
-        const normalizedCurrentDate = normalizeIsoDate(transactionToMove.date);
+        const normalizedCurrentDate = normalizeIsoDate(selectedTransactionForOptions.date);
         if (!normalizedCurrentDate) {
-            console.error('[CreditCardInvoice] Invalid transaction date for move:', transactionToMove.date);
+            console.error('[CreditCardInvoice] Invalid transaction date for move:', selectedTransactionForOptions.date);
             return;
         }
 
-        const moveStartedAt = Date.now();
         try {
             const updateData: {
                 date?: string;
@@ -1309,8 +1118,9 @@ export function CreditCardInvoice({
 
                 updateData.date = customIsoDate;
                 updateData.invoiceMonthKey = customIsoDate.slice(0, 7);
-                updateData.invoiceMonthKeyManual = true;
-                updateData.manualInvoiceMonth = customIsoDate.slice(0, 7);
+                updateData.invoiceMonthKeyManual = false;
+                // Compatibilidade: remover manualInvoiceMonth quando n├úo ├® manual
+                updateData.manualInvoiceMonth = undefined;
             } else if (target === 'next' || target === 'prev') {
                 const selectedTabMonthKey = getSelectedTabMonthKey();
                 const baseMonthKey = selectedTabMonthKey || normalizedCurrentDate.slice(0, 7);
@@ -1321,86 +1131,31 @@ export function CreditCardInvoice({
                     return;
                 }
 
-                const [yStr, mStr, dStr] = normalizedCurrentDate.split('-');
-                let year = parseInt(yStr, 10);
-                let month = parseInt(mStr, 10) + (target === 'next' ? 1 : -1);
-
-                if (month > 12) { month = 1; year++; }
-                if (month < 1) { month = 12; year--; }
-
-                // Tratar fim do mês
-                const daysInNewMonth = new Date(year, month, 0).getDate();
-                const newDay = Math.min(parseInt(dStr, 10), daysInNewMonth);
-
-                const newDateStr = `${year}-${String(month).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`;
-
-                updateData.date = newDateStr;
-                updateData.invoiceMonthKey = newDateStr.slice(0, 7);
+                // Keep purchase date unchanged and override only invoice assignment.
+                updateData.invoiceMonthKey = shiftedMonthKey;
                 updateData.invoiceMonthKeyManual = true;
-                updateData.manualInvoiceMonth = newDateStr.slice(0, 7);
+                // Compatibilidade: salvar tamb├®m no formato do web
+                updateData.manualInvoiceMonth = shiftedMonthKey;
             } else {
                 // "current" clears manual override and falls back to date-based classification.
                 updateData.invoiceMonthKey = normalizedCurrentDate.slice(0, 7);
                 updateData.invoiceMonthKeyManual = false;
-                updateData.manualInvoiceMonth = null as any;
+                // Compatibilidade: remover manualInvoiceMonth quando n├úo ├® manual
+                updateData.manualInvoiceMonth = undefined;
             }
-
-            const cleanUpdateData = { ...updateData };
-            // Certifique-se de que nada é literalmente 'undefined'
-            Object.keys(cleanUpdateData).forEach((key) => {
-                if ((cleanUpdateData as any)[key] === undefined) {
-                    (cleanUpdateData as any)[key] = null;
-                }
-            });
-
-            setTransactionOptionsVisible(false);
-            setSelectedTransactionForOptions(null);
-            setPendingTransactionAction({ id: transactionToMove.id, label: 'Movendo...' });
 
             const result = await databaseService.updateCreditCardTransaction(
                 userId,
-                transactionToMove.id,
-                cleanUpdateData
+                selectedTransactionForOptions.id,
+                updateData
             );
             if (!result?.success) {
                 throw new Error(result?.error || 'Failed to update credit card transaction');
             }
 
-            const patch: Partial<Transaction> = {};
-            if (typeof cleanUpdateData.date === 'string') {
-                patch.date = cleanUpdateData.date;
-            }
-            if (typeof cleanUpdateData.invoiceMonthKey === 'string') {
-                patch.invoiceMonthKey = cleanUpdateData.invoiceMonthKey;
-            } else if ('invoiceMonthKey' in cleanUpdateData && cleanUpdateData.invoiceMonthKey == null) {
-                patch.invoiceMonthKey = undefined;
-            }
-            if (typeof cleanUpdateData.invoiceMonthKeyManual === 'boolean') {
-                patch.invoiceMonthKeyManual = cleanUpdateData.invoiceMonthKeyManual;
-            }
-            if (typeof cleanUpdateData.manualInvoiceMonth === 'string') {
-                patch.manualInvoiceMonth = cleanUpdateData.manualInvoiceMonth;
-            } else if ('manualInvoiceMonth' in cleanUpdateData && cleanUpdateData.manualInvoiceMonth == null) {
-                patch.manualInvoiceMonth = undefined;
-            }
-
-            setLocalTransactionOverrides((prev) => ({
-                ...prev,
-                [transactionToMove.id]: {
-                    ...(prev[transactionToMove.id] || {}),
-                    ...patch
-                }
-            }));
+            if (onRefresh) await onRefresh();
         } catch (error) {
             console.error('Error moving transaction:', error);
-        } finally {
-            const elapsed = Date.now() - moveStartedAt;
-            if (elapsed < 350) {
-                await new Promise((resolve) => setTimeout(resolve, 350 - elapsed));
-            }
-            setPendingTransactionAction((current) => (
-                current?.id === transactionToMove.id ? null : current
-            ));
         }
     }, [
         selectedTransactionForOptions,
@@ -1408,7 +1163,8 @@ export function CreditCardInvoice({
         parseCustomDateToIso,
         getSelectedTabMonthKey,
         shiftMonthKey,
-        userId
+        userId,
+        onRefresh
     ]);
 
     const handleApplyFilters = (newFilters: FilterState) => {
@@ -1436,56 +1192,21 @@ export function CreditCardInvoice({
         filters.year
     ].filter(Boolean).length;
 
-    const requestDeleteTransaction = useCallback((item: InvoiceItem) => {
-        setTransactionOptionsVisible(false);
-        setSelectedTransactionForOptions(null);
-        setTransactionToDelete(item);
-        setDeleteConfirmationVisible(true);
-    }, []);
 
     const handleDeleteTransaction = useCallback(async (item: InvoiceItem) => {
-        const actionStartedAt = Date.now();
-        let deleteSucceeded = false;
-        setPendingTransactionAction({ id: item.id, label: 'Excluindo...' });
         try {
-            // A confirmação visual já foi feita pelo modal de confirmação
+            // A confirma├º├úo visual j├í foi feita pelo DeleteConfirmCard dentro do item
             await databaseService.deleteOpenFinanceCreditCardTransaction(userId, item.id);
-            deleteSucceeded = true;
+
+            // Simula uma espera e refresh para feedback visual
+            if (onRefresh) onRefresh();
         } catch (error) {
             console.error('Erro ao excluir transa├º├úo:', error);
-        } finally {
-            const elapsed = Date.now() - actionStartedAt;
-            if (elapsed < 350) {
-                await new Promise((resolve) => setTimeout(resolve, 350 - elapsed));
-            }
-            if (deleteSucceeded) {
-                setLocalRemovedTransactionIds((prev) => ({
-                    ...prev,
-                    [item.id]: true
-                }));
-                setLocalTransactionOverrides((prev) => {
-                    if (!(item.id in prev)) return prev;
-                    const { [item.id]: _removed, ...rest } = prev;
-                    return rest;
-                });
-            }
-            setPendingTransactionAction((current) => (
-                current?.id === item.id ? null : current
-            ));
         }
-    }, [userId]);
-
-    const handleConfirmDeleteTransaction = useCallback(async () => {
-        if (!transactionToDelete) return;
-        const target = transactionToDelete;
-        setDeleteConfirmationVisible(false);
-        setTransactionToDelete(null);
-        await handleDeleteTransaction(target);
-    }, [handleDeleteTransaction, transactionToDelete]);
+    }, [onRefresh, userId]);
 
     // Handler para abrir modal de estorno
     const handleOpenRefundModal = useCallback((item: InvoiceItem) => {
-        setTransactionOptionsVisible(false);
         setRefundTransaction(item);
         setRefundModalVisible(true);
     }, []);
@@ -1495,61 +1216,46 @@ export function CreditCardInvoice({
         transaction: { id: string; description: string; amount: number; date: string; category?: string; cardId?: string; accountId?: string },
         customAmount?: number
     ) => {
-        const actionStartedAt = Date.now();
         const refundAmount = customAmount ?? transaction.amount;
         const now = new Date();
         const refundDate = transaction.date; // Usar mesma data para ficar na mesma fatura
 
-        setPendingTransactionAction({ id: transaction.id, label: 'Criando estorno...' });
-        setRefundModalVisible(false);
-        setRefundTransaction(null);
+        // Criar nova transa├º├úo de estorno
+        const refundTransactionData = {
+            description: `Estorno - ${transaction.description}`,
+            amount: refundAmount, // Valor positivo
+            type: 'income' as const,
+            date: refundDate,
+            category: 'Refund',
+            cardId: transaction.cardId || transaction.accountId || selectedCardId,
+            isRefund: true,
+            originalTransactionId: transaction.id,
+            // Campos adicionais para consist├¬ncia
+            installmentNumber: 1,
+            totalInstallments: 1,
+            status: 'completed',
+            source: 'manual-refund',
+            createdAt: now.toISOString()
+        };
 
-        try {
-            // Criar nova transa├º├úo de estorno
-            const refundTransactionData = {
-                description: `Estorno - ${transaction.description}`,
-                amount: refundAmount, // Valor positivo
-                type: 'income' as const,
-                date: refundDate,
-                category: 'Refund',
-                cardId: transaction.cardId || transaction.accountId || selectedCardId,
-                isRefund: true,
-                originalTransactionId: transaction.id,
-                // Campos adicionais para consist├¬ncia
-                installmentNumber: 1,
-                totalInstallments: 1,
-                status: 'completed',
-                source: 'manual-refund',
-                createdAt: now.toISOString()
-            };
+        // Salvar no Firebase
+        const result = await databaseService.saveOpenFinanceCreditCardTransaction(
+            userId,
+            {
+                id: `refund-${transaction.id}-${Date.now()}`,
+                ...refundTransactionData,
+                amount: refundAmount, // Manter positivo para estorno
+            },
+            { id: selectedCardId }
+        );
 
-            // Salvar no Firebase
-            const result = await databaseService.saveOpenFinanceCreditCardTransaction(
-                userId,
-                {
-                    id: `refund-${transaction.id}-${Date.now()}`,
-                    ...refundTransactionData,
-                    amount: refundAmount, // Manter positivo para estorno
-                },
-                { id: selectedCardId }
-            );
+        if (!result.success) {
+            throw new Error(result.error || 'Erro ao salvar estorno');
+        }
 
-            if (!result.success) {
-                throw new Error(result.error || 'Erro ao salvar estorno');
-            }
-
-            // Refresh para atualizar a lista
-            if (onRefresh) {
-                await onRefresh();
-            }
-        } finally {
-            const elapsed = Date.now() - actionStartedAt;
-            if (elapsed < 350) {
-                await new Promise((resolve) => setTimeout(resolve, 350 - elapsed));
-            }
-            setPendingTransactionAction((current) => (
-                current?.id === transaction.id ? null : current
-            ));
+        // Refresh para atualizar a lista
+        if (onRefresh) {
+            await onRefresh();
         }
     }, [userId, selectedCardId, onRefresh]);
 
@@ -1557,68 +1263,10 @@ export function CreditCardInvoice({
         if (creditCards.length > 0 && !selectedCardId) setSelectedCardId(creditCards[0].id);
     }, [creditCards]);
 
-    useEffect(() => {
-        setLocalTransactionOverrides((prev) => {
-            const prevEntries = Object.entries(prev);
-            if (prevEntries.length === 0) return prev;
-
-            const transactionIds = new Set(transactions.map((tx) => tx.id));
-            let changed = false;
-            const next: Record<string, Partial<Transaction>> = {};
-
-            prevEntries.forEach(([id, patch]) => {
-                if (transactionIds.has(id)) {
-                    next[id] = patch;
-                    return;
-                }
-                changed = true;
-            });
-
-            return changed ? next : prev;
-        });
-
-        setLocalRemovedTransactionIds((prev) => {
-            const removedIds = Object.keys(prev);
-            if (removedIds.length === 0) return prev;
-
-            const transactionIds = new Set(transactions.map((tx) => tx.id));
-            let changed = false;
-            const next: Record<string, true> = {};
-
-            removedIds.forEach((id) => {
-                if (transactionIds.has(id)) {
-                    next[id] = true;
-                    return;
-                }
-                changed = true;
-            });
-
-            return changed ? next : prev;
-        });
-    }, [transactions]);
-
-    const effectiveTransactions = useMemo(() => {
-        const hasOverrides = Object.keys(localTransactionOverrides).length > 0;
-        const hasRemoved = Object.keys(localRemovedTransactionIds).length > 0;
-        if (!hasOverrides && !hasRemoved) return transactions;
-
-        const visibleTransactions = hasRemoved
-            ? transactions.filter((tx) => !localRemovedTransactionIds[tx.id])
-            : transactions;
-
-        if (!hasOverrides) return visibleTransactions;
-
-        return visibleTransactions.map((tx) => {
-            const override = localTransactionOverrides[tx.id];
-            if (!override) return tx;
-            return { ...tx, ...override };
-        });
-    }, [transactions, localTransactionOverrides, localRemovedTransactionIds]);
-
     const selectedCard = useMemo(() => creditCards.find(c => c.id === selectedCardId) || null, [creditCards, selectedCardId]);
     const transactionsByCard = useMemo(() => {
         const map = new Map<string, Transaction[]>();
-        effectiveTransactions.forEach((tx) => {
+        transactions.forEach((tx) => {
             const txCardId = tx.cardId || tx.accountId || '';
             if (!txCardId) {
                 return;
@@ -1631,16 +1279,16 @@ export function CreditCardInvoice({
             }
         });
         return map;
-    }, [effectiveTransactions]);
+    }, [transactions]);
 
     // PR├ë0-FILTRAR transa├º├Áes pelo cart├úo selecionado ANTES de passar para buildInvoices
     // Isso garante que cada cart├úo receba APENAS suas pr├│prias transa├º├Áes
     const filteredTransactions = useMemo(() => {
         if (!selectedCardId || selectedCardId === 'all') {
-            return effectiveTransactions;
+            return transactions;
         }
         return transactionsByCard.get(selectedCardId) || [];
-    }, [selectedCardId, effectiveTransactions, transactionsByCard]);
+    }, [selectedCardId, transactions, transactionsByCard]);
 
     const invoiceComputationTransactions = useMemo(() => {
         if (filteredTransactions.length === 0) {
@@ -1672,17 +1320,6 @@ export function CreditCardInvoice({
         return filteredTransactions.slice(0, Math.min(filteredTransactions.length, MAX_INVOICE_COMPUTE_ITEMS));
     }, [filteredTransactions]);
 
-    // Só exigir configuração manual se NÃO houver qualquer dado automático do Pluggy.
-    const hasManualConfig = Boolean(selectedCard?.closingDateSettings?.lastClosingDate);
-    const hasAutomaticBillingData = Boolean(
-        normalizePluggyDate(selectedCard?.currentBill?.periodEnd || null) ||
-        normalizePluggyDate(selectedCard?.currentBill?.closeDate || null) ||
-        normalizePluggyDate(selectedCard?.currentBill?.dueDate || null) ||
-        normalizePluggyDate(selectedCard?.balanceCloseDate || null) ||
-        normalizePluggyDate(selectedCard?.balanceDueDate || null)
-    );
-    const needsConfiguration = Boolean(selectedCard && !hasManualConfig && !hasAutomaticBillingData);
-
     const buildRunIdRef = useRef(0);
 
     useEffect(() => {
@@ -1701,7 +1338,7 @@ export function CreditCardInvoice({
         let task: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
         const timer = setTimeout(() => {
             task = InteractionManager.runAfterInteractions(() => {
-                const nextData = buildInvoicesPluggyFirst(selectedCard, invoiceComputationTransactions, selectedCardId);
+                const nextData = buildInvoices(selectedCard, invoiceComputationTransactions, selectedCardId);
                 if (runId === buildRunIdRef.current) {
                     setInvoiceData(nextData);
                 }
@@ -1738,103 +1375,7 @@ export function CreditCardInvoice({
         return filteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
     }, [filteredTransactions, selectedCardId]);
 
-    const closingDateModalItems = useMemo<ClosingDateItem[]>(() => {
-        if (!invoiceData) return [];
-
-        const periods = invoiceData.periods;
-        const candidates: Array<{ label: string; currentDate: string | null }> = [
-            { label: 'Fatura atrasada', currentDate: toIsoDateValue(periods.beforeLastClosingDate) },
-            { label: 'Fatura anterior', currentDate: toIsoDateValue(periods.lastClosingDate) },
-            { label: 'Fatura atual', currentDate: toIsoDateValue(periods.currentClosingDate) },
-            { label: 'Próxima fatura', currentDate: toIsoDateValue(periods.nextClosingDate) },
-            { label: 'Fatura seguinte', currentDate: toIsoDateValue(periods.followingClosingDate) }
-        ];
-
-        const monthKeys = new Set<string>();
-        const items: ClosingDateItem[] = [];
-
-        candidates.forEach(({ label, currentDate }) => {
-            if (!currentDate) return;
-            const monthKey = currentDate.slice(0, 7);
-            if (monthKeys.has(monthKey)) return;
-            monthKeys.add(monthKey);
-
-            const monthLabel = formatShortMonthPt(currentDate);
-            items.push({
-                id: monthKey,
-                label: `${label} (${monthLabel})`,
-                subLabel: `Fechamento (${monthLabel})`,
-                currentDate
-            });
-        });
-
-        return items;
-    }, [invoiceData]);
-
-    const originalCloseDate = useMemo(() => {
-        if (!selectedCard) return null;
-        const rawDate =
-            selectedCard.currentBill?.periodEnd ||
-            selectedCard.currentBill?.closeDate ||
-            selectedCard.balanceCloseDate ||
-            null;
-        const parsed = parseIsoDateValue(rawDate);
-        return parsed ? formatDateFull(parsed) : null;
-    }, [selectedCard]);
-
-    const originalDueDate = useMemo(() => {
-        if (!selectedCard) return null;
-        const rawDate =
-            selectedCard.currentBill?.dueDate ||
-            selectedCard.balanceDueDate ||
-            null;
-        const parsed = parseIsoDateValue(rawDate);
-        return parsed ? formatDateFull(parsed) : null;
-    }, [selectedCard]);
-
-    const handleSaveClosingDates = useCallback(async (updates: { id: string; exactDate: string }[]) => {
-        if (!selectedCard) return;
-
-        const existingSettings = selectedCard.closingDateSettings || {};
-        const mergedOverrides: Record<string, { closingDay?: number; exactDate?: string }> = {
-            ...(existingSettings.monthOverrides || {})
-        };
-
-        updates.forEach((update) => {
-            const normalizedDate = normalizeIsoDateValue(update.exactDate);
-            if (!normalizedDate) return;
-            const closingDay = Number(normalizedDate.split('-')[2]);
-
-            mergedOverrides[update.id] = {
-                ...(mergedOverrides[update.id] || {}),
-                exactDate: normalizedDate,
-                closingDay
-            };
-        });
-
-        const nextSettings = {
-            ...existingSettings,
-            closingDay: existingSettings.closingDay ?? invoiceData?.periods.closingDay,
-            applyToAll: existingSettings.applyToAll ?? false,
-            lastClosingDate: existingSettings.lastClosingDate ?? normalizeIsoDateValue(invoiceData?.closedInvoice?.closingDate),
-            monthOverrides: mergedOverrides,
-            updatedAt: new Date().toISOString()
-        };
-
-        const result = await databaseService.updateAccount(userId, selectedCard.id, {
-            closingDateSettings: nextSettings
-        });
-
-        if (!result?.success) {
-            throw new Error(result?.error || 'Nao foi possivel salvar os fechamentos');
-        }
-
-        if (onRefresh) {
-            await onRefresh();
-        }
-    }, [invoiceData, onRefresh, selectedCard, userId]);
-
-    // currentItems computado primeiro para alimentar agrupamento e tags de estorno
+    // currentItems computado primeiro para que currentItemsLength esteja dispon├¡vel
     const currentItems = useMemo((): InvoiceItem[] => {
         let items: InvoiceItem[] = [];
 
@@ -1908,37 +1449,39 @@ export function CreditCardInvoice({
         return items;
     }, [allHistoryItems, invoiceData, selectedTab, filters, activeFilterCount]);
 
-    const refundAmountByOriginalId = useMemo(() => {
-        const map = new Map<string, number>();
-        currentItems.forEach((item) => {
-            if (!item.isRefund || !item.originalTransactionId) return;
-            const currentTotal = map.get(item.originalTransactionId) || 0;
-            map.set(item.originalTransactionId, currentTotal + Math.abs(item.amount || 0));
-        });
-        return map;
-    }, [currentItems]);
-
-    const refundSourceByOriginalId = useMemo(() => {
-        const map = new Map<string, InvoiceItem>();
-        currentItems.forEach((item) => {
-            if (!item.isRefund || !item.originalTransactionId) return;
-            if (!map.has(item.originalTransactionId)) {
-                map.set(item.originalTransactionId, item);
-            }
-        });
-        return map;
-    }, [currentItems]);
-
     // Group transactions by date
     const groupedItems = useMemo(() => {
         if (currentItems.length === 0) return [];
         // currentItems is already built in reverse chronological order.
         const sorted = currentItems;
         const sortedIds = new Set(sorted.map(item => item.id));
-        // Esconde o card de estorno quando a transação original está na lista.
-        const visibleItems = sorted.filter((item) => {
-            if (!(item.isRefund && item.originalTransactionId)) return true;
-            return !sortedIds.has(item.originalTransactionId);
+
+        // Reordenar para manter estornos "grudados" na transa├º├úo original (logo abaixo)
+        const reordered: InvoiceItem[] = [];
+
+        // Mapa de estornos por ID original para acesso r├ípido
+        const refundsByOriginalId = new Map<string, InvoiceItem[]>();
+        sorted.forEach(item => {
+            if (item.isRefund && item.originalTransactionId) {
+                const list = refundsByOriginalId.get(item.originalTransactionId) || [];
+                list.push(item);
+                refundsByOriginalId.set(item.originalTransactionId, list);
+            }
+        });
+
+        sorted.forEach(item => {
+            // Se for estorno com pai na lista, pular (ser├í adicionado com o pai)
+            if (item.isRefund && item.originalTransactionId && sortedIds.has(item.originalTransactionId)) {
+                return;
+            }
+
+            reordered.push(item);
+
+            // Verificar se este item tem estornos associados
+            const myRefunds = refundsByOriginalId.get(item.id);
+            if (myRefunds) {
+                myRefunds.forEach(refund => reordered.push(refund));
+            }
         });
 
         const groups: { title: string; items: InvoiceItem[] }[] = [];
@@ -1964,7 +1507,7 @@ export function CreditCardInvoice({
             return `${day} ${getMonthLongUpper(date)}`;
         };
 
-        visibleItems.forEach(item => {
+        reordered.forEach(item => {
             const header = getHeader(item.date);
 
             if (!currentGroup || currentGroup.title !== header) {
@@ -2010,11 +1553,9 @@ export function CreditCardInvoice({
         });
     }, [filteredTransactions, getCategoryName]);
 
-    const visibleItemsLength = useMemo(
-        () => groupedItems.reduce((total, group) => total + group.items.length, 0),
-        [groupedItems]
-    );
-    const animateRows = lod <= 1 && visibleItemsLength <= 80;
+    const currentItemsLength = currentItems.length;
+    const animateRows = lod <= 1 && currentItemsLength <= 80;
+    const handleCancelDelete = useCallback(() => setConfirmDeleteId(null), []);
     const groupedSections = useMemo(
         () => groupedItems.map(group => ({ title: group.title, data: group.items })),
         [groupedItems]
@@ -2039,25 +1580,22 @@ export function CreditCardInvoice({
             item={item}
             index={index}
             total={section.data.length}
-            onDelete={requestDeleteTransaction}
+            onDelete={handleDeleteTransaction}
             onRefund={handleConfirmRefund}
             onLongPress={handleOpenTransactionOptions}
             getCategoryName={getCategoryName}
+            isConfirmingDelete={confirmDeleteId === item.id}
+            onCancelDelete={handleCancelDelete}
             animateRow={animateRows}
-            isMoving={pendingTransactionAction?.id === item.id}
-            movingLabel={pendingTransactionAction?.label || 'Processando...'}
-            refundedAmount={refundAmountByOriginalId.get(item.id)}
-            refundSourceItem={refundSourceByOriginalId.get(item.id)}
         />
     ), [
         animateRows,
+        confirmDeleteId,
         getCategoryName,
+        handleCancelDelete,
         handleConfirmRefund,
-        handleOpenTransactionOptions,
-        pendingTransactionAction,
-        requestDeleteTransaction,
-        refundAmountByOriginalId,
-        refundSourceByOriginalId
+        handleDeleteTransaction,
+        handleOpenTransactionOptions
     ]);
 
     const keyExtractor = useCallback((item: InvoiceItem) => item.id, []);
@@ -2073,6 +1611,17 @@ export function CreditCardInvoice({
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setShowInvoiceCards(!showInvoiceCards);
     };
+
+    // Só exigir configuração manual se NÃO houver qualquer dado automático do Pluggy.
+    const hasManualConfig = Boolean(selectedCard?.closingDateSettings?.lastClosingDate);
+    const hasAutomaticBillingData = Boolean(
+        normalizePluggyDate(selectedCard?.currentBill?.periodEnd || null) ||
+        normalizePluggyDate(selectedCard?.currentBill?.closeDate || null) ||
+        normalizePluggyDate(selectedCard?.currentBill?.dueDate || null) ||
+        normalizePluggyDate(selectedCard?.balanceCloseDate || null) ||
+        normalizePluggyDate(selectedCard?.balanceDueDate || null)
+    );
+    const needsConfiguration = Boolean(selectedCard && !hasManualConfig && !hasAutomaticBillingData);
 
     if (creditCards.length === 0) return (
         <View style={styles.emptyState}>
@@ -2112,50 +1661,13 @@ export function CreditCardInvoice({
                 transaction={selectedTransactionForOptions}
                 onMoveInvoice={handleMoveTransaction}
                 onDelete={(item) => {
-                    requestDeleteTransaction(item);
+                    setTransactionOptionsVisible(false);
+                    setConfirmDeleteId(item.id);
                 }}
                 onRefund={(item) => {
                     setTransactionOptionsVisible(false);
                     handleOpenRefundModal(item);
                 }}
-                onChangeCategory={handleOpenCategorySelector}
-                moveOptions={transactionMoveOptions}
-                loading={false}
-            />
-
-            <DeleteConfirmationModal
-                visible={deleteConfirmationVisible}
-                title="Excluir transação?"
-                onCancel={() => {
-                    setDeleteConfirmationVisible(false);
-                    setTransactionToDelete(null);
-                }}
-                onConfirm={handleConfirmDeleteTransaction}
-                confirmText="Excluir"
-                cancelText="Cancelar"
-            />
-
-            <ClosingDateModal
-                visible={closingDateModalVisible}
-                onClose={() => setClosingDateModalVisible(false)}
-                onSave={handleSaveClosingDates}
-                items={closingDateModalItems}
-                hasBankData={Boolean(normalizePluggyDate(selectedCard?.currentBill?.periodEnd || null) || normalizePluggyDate(selectedCard?.currentBill?.closeDate || null))}
-                bankName={selectedCard?.name || undefined}
-                onRefreshBank={onRefresh}
-                originalCloseDate={originalCloseDate}
-                originalDueDate={originalDueDate}
-            />
-
-            <CategorySelectorModal
-                visible={categorySelectorVisible}
-                onClose={() => {
-                    setCategorySelectorVisible(false);
-                    setCategoryChangeTarget(null);
-                }}
-                onSelect={handleCategoryChange}
-                categories={DEFAULT_CATEGORIES}
-                loading={false}
             />
 
             <RefundModal
@@ -2176,12 +1688,20 @@ export function CreditCardInvoice({
                 onConfirm={handleConfirmRefund}
             />
 
-
+            <CreditCardFilterModal
+                visible={filterModalVisible}
+                onClose={() => setFilterModalVisible(false)}
+                onApply={handleApplyFilters}
+                initialFilters={filters}
+                categories={availableCategories}
+                getCategoryName={getCategoryName}
+                years={availableYears}
+            />
 
             <SectionList
                 style={styles.container}
-                sections={groupedSections}
-                extraData={`${pendingTransactionAction?.id ?? ''}:${pendingTransactionAction?.label ?? ''}:${deleteConfirmationVisible ? '1' : '0'}`} // Ensure updates for row actions
+                sections={!needsConfiguration ? groupedSections : []}
+                extraData={confirmDeleteId} // Ensure updates when delete confirmation state changes
                 renderItem={renderTransactionRow}
                 renderSectionHeader={renderSectionHeader}
                 keyExtractor={keyExtractor}
@@ -2206,7 +1726,7 @@ export function CreditCardInvoice({
                 ListHeaderComponent={
                     <>
                         <View style={styles.headerRow}>
-                            <Text style={styles.screenHeader}>Fatura do Cartão</Text>
+                            <Text style={styles.screenHeader}>Fatura do cartão</Text>
                             <BankSelector
                                 currentCardId={selectedCard?.id || null}
                                 cards={creditCards}
@@ -2223,13 +1743,76 @@ export function CreditCardInvoice({
                             <View style={styles.cardHeader}>
                                 <View style={[styles.cardHeaderLeft, { flexDirection: 'column', alignItems: 'flex-start', marginLeft: 0 }]}>
                                     <View style={{ paddingLeft: 0, marginTop: 0 }}>
-                                        <Text style={styles.cardName}>{selectedCard.name}</Text>
+                                        {invoiceData && (() => {
+                                            // Calcular dia de fechamento - prioridade: periodEnd > currentBill.closeDate > balanceCloseDate > config manual
+                                            let closingDay = invoiceData.periods.closingDay;
+                                            let dueDay = invoiceData.periods.dueDay;
+                                            let hasPluggyData = false;
+
+                                            // Helper para parsear datas que podem vir em formato ISO ou YYYY-MM-DD
+                                            const parseDateSafe = (dateStr: string): Date | null => {
+                                                if (!dateStr) return null;
+                                                // Se j├í tem 'T', ├® ISO completo, parse direto
+                                                if (dateStr.includes('T')) {
+                                                    const d = new Date(dateStr);
+                                                    return isNaN(d.getTime()) ? null : d;
+                                                }
+                                                // Sen├úo, adiciona hor├írio para evitar problemas de timezone
+                                                const d = new Date(dateStr + 'T12:00:00');
+                                                return isNaN(d.getTime()) ? null : d;
+                                            };
+
+                                            // Prioridade 1: periodEnd do currentBill
+                                            if (selectedCard.currentBill?.periodEnd) {
+                                                const periodEndDate = parseDateSafe(selectedCard.currentBill.periodEnd);
+                                                if (periodEndDate) {
+                                                    closingDay = periodEndDate.getDate();
+                                                    hasPluggyData = true;
+                                                }
+                                            } else if (selectedCard.currentBill?.closeDate) {
+                                                const closeDate = parseDateSafe(selectedCard.currentBill.closeDate);
+                                                if (closeDate) {
+                                                    closingDay = closeDate.getDate();
+                                                    hasPluggyData = true;
+                                                }
+                                            } else if (selectedCard.balanceCloseDate) {
+                                                const balanceClose = parseDateSafe(selectedCard.balanceCloseDate);
+                                                if (balanceClose) {
+                                                    closingDay = balanceClose.getDate();
+                                                    hasPluggyData = true;
+                                                }
+                                            }
+
+
+                                            if (selectedCard.currentBill?.dueDate) {
+                                                const dueDateParsed = parseDateSafe(selectedCard.currentBill.dueDate);
+                                                if (dueDateParsed) {
+                                                    dueDay = dueDateParsed.getDate();
+                                                    hasPluggyData = true;
+                                                }
+                                            } else if (selectedCard.balanceDueDate) {
+                                                const balanceDue = parseDateSafe(selectedCard.balanceDueDate);
+                                                if (balanceDue) {
+                                                    dueDay = balanceDue.getDate();
+                                                    hasPluggyData = true;
+                                                }
+                                            }
+
+                                            return (
+                                                <Text style={styles.cardSubtitle}>
+                                                    Fecha {closingDay} " Vence {dueDay}
+                                                    {hasPluggyData && <Text style={{ color: '#04D361', fontSize: 10 }}></Text>}
+                                                </Text>
+                                            );
+                                        })()}
                                     </View>
                                 </View>
                                 <View style={styles.cardHeaderRight}>
-
-                                    <TouchableOpacity style={styles.settingsButton} onPress={() => setClosingDateModalVisible(true)}>
-                                        <TimedLottieIcon source={require('@/assets/fatura.json')} style={{ width: 20, height: 20 }} />
+                                    <TouchableOpacity
+                                        style={[styles.settingsButton, activeFilterCount > 0 && { borderColor: '#D97757', backgroundColor: 'rgba(217, 119, 87, 0.1)' }]}
+                                        onPress={() => setFilterModalVisible(true)}
+                                    >
+                                        <TimedLottieIcon source={require('@/assets/previsao.json')} style={{ width: 20, height: 20 }} />
                                     </TouchableOpacity>
 
                                     <TouchableOpacity style={styles.toggleButton} onPress={toggleInvoiceCards}>
@@ -2242,27 +1825,26 @@ export function CreditCardInvoice({
                         )}
 
                         {showInvoiceCards && invoiceData && !needsConfiguration && (
-                            <InvoiceCarousel invoiceData={invoiceData} selectedTab={selectedTab} onTabChange={handleTabChange} historyTotal={historyTotal} selectedCard={selectedCard} />
+                            <InvoiceCarousel invoiceData={invoiceData} selectedTab={selectedTab} onTabChange={handleTabChange} historyTotal={historyTotal} />
                         )}
 
                         {!needsConfiguration && (
                             <View style={styles.listHeader}>
                                 <Text style={styles.listHeaderTitle}>
-                                    {selectedTab === 'all' ? 'Histórico' : selectedTab === 'last' ? 'Última Fatura' : selectedTab === 'current' ? 'Fatura Atual' : selectedTab === 'future_0' ? 'Próxima Fatura' : `Fatura Futura ${parseInt(selectedTab.split('_')[1]) + 1}`}
+                                    {selectedTab === 'all' ? 'Hist├│rico' : selectedTab === 'last' ? '├Ültima Fatura' : selectedTab === 'current' ? 'Fatura Atual' : selectedTab === 'future_0' ? 'Pr├│xima Fatura' : `Fatura Futura ${parseInt(selectedTab.split('_')[1]) + 1}`}
                                 </Text>
-                                <Text style={styles.listHeaderCount}>{visibleItemsLength} lançamentos</Text>
+                                <Text style={styles.listHeaderCount}>{currentItemsLength} lan├ºamentos</Text>
                             </View>
                         )}
                     </>
                 }
                 ListEmptyComponent={
-                    needsConfiguration ? (
-                        <NeedsConfigurationState onOpenSettings={() => { }} />
-                    ) : (
-                        <EmptyTransactionsState />
-                    )
+                    needsConfiguration
+                        ? <NeedsConfigurationState onOpenSettings={() => { }} />
+                        : <EmptyTransactionsState />
                 }
             />
+
 
         </View>
     );
@@ -2472,61 +2054,7 @@ const styles = StyleSheet.create({
     listHeaderCount: { color: '#666', fontSize: 13, marginTop: 2 },
     listHeaderTotal: { color: '#FFF', fontSize: 18, fontWeight: '700' },
     listContent: { paddingBottom: 140 },
-    transactionCardWrapper: {
-        width: '100%',
-    },
-    refundTopCardPressable: {
-        marginHorizontal: 20,
-        marginBottom: -1,
-        zIndex: 12,
-    },
-    refundTopCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: '#233A31',
-        borderColor: '#2D5D4D',
-        borderWidth: 1,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-    },
-    refundTopCardIcon: {
-        width: 18,
-        height: 18,
-    },
-    refundTopCardText: {
-        color: '#E7FFF2',
-        fontSize: 11,
-        fontWeight: '600',
-        flexShrink: 1,
-    },
-    transactionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#151515', padding: 10, borderWidth: 1, borderColor: '#252525', marginHorizontal: 20, overflow: 'hidden' },
-    transactionMovingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 30,
-    },
-    transactionMovingContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(12, 12, 12, 0.45)',
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-    },
-    transactionMovingText: {
-        marginLeft: 8,
-        color: '#FFFFFF',
-        fontSize: 12,
-        fontWeight: '600',
-    },
+    transactionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#151515', padding: 10, borderWidth: 1, borderColor: '#252525', marginHorizontal: 20 },
     separator: { position: 'absolute', bottom: 0, left: 14, right: 14, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.08)' },
     detailsContainer: { flex: 1, gap: 2 },
     descriptionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -2870,25 +2398,5 @@ const styles = StyleSheet.create({
         minWidth: 80,
         textAlign: 'center',
         maxWidth: 140,
-    },
-    globalLoadingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 9999,
-    },
-    globalLoaderContainer: {
-        alignItems: 'center',
-        gap: 12,
-        backgroundColor: 'rgba(26, 26, 26, 0.8)',
-        padding: 24,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#2A2A2A',
-    },
-    globalLoadingText: {
-        color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '600',
     },
 });

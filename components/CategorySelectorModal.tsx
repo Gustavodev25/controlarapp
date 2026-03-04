@@ -1,7 +1,9 @@
 import { CategoryGroup } from '@/constants/defaultCategories';
+import { BlurView } from 'expo-blur';
 import { Search } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Dimensions,
     ScrollView,
     StyleSheet,
@@ -19,13 +21,15 @@ interface CategorySelectorModalProps {
     onClose: () => void;
     onSelect: (categoryKey: string) => void;
     categories: CategoryGroup[];
+    loading?: boolean;
 }
 
 export function CategorySelectorModal({
     visible,
     onClose,
     onSelect,
-    categories
+    categories,
+    loading
 }: CategorySelectorModalProps) {
     const [search, setSearch] = useState('');
 
@@ -74,7 +78,6 @@ export function CategorySelectorModal({
                                         style={styles.categoryItem}
                                         onPress={() => {
                                             onSelect(item.key);
-                                            onClose();
                                         }}
                                     >
                                         <Text style={styles.categoryLabel}>{item.label}</Text>
@@ -90,6 +93,20 @@ export function CategorySelectorModal({
                     )}
                 </ScrollView>
             </View>
+
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <BlurView
+                        intensity={40}
+                        tint="dark"
+                        style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.loaderContainer}>
+                        <ActivityIndicator size="large" color="#D97757" />
+                        <Text style={styles.loadingText}>Processando...</Text>
+                    </View>
+                </View>
+            )}
         </ModalPadrao>
     );
 }
@@ -165,5 +182,27 @@ const styles = StyleSheet.create({
     emptyText: {
         color: '#666',
         fontSize: 15,
+    },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 28,
+        overflow: 'hidden',
+        zIndex: 999
+    },
+    loaderContainer: {
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: 'rgba(26, 26, 26, 0.8)',
+        padding: 24,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#2A2A2A',
+    },
+    loadingText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
     },
 });

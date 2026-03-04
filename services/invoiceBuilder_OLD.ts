@@ -1,4 +1,4 @@
-import { isNonInstallmentMerchant } from './installmentRules';
+﻿import { isNonInstallmentMerchant } from './installmentRules';
 
 export interface Transaction {
     id: string;
@@ -65,7 +65,7 @@ export interface CreditCardAccount {
         totalAmount?: number;
         minimumPaymentAmount?: number;
     }>;
-    // Configuração manual de fechamento
+    // Configura├º├úo manual de fechamento
     closingDateSettings?: {
         closingDay?: number;
         applyToAll?: boolean;
@@ -89,7 +89,7 @@ export interface InvoiceItem {
     isRefund?: boolean;
     originalTransactionId?: string;
     pluggyRaw?: any;
-    debugMonthKey?: string; // Campo temporário para debug
+    debugMonthKey?: string; // Campo tempor├írio para debug
     billId?: string;
     internalMetadata?: any;
 }
@@ -124,10 +124,6 @@ export interface InvoicePeriodDates {
     lastMonthKey: string;
     currentMonthKey: string;
     nextMonthKey: string;
-    followingClosingDate: Date;
-    followingInvoiceStart: Date;
-    followingDueDate: Date;
-    followingMonthKey: string;
 }
 
 export interface InvoiceBuildResult {
@@ -172,7 +168,7 @@ export const normalizePluggyDate = (dateStr?: string | null): string | null => {
         }
     }
 
-    // 3. Fallback: outros formatos — extrai parte da data se possível
+    // 3. Fallback: outros formatos ÔÇö extrai parte da data se poss├¡vel
     const parsed = new Date(raw);
     if (isNaN(parsed.getTime())) return null;
     // Usa UTC para evitar timezone shift em strings com 'Z' ou offset
@@ -242,8 +238,8 @@ const getEffectiveInvoiceMonthKey = (tx: Transaction): string | null => {
     if (manualKey && MONTH_KEY_REGEX.test(manualKey)) return manualKey;
     if (!rawKey || !MONTH_KEY_REGEX.test(rawKey)) return null;
 
-    // Retornamos a chave mesmo que coincida com o mês da data, para clareza nos logs 
-    // e consistência na classificação manual/automática vinda do banco.
+    // Retornamos a chave mesmo que coincida com o m├¬s da data, para clareza nos logs 
+    // e consist├¬ncia na classifica├º├úo manual/autom├ítica vinda do banco.
     return rawKey;
 };
 
@@ -267,7 +263,7 @@ const extractInstallmentFromDesc = (desc: string): { current: number; total: num
 };
 
 // ============================================================
-// PLUGGY FIRST - PERÍODOS (usando periodStart/periodEnd)
+// PLUGGY FIRST - PER├ìODOS (usando periodStart/periodEnd)
 // ============================================================
 
 const buildPeriodsFromPluggyCurrentBill = (
@@ -282,14 +278,14 @@ const buildPeriodsFromPluggyCurrentBill = (
 
     let currentClosingDate = refClosingDate;
     let currentDueDate = refDueDate;
-
-    // Determinar o dia base de fechamento (padrão)
-    // PRIORIDADE: Pluggy. Ignoramos applyToAll global aqui para garantir que dados frescos do banco prevaleçam.
-    // O usuário só consegue sobrescrever se tiver um monthOverride específico.
+    
+    // Determinar o dia base de fechamento (padr├úo)
+    // PRIORIDADE: Pluggy. Ignoramos applyToAll global aqui para garantir que dados frescos do banco prevale├ºam.
+    // O usu├írio s├│ consegue sobrescrever se tiver um monthOverride espec├¡fico.
     let baseClosingDay = currentClosingDate.getDate();
     let closingDay = baseClosingDay;
 
-    // Aplicar Overrides de Configuração do Usuário para a fatura atual
+    // Aplicar Overrides de Configura├º├úo do Usu├írio para a fatura atual
     currentClosingDate = getClosingDateWithOverride(
         currentClosingDate.getFullYear(),
         currentClosingDate.getMonth(),
@@ -298,9 +294,9 @@ const buildPeriodsFromPluggyCurrentBill = (
     );
     closingDay = currentClosingDate.getDate(); // Reflete o dia efetivo da atual
 
-    // Se temos um override, precisamos recalcular a data de vencimento se ela não tiver sido fornecida
-    // Mas aqui estamos no fluxo onde normalizedDueDate já existe.
-    // Opcional: ajustar due date se necessário, mas geralmente confiamos no Pluggy.
+    // Se temos um override, precisamos recalcular a data de vencimento se ela n├úo tiver sido fornecida
+    // Mas aqui estamos no fluxo onde normalizedDueDate j├í existe.
+    // Opcional: ajustar due date se necess├írio, mas geralmente confiamos no Pluggy.
     // Porem, se o usuario mudou o fechamento manualmente, o vencimento pode estar descasado.
     // Vamos manter o due date do pluggy por enquanto, a menos que seja muito absurdo.
 
@@ -320,36 +316,36 @@ const buildPeriodsFromPluggyCurrentBill = (
         return new Date(dueYear, dueMonth, Math.min(dueDay, lastDayOfDueMonth), 12, 0, 0);
     };
 
-    // FATURA ANTERIOR (respeitando overrides específicos dela)
+    // FATURA ANTERIOR (respeitando overrides espec├¡ficos dela)
     const lastClosingDate = getClosingDateWithOverride(
-        currentClosingDate.getFullYear(),
-        currentClosingDate.getMonth() - 1,
+        currentClosingDate.getFullYear(), 
+        currentClosingDate.getMonth() - 1, 
         baseClosingDay,
         card?.closingDateSettings?.monthOverrides
     );
 
-    // FATURA ANTERIOR À ANTERIOR (respeitando overrides específicos dela)
+    // FATURA ANTERIOR ├Ç ANTERIOR (respeitando overrides espec├¡ficos dela)
     const beforeLastClosingDate = getClosingDateWithOverride(
-        lastClosingDate.getFullYear(),
-        lastClosingDate.getMonth() - 1,
+        lastClosingDate.getFullYear(), 
+        lastClosingDate.getMonth() - 1, 
         baseClosingDay,
         card?.closingDateSettings?.monthOverrides
     );
 
-    // FATURA PRÓXIMA (respeitando overrides específicos dela)
+    // FATURA PR├ôXIMA (respeitando overrides espec├¡ficos dela)
     const nextClosingDate = getClosingDateWithOverride(
-        currentClosingDate.getFullYear(),
-        currentClosingDate.getMonth() + 1,
+        currentClosingDate.getFullYear(), 
+        currentClosingDate.getMonth() + 1, 
         baseClosingDay,
         card?.closingDateSettings?.monthOverrides
     );
 
-    // DATAS DE INÍCIO (Aproximações, o buildInvoices vai sobrescrever com Pluggy real se houver)
-    // O início de uma fatura é sempre o dia seguinte ao fechamento da anterior
+    // DATAS DE IN├ìCIO (Aproxima├º├Áes, o buildInvoices vai sobrescrever com Pluggy real se houver)
+    // O in├¡cio de uma fatura ├® sempre o dia seguinte ao fechamento da anterior
     const currentInvoiceStart = new Date(lastClosingDate.getTime() + 86400000);
     const lastInvoiceStart = new Date(beforeLastClosingDate.getTime() + 86400000);
-
-    // Para beforeLastInvoiceStart, precisamos da fatura ANTERIOR à beforeLast
+    
+    // Para beforeLastInvoiceStart, precisamos da fatura ANTERIOR ├á beforeLast
     const threeMonthsAgoClosing = getClosingDateWithOverride(
         beforeLastClosingDate.getFullYear(),
         beforeLastClosingDate.getMonth() - 1,
@@ -357,15 +353,15 @@ const buildPeriodsFromPluggyCurrentBill = (
         card?.closingDateSettings?.monthOverrides
     );
     const beforeLastInvoiceStart = new Date(threeMonthsAgoClosing.getTime() + 86400000);
-
+    
     const nextInvoiceStart = new Date(currentClosingDate.getTime() + 86400000);
 
     const beforeLastDueDate = calculateDueDate(beforeLastClosingDate);
     const lastDueDate = calculateDueDate(lastClosingDate);
     const nextDueDate = calculateDueDate(nextClosingDate);
 
-    // MÊS DE REFERÊNCIA: Seguindo a preferência do usuário e padrão de gastos,
-    // usamos o mês do FECHAMENTO (spending month) como chave, não o do vencimento.
+    // M├èS DE REFER├èNCIA: Seguindo a prefer├¬ncia do usu├írio e padr├úo de gastos,
+    // usamos o m├¬s do FECHAMENTO (spending month) como chave, n├úo o do vencimento.
     return {
         closingDay,
         dueDay,
@@ -384,34 +380,13 @@ const buildPeriodsFromPluggyCurrentBill = (
         beforeLastMonthKey: toMonthKey(beforeLastClosingDate),
         lastMonthKey: toMonthKey(lastClosingDate),
         currentMonthKey: toMonthKey(currentClosingDate),
-        nextMonthKey: toMonthKey(nextClosingDate),
-
-        // FATURA SEGUINTE (following)
-        followingClosingDate: getClosingDateWithOverride(
-            nextClosingDate.getFullYear(),
-            nextClosingDate.getMonth() + 1,
-            baseClosingDay,
-            card?.closingDateSettings?.monthOverrides
-        ),
-        followingInvoiceStart: new Date(nextClosingDate.getTime() + 86400000),
-        followingDueDate: calculateDueDate(getClosingDateWithOverride(
-            nextClosingDate.getFullYear(),
-            nextClosingDate.getMonth() + 1,
-            baseClosingDay,
-            card?.closingDateSettings?.monthOverrides
-        )),
-        followingMonthKey: toMonthKey(getClosingDateWithOverride(
-            nextClosingDate.getFullYear(),
-            nextClosingDate.getMonth() + 1,
-            baseClosingDay,
-            card?.closingDateSettings?.monthOverrides
-        ))
+        nextMonthKey: toMonthKey(nextClosingDate)
     };
 };
 
 
 // ============================================================
-// CÁLCULO DE PERÍODOS
+// C├üLCULO DE PER├ìODOS
 // ============================================================
 
 export const calculateInvoicePeriodDates = (
@@ -449,17 +424,17 @@ export const calculateInvoicePeriodDates = (
     if (card?.closingDateSettings?.applyToAll && card.closingDateSettings.closingDay) {
         closingDay = card.closingDateSettings.closingDay;
     }
-
-    // Determinar o dia base para cálculos (evitando propagar overrides de um mês para outros)
+    
+    // Determinar o dia base para c├ílculos (evitando propagar overrides de um m├¬s para outros)
     let baseClosingDay = closingDay;
 
     if (bCloseDate && bDueDate) {
         // 1. Usa as datas EXATAS do Pluggy como Fatura Atual, sem ancorar pelo dia de hoje
         currentClosingDate = parseDate(bCloseDate);
         currentDueDate = parseDate(bDueDate);
-
+        
         // Se temos dados do Pluggy, o baseClosingDay deve ser o do Pluggy (Pluggy First)
-        // Ignoramos applyToAll aqui para garantir que a data real do banco prevaleça.
+        // Ignoramos applyToAll aqui para garantir que a data real do banco prevale├ºa.
         baseClosingDay = currentClosingDate.getDate();
 
         // Aplicar Overrides usando helper
@@ -473,7 +448,7 @@ export const calculateInvoicePeriodDates = (
 
         dueDay = currentDueDate.getDate();
     } else {
-        // Lógica legada que baseava a âncora na data atual
+        // L├│gica legada que baseava a ├óncora na data atual
         if (bDueDate) {
             dueDay = parseDate(bDueDate).getDate();
             if (bCloseDate) {
@@ -486,10 +461,10 @@ export const calculateInvoicePeriodDates = (
             closingDay = parseDate(bCloseDate).getDate();
             dueDay = (closingDay + 10) % 30 || 1;
         }
-
+        
         baseClosingDay = closingDay;
 
-        // ÂNCORA DINÂMICA
+        // ├éNCORA DIN├éMICA
         let anchorYear = today.getFullYear();
         let anchorMonth = today.getMonth();
 
@@ -504,24 +479,24 @@ export const calculateInvoicePeriodDates = (
     }
 
     const lastClosingDate = getClosingDateWithOverride(
-        currentClosingDate.getFullYear(),
-        currentClosingDate.getMonth() - 1,
+        currentClosingDate.getFullYear(), 
+        currentClosingDate.getMonth() - 1, 
         baseClosingDay,
         card?.closingDateSettings?.monthOverrides
     );
     const lastDueDate = calculateDueDate(lastClosingDate);
 
     const beforeLastClosingDate = getClosingDateWithOverride(
-        lastClosingDate.getFullYear(),
-        lastClosingDate.getMonth() - 1,
+        lastClosingDate.getFullYear(), 
+        lastClosingDate.getMonth() - 1, 
         baseClosingDay,
         card?.closingDateSettings?.monthOverrides
     );
     const beforeLastDueDate = calculateDueDate(beforeLastClosingDate);
 
     const nextClosingDate = getClosingDateWithOverride(
-        currentClosingDate.getFullYear(),
-        currentClosingDate.getMonth() + 1,
+        currentClosingDate.getFullYear(), 
+        currentClosingDate.getMonth() + 1, 
         baseClosingDay,
         card?.closingDateSettings?.monthOverrides
     );
@@ -530,15 +505,15 @@ export const calculateInvoicePeriodDates = (
     return {
         closingDay, dueDay,
         beforeLastClosingDate, lastClosingDate, currentClosingDate, nextClosingDate,
-
-        // Ajuste de datas de início usando beforeLastClosingDate correta
+        
+        // Ajuste de datas de in├¡cio usando beforeLastClosingDate correta
         beforeLastInvoiceStart: new Date(getClosingDateWithOverride(
-            beforeLastClosingDate.getFullYear(),
-            beforeLastClosingDate.getMonth() - 1,
+            beforeLastClosingDate.getFullYear(), 
+            beforeLastClosingDate.getMonth() - 1, 
             baseClosingDay,
             card?.closingDateSettings?.monthOverrides
         ).getTime() + 86400000),
-
+        
         lastInvoiceStart: new Date(beforeLastClosingDate.getTime() + 86400000),
         currentInvoiceStart: new Date(lastClosingDate.getTime() + 86400000),
         nextInvoiceStart: new Date(currentClosingDate.getTime() + 86400000),
@@ -546,28 +521,7 @@ export const calculateInvoicePeriodDates = (
         beforeLastMonthKey: toMonthKey(beforeLastClosingDate),
         lastMonthKey: toMonthKey(lastClosingDate),
         currentMonthKey: toMonthKey(currentClosingDate),
-        nextMonthKey: toMonthKey(nextClosingDate),
-
-        // FATURA SEGUINTE (following)
-        followingClosingDate: getClosingDateWithOverride(
-            nextClosingDate.getFullYear(),
-            nextClosingDate.getMonth() + 1,
-            baseClosingDay,
-            card?.closingDateSettings?.monthOverrides
-        ),
-        followingInvoiceStart: new Date(nextClosingDate.getTime() + 86400000),
-        followingDueDate: calculateDueDate(getClosingDateWithOverride(
-            nextClosingDate.getFullYear(),
-            nextClosingDate.getMonth() + 1,
-            baseClosingDay,
-            card?.closingDateSettings?.monthOverrides
-        )),
-        followingMonthKey: toMonthKey(getClosingDateWithOverride(
-            nextClosingDate.getFullYear(),
-            nextClosingDate.getMonth() + 1,
-            baseClosingDay,
-            card?.closingDateSettings?.monthOverrides
-        ))
+        nextMonthKey: toMonthKey(nextClosingDate)
     };
 };
 
@@ -579,7 +533,7 @@ export const calculateInvoicePeriodDates = (
 export const transactionToInvoiceItem = (tx: Transaction, isProjected = false): InvoiceItem => {
     const nonInstallmentMerchant = isNonInstallmentMerchant(tx.description);
 
-    // Normalização rigorosa do tipo para evitar erros no cálculo do total
+    // Normaliza├º├úo rigorosa do tipo para evitar erros no c├ílculo do total
     let type: 'income' | 'expense' = 'expense';
     const rawType = (tx.type || '').toLowerCase();
     if (rawType === 'income' || rawType === 'credit' || tx.amount < 0) {
@@ -713,7 +667,7 @@ const validatePluggyDates = (bill: any) => {
             (parseDate(bill.periodEnd).getTime() - parseDate(bill.closeDate).getTime()) / 86400000
         );
         if (diffDays > 5) {
-            // Silencioso em produção
+            // Silencioso em produ├º├úo
         }
     }
 };
@@ -777,12 +731,12 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
     const { monthOverrides, closingDay, applyToAll } = card.closingDateSettings;
 
     // Ordenar cronologicamente para facilitar ajuste de start/end em cadeia
-    // bills está DESC (Recente -> Antigo). Vamos inverter para processar Antigo -> Recente
+    // bills est├í DESC (Recente -> Antigo). Vamos inverter para processar Antigo -> Recente
     const chronologicalBills = [...bills].reverse();
 
     chronologicalBills.forEach((bill, index) => {
-        // 1. Determinar mês de referência da fatura
-        // IMPORTANTE: Se usarmos 'dueDate', recuamos 10 dias para pegar o mês provável da fatura
+        // 1. Determinar m├¬s de refer├¬ncia da fatura
+        // IMPORTANTE: Se usarmos 'dueDate', recuamos 10 dias para pegar o m├¬s prov├ível da fatura
         const closeDateCandidate = pickNormalizedBillDate(bill, ['closeDate', 'periodEnd']);
         const dueDateStr = normalizePluggyDate(bill.dueDate);
 
@@ -790,7 +744,7 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
         if (closeDateCandidate) {
             refDate = parseDate(closeDateCandidate);
         } else if (dueDateStr) {
-            // Se só tem vencimento, recua 10 dias para "chutar" o mês de fechamento nominal
+            // Se s├│ tem vencimento, recua 10 dias para "chutar" o m├¬s de fechamento nominal
             const d = parseDate(dueDateStr);
             d.setDate(d.getDate() - 10);
             refDate = d;
@@ -802,7 +756,7 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
         let newDay: number | undefined;
         let newCloseDate: Date | null = null;
 
-        // 2. Verificar Overrides do Mês Atual (para alterar fechamento)
+        // 2. Verificar Overrides do M├¬s Atual (para alterar fechamento)
         if (monthOverrides && monthOverrides[refMonth]) {
             const override = monthOverrides[refMonth];
             if (override.exactDate && typeof override.exactDate === 'string') {
@@ -810,13 +764,13 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
             } else if (override.closingDay) {
                 newDay = override.closingDay;
             }
-        }
+        } 
 
-        // 3. Verificar Overrides do Mês ANTERIOR (para alterar data de INÍCIO desta fatura)
-        // Isso é necessário se a fatura anterior não existir na lista 'chronologicalBills' (ex: muito antiga ou não retornada pelo Pluggy),
-        // mas o usuário configurou um override para ela.
+        // 3. Verificar Overrides do M├¬s ANTERIOR (para alterar data de IN├ìCIO desta fatura)
+        // Isso ├® necess├írio se a fatura anterior n├úo existir na lista 'chronologicalBills' (ex: muito antiga ou n├úo retornada pelo Pluggy),
+        // mas o usu├írio configurou um override para ela.
         if (monthOverrides) {
-            // Calcular mês anterior
+            // Calcular m├¬s anterior
             const prevMonthDate = new Date(refDate);
             prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
             const prevMonthKey = toMonthKey(prevMonthDate);
@@ -828,33 +782,33 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
                 if (prevOverride.exactDate && typeof prevOverride.exactDate === 'string') {
                     prevCloseDate = parseDate(prevOverride.exactDate);
                 } else if (prevOverride.closingDay) {
-                    // Se for só dia, precisamos reconstruir a data completa do mês anterior
-                    const y = prevMonthDate.getFullYear();
-                    const m = prevMonthDate.getMonth();
-                    const lastDay = new Date(y, m + 1, 0).getDate();
-                    const safeDay = Math.min(prevOverride.closingDay, lastDay);
-                    prevCloseDate = new Date(y, m, safeDay, 12, 0, 0);
+                     // Se for s├│ dia, precisamos reconstruir a data completa do m├¬s anterior
+                     const y = prevMonthDate.getFullYear();
+                     const m = prevMonthDate.getMonth();
+                     const lastDay = new Date(y, m + 1, 0).getDate();
+                     const safeDay = Math.min(prevOverride.closingDay, lastDay);
+                     prevCloseDate = new Date(y, m, safeDay, 12, 0, 0);
                 }
 
                 if (prevCloseDate) {
                     const newStartDate = new Date(prevCloseDate);
                     newStartDate.setDate(newStartDate.getDate() + 1);
                     const newStartDateStr = toDateStr(newStartDate);
-
+                    
                     // Atualiza start date da fatura atual se diferir
                     if (bill.periodStart !== newStartDateStr) {
-                        console.log(`[DEBUG-INVOICE] Aplicando Override de Início (devido ao mês anterior ${prevMonthKey}): Fatura ${refMonth} começa em ${newStartDateStr}`);
-                        bill.periodStart = newStartDateStr;
+                         console.log(`[DEBUG-INVOICE] Aplicando Override de In├¡cio (devido ao m├¬s anterior ${prevMonthKey}): Fatura ${refMonth} come├ºa em ${newStartDateStr}`);
+                         bill.periodStart = newStartDateStr;
                     }
                 }
             }
         }
 
-        // Se não encontrou override direto para este mês, tenta achar se o mês real de referência é diferente.
-        // As vezes o 'refDate' (chutado via due date) pode errar o mês.
+        // Se n├úo encontrou override direto para este m├¬s, tenta achar se o m├¬s real de refer├¬ncia ├® diferente.
+        // As vezes o 'refDate' (chutado via due date) pode errar o m├¬s.
         // Ex: Due 05/04, Close 28/03 -> RefMonth 2024-03.
-        // Se override for para 2024-04 (devido a mudança de data), precisamos pegar.
-        // Mas a lógica aqui é baseada no bill original.
+        // Se override for para 2024-04 (devido a mudan├ºa de data), precisamos pegar.
+        // Mas a l├│gica aqui ├® baseada no bill original.
 
         if (newDay && !newCloseDate) {
             // Calcular nova data de fechamento baseada no dia
@@ -870,15 +824,15 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
         if (newCloseDate) {
             const newCloseDateStr = toDateStr(newCloseDate);
 
-            // Se a data calculada for IGUAL à original, não faz nada para preservar dados originais
+            // Se a data calculada for IGUAL ├á original, n├úo faz nada para preservar dados originais
             if (closeDateCandidate && newCloseDateStr === closeDateCandidate) {
                 return;
             }
 
-            console.log(`[DEBUG-INVOICE] Aplicando Override: Mês=${refMonth}, Original=${closeDateCandidate || 'só due'}, Novo Fechamento=${newCloseDateStr}`);
+            console.log(`[DEBUG-INVOICE] Aplicando Override: M├¬s=${refMonth}, Original=${closeDateCandidate || 's├│ due'}, Novo Fechamento=${newCloseDateStr}`);
 
             // 3. Re-calcular Vencimento Mantendo o GAP original (se houver dueDate)
-            // REMOVED: O usuário pediu para NUNCA alterar a data de vencimento, mesmo que o fechamento mude.
+            // REMOVED: O usu├írio pediu para NUNCA alterar a data de vencimento, mesmo que o fechamento mude.
             // if (dueDateStr) {
             //     const oldCloseStr = closeDateCandidate || toDateStr(refDate);
             //     const oldClose = parseDate(oldCloseStr);
@@ -886,7 +840,7 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
             //     const gap = Math.round((oldDue.getTime() - oldClose.getTime()) / 86400000);
             //
             //     const newDue = new Date(newCloseDate);
-            //     newDue.setDate(newDue.getDate() + (gap > 0 ? gap : 10)); // Mantém o gap original ou usa 10 como default
+            //     newDue.setDate(newDue.getDate() + (gap > 0 ? gap : 10)); // Mant├®m o gap original ou usa 10 como default
             //     bill.dueDate = toDateStr(newDue);
             // }
 
@@ -894,7 +848,7 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
             bill.closeDate = newCloseDateStr;
             bill.periodEnd = newCloseDateStr;
 
-            // 4. Ajustar Início da Próxima Fatura para o dia seguinte ao fechamento atual
+            // 4. Ajustar In├¡cio da Pr├│xima Fatura para o dia seguinte ao fechamento atual
             const nextBill = chronologicalBills[index + 1];
             if (nextBill) {
                 const newStartDate = new Date(newCloseDate);
@@ -954,7 +908,33 @@ export const buildInvoices = (
         periods
     };
 
+    // Classifica├º├úo simples por data (apenas transa├º├Áes REAIS)
+    uniqueTransactions.forEach(tx => {
+        if (isCreditCardPayment(tx)) return;
+        const txDateNum = dateToNumber(parseDate(tx.date));
+        const item = transactionToInvoiceItem(tx);
+
+        const beforeLastStart = dateToNumber(periods.beforeLastInvoiceStart);
+        const beforeLastEnd = dateToNumber(periods.beforeLastClosingDate);
+        const lastStart = dateToNumber(periods.lastInvoiceStart);
+        const lastEnd = dateToNumber(periods.lastClosingDate);
+        const currentStart = dateToNumber(periods.currentInvoiceStart);
+        const currentEnd = dateToNumber(periods.currentClosingDate);
+
+        if (txDateNum >= beforeLastStart && txDateNum <= beforeLastEnd) {
+            result.beforeLastInvoice.items.push(item);
+        } else if (txDateNum >= lastStart && txDateNum <= lastEnd) {
+            result.closedInvoice.items.push(item);
+        } else if (txDateNum >= currentStart && txDateNum <= currentEnd) {
+            result.currentInvoice.items.push(item);
+        } else if (txDateNum > currentEnd) {
+            // Em caso de falta de bills reais, colocamos no atual para n├úo ocultar nada
+            result.currentInvoice.items.push(item);
+        }
+    });
+
     const recalculateTotal = (inv: Invoice) => {
+        // Recalculamos o total somando os itens para garantir que n├úo fique zerado
         inv.total = inv.items.reduce((sum, item) => {
             const isTxRefund = item.isRefund || item.category === 'Refund' || item.isPayment;
             const isExpense = item.type === 'expense';
@@ -964,66 +944,14 @@ export const buildInvoices = (
         inv.items.sort((a, b) => b.date.localeCompare(a.date));
     };
 
-    // Faturas Futuras (Sintetizadas)
-    const nextInv: Invoice = {
-        id: 'next',
-        referenceMonth: periods.nextMonthKey,
-        status: 'OPEN',
-        startDate: toDateStr(periods.nextInvoiceStart),
-        closingDate: toDateStr(periods.nextClosingDate),
-        dueDate: toDateStr(periods.nextDueDate),
-        total: 0,
-        items: []
-    };
-    const followingInv: Invoice = {
-        id: 'following',
-        referenceMonth: periods.followingMonthKey,
-        status: 'OPEN',
-        startDate: toDateStr(periods.followingInvoiceStart),
-        closingDate: toDateStr(periods.followingClosingDate),
-        dueDate: toDateStr(periods.followingDueDate),
-        total: 0,
-        items: []
-    };
-
-    // Classificação simples por data
-    uniqueTransactions.forEach(tx => {
-        if (isCreditCardPayment(tx)) return;
-        const txDateNum = dateToNumber(parseDate(tx.date));
-        const item = transactionToInvoiceItem(tx);
-
-        const blStart = dateToNumber(periods.beforeLastInvoiceStart);
-        const blEnd = dateToNumber(periods.beforeLastClosingDate);
-        const lStart = dateToNumber(periods.lastInvoiceStart);
-        const lEnd = dateToNumber(periods.lastClosingDate);
-        const cStart = dateToNumber(periods.currentInvoiceStart);
-        const cEnd = dateToNumber(periods.currentClosingDate);
-        const nStart = dateToNumber(periods.nextInvoiceStart);
-        const nEnd = dateToNumber(periods.nextClosingDate);
-        const fStart = dateToNumber(periods.followingInvoiceStart);
-        const fEnd = dateToNumber(periods.followingClosingDate);
-
-        if (txDateNum >= blStart && txDateNum <= blEnd) result.beforeLastInvoice.items.push(item);
-        else if (txDateNum >= lStart && txDateNum <= lEnd) result.closedInvoice.items.push(item);
-        else if (txDateNum >= cStart && txDateNum <= cEnd) result.currentInvoice.items.push(item);
-        else if (txDateNum >= nStart && txDateNum <= nEnd) nextInv.items.push(item);
-        else if (txDateNum >= fStart && txDateNum <= fEnd) followingInv.items.push(item);
-        else if (txDateNum > fEnd) followingInv.items.push(item); // Fallback: muito no futuro vai no último
-    });
-
     recalculateTotal(result.beforeLastInvoice);
     recalculateTotal(result.closedInvoice);
     recalculateTotal(result.currentInvoice);
-    recalculateTotal(nextInv);
-    recalculateTotal(followingInv);
 
-    result.futureInvoices = [nextInv, followingInv];
-    result.allFutureTotal = nextInv.total + followingInv.total;
-
-    // Fallback legado não usa bills diretos, então mantemos a lógica original de override se necessário
-    // mas como removemos a função applyClosingDateOverrides, vamos reimplementar de forma segura ou remover se não for usada aqui.
-    // Para manter consistência com o que foi feito na buildInvoicesPluggyFirst, 
-    // idealmente o fallback também deveria usar a nova lógica, mas ele é baseado em periodos calculados.
+    // Fallback legado n├úo usa bills diretos, ent├úo mantemos a l├│gica original de override se necess├írio
+    // mas como removemos a fun├º├úo applyClosingDateOverrides, vamos reimplementar de forma segura ou remover se n├úo for usada aqui.
+    // Para manter consist├¬ncia com o que foi feito na buildInvoicesPluggyFirst, 
+    // idealmente o fallback tamb├®m deveria usar a nova l├│gica, mas ele ├® baseado em periodos calculados.
 
     return result;
 };
@@ -1040,7 +968,7 @@ export const buildInvoices = (
 // NOVA ARQUITETURA: BILL-DRIVEN (Resiliente para bancos tradicionais)
 // ============================================================
 
-// Mescla bills do mesmo ciclo de fatura (por exemplo, Bradesco que pode dividir em múltiplos bills no mesmo mês)
+// Mescla bills do mesmo ciclo de fatura (por exemplo, Bradesco que pode dividir em m├║ltiplos bills no mesmo m├¬s)
 const mergeBillsInSameCycle = (bills: any[]): { mergedBills: any[], billIdMap: Map<string, string> } => {
     const billIdMap = new Map<string, string>(); // Mapeia billId antigo -> billId novo
 
@@ -1049,7 +977,7 @@ const mergeBillsInSameCycle = (bills: any[]): { mergedBills: any[], billIdMap: M
         return { mergedBills: bills, billIdMap };
     }
 
-    // Agrupa bills por mês de fechamento (referenceMonth)
+    // Agrupa bills por m├¬s de fechamento (referenceMonth)
     const billsByMonth = new Map<string, any[]>();
     bills.forEach(bill => {
         const closeDate = pickNormalizedBillDate(bill, ['periodEnd', 'closeDate', 'dueDate', 'periodStart']);
@@ -1058,7 +986,7 @@ const mergeBillsInSameCycle = (bills: any[]): { mergedBills: any[], billIdMap: M
         billsByMonth.get(monthKey)!.push(bill);
     });
 
-    // Se houver múltiplos bills no mesmo mês, mescla em um
+    // Se houver m├║ltiplos bills no mesmo m├¬s, mescla em um
     const mergedBills: any[] = [];
     const processedMonths = new Set<string>();
 
@@ -1067,17 +995,17 @@ const mergeBillsInSameCycle = (bills: any[]): { mergedBills: any[], billIdMap: M
         const closeDate = pickNormalizedBillDate(bill, ['periodEnd', 'closeDate', 'dueDate', 'periodStart']);
         const monthKey = closeDate ? toMonthKey(parseDate(closeDate)) : '';
 
-        if (processedMonths.has(monthKey)) return; // Já foi processado
+        if (processedMonths.has(monthKey)) return; // J├í foi processado
         processedMonths.add(monthKey);
 
         const billsInMonth = billsByMonth.get(monthKey) || [];
 
         if (billsInMonth.length === 1) {
-            // Se tem apenas um bill neste mês, mantém como está
+            // Se tem apenas um bill neste m├¬s, mant├®m como est├í
             billIdMap.set(bill.id, bill.id);
             mergedBills.push(bill);
         } else {
-            // Se tem múltiplos bills no mesmo mês, mescla em um
+            // Se tem m├║ltiplos bills no mesmo m├¬s, mescla em um
             let masterBill = { ...billsInMonth[0] };
             const firstStartStr = pickNormalizedBillDate(billsInMonth[0], ['periodStart', 'periodEnd', 'closeDate', 'dueDate']);
             const firstEndStr = pickNormalizedBillDate(billsInMonth[0], ['periodEnd', 'closeDate', 'dueDate', 'periodStart']);
@@ -1132,73 +1060,14 @@ export const buildInvoicesPluggyFirst = (
     // Ordena do mais recente para o mais antigo (baseado no dueDate)
     allBills.sort((a, b) => safeDateTime(b.dueDate) - safeDateTime(a.dueDate));
 
-    // 1.5 GARANTIR 5 MESES ALVO (Atrasada, Anterior, Atual, Próxima, Seguinte)
-    // Se o Pluggy não retornar algum desses meses, criamos faturas "sintéticas" baseadas nos períodos calculados
-    const periods = calculateInvoicePeriodDates(card, today);
-    const requiredMonths = [
-        { key: periods.beforeLastMonthKey, close: periods.beforeLastClosingDate, start: periods.beforeLastInvoiceStart, due: periods.beforeLastDueDate },
-        { key: periods.lastMonthKey, close: periods.lastClosingDate, start: periods.lastInvoiceStart, due: periods.lastDueDate },
-        { key: periods.currentMonthKey, close: periods.currentClosingDate, start: periods.currentInvoiceStart, due: periods.currentDueDate },
-        { key: periods.nextMonthKey, close: periods.nextClosingDate, start: periods.nextInvoiceStart, due: periods.nextDueDate },
-        { key: periods.followingMonthKey, close: periods.followingClosingDate, start: periods.followingInvoiceStart, due: periods.followingDueDate },
-    ];
-
-    requiredMonths.forEach(req => {
-        const existing = allBills.find(b => {
-            const bClose = pickNormalizedBillDate(b, ['periodEnd', 'closeDate', 'dueDate']);
-            return bClose && toMonthKey(parseDate(bClose)) === req.key;
-        });
-        if (!existing) {
-            allBills.push({
-                id: `synth_${req.key}`,
-                periodStart: toDateStr(req.start),
-                periodEnd: toDateStr(req.close),
-                closeDate: toDateStr(req.close),
-                dueDate: toDateStr(req.due),
-                totalAmount: 0,
-                isCurrent: req.key === periods.currentMonthKey,
-                isSynthesized: true
-            });
-        }
-    });
-
-    // Re-ordenar após adicionar sintéticas
-    allBills.sort((a, b) => safeDateTime(b.dueDate) - safeDateTime(a.dueDate));
-
-    // MESCLA bills do mesmo ciclo (Bradesco pode dividir uma fatura em múltiplos bills)
+    // MESCLA bills do mesmo ciclo (Bradesco pode dividir uma fatura em m├║ltiplos bills)
     const { mergedBills, billIdMap } = mergeBillsInSameCycle(allBills);
     allBills = mergedBills;
 
-    // GARANTIR QUE TODO O BILL TENHA periodStart e periodEnd (fechamento)
-    // Muitos bancos não enviam o periodStart na Open Finance. Sem isso, a realocação manual falha.
-    const chronoBills = [...allBills].sort((a, b) => safeDateTime(a.dueDate) - safeDateTime(b.dueDate));
-    chronoBills.forEach((bill, index) => {
-        if (!bill.periodEnd && bill.closeDate) bill.periodEnd = bill.closeDate;
-        if (!bill.periodEnd && bill.dueDate) {
-            const d = parseDate(bill.dueDate);
-            d.setDate(d.getDate() - 10);
-            bill.periodEnd = toDateStr(d);
-            bill.closeDate = bill.periodEnd;
-        }
-
-        if (!bill.periodStart) {
-            if (index > 0 && chronoBills[index - 1].periodEnd) {
-                const start = parseDate(chronoBills[index - 1].periodEnd);
-                start.setDate(start.getDate() + 1);
-                bill.periodStart = toDateStr(start);
-            } else if (bill.periodEnd) {
-                const start = parseDate(bill.periodEnd);
-                start.setMonth(start.getMonth() - 1);
-                start.setDate(start.getDate() + 1);
-                bill.periodStart = toDateStr(start);
-            }
-        }
-    });
-
-    // APLICA OVERRIDES DE DATA (Antes de gerar invoices e distribuir transações)
+    // APLICA OVERRIDES DE DATA (Antes de gerar invoices e distribuir transa├º├Áes)
     applyDateOverridesToBills(allBills, card);
 
-    console.log('[DEBUG] --- CICLO DO CARTÃO ---');
+    console.log('[DEBUG] --- CICLO DO CART├âO ---');
     console.log(`[DEBUG] Card: ${card?.name} (${cardId})`);
     allBills.forEach((b, i) => {
         console.log(`[DEBUG] Bill ${i}: ID=${b.id}, Due=${b.dueDate}, Start=${b.periodStart || '?'}, End=${b.periodEnd || '?'}, Current=${b.isCurrent}`);
@@ -1207,17 +1076,17 @@ export const buildInvoicesPluggyFirst = (
     // 2. Cria faturas a partir dos bills reais
     let invoices: Invoice[] = allBills.map((bill) => {
         // Assegurar que dueDate esteja presente, mesmo que o Pluggy mande vazio em alguns casos
-        // Se estiver vazio, tenta estimar com base no closingDate + 10 dias (comportamento padrão de muitos cartões)
-        // ou tenta pegar do balanceDueDate se disponível.
+        // Se estiver vazio, tenta estimar com base no closingDate + 10 dias (comportamento padr├úo de muitos cart├Áes)
+        // ou tenta pegar do balanceDueDate se dispon├¡vel.
         if (!bill.dueDate) {
-            const close = pickNormalizedBillDate(bill, ['periodEnd', 'closeDate']);
-            if (close) {
-                const d = parseDate(close);
-                d.setDate(d.getDate() + 10); // Estimativa segura
-                bill.dueDate = toDateStr(d);
-            }
+             const close = pickNormalizedBillDate(bill, ['periodEnd', 'closeDate']);
+             if (close) {
+                 const d = parseDate(close);
+                 d.setDate(d.getDate() + 10); // Estimativa segura
+                 bill.dueDate = toDateStr(d);
+             }
         }
-        return pluggyBillToInvoice(bill, 'OPEN'); // Status será refinado depois
+        return pluggyBillToInvoice(bill, 'OPEN'); // Status ser├í refinado depois
     });
 
     // Encontra a fatura marcada como atual pelo Pluggy
@@ -1234,19 +1103,19 @@ export const buildInvoicesPluggyFirst = (
         }
     });
 
-    // Fallback caso não tenha faturas do Pluggy ainda
+    // Fallback caso n├úo tenha faturas do Pluggy ainda
     if (invoices.length === 0) {
         return buildInvoices(card, transactions, cardId);
     }
 
-    // 3. Separa transações por billId (usando mapa para tratar bills mesclados)
+    // 3. Separa transa├º├Áes por billId (usando mapa para tratar bills mesclados)
     const txByBillId = new Map<string, Transaction[]>();
     const unassignedTxs: Transaction[] = [];
 
     uniqueTxs.forEach(tx => {
         if (isCreditCardPayment(tx)) return;
 
-        // Se o usuário alterou manualmente, tratamos como órfão para forçar a reclassificação pela data/mês
+        // Se o usu├írio alterou manualmente, tratamos como ├│rf├úo para for├ºar a reclassifica├º├úo pela data/m├¬s
         if (hasManualInvoiceOverride(tx)) {
             unassignedTxs.push(tx);
             return;
@@ -1258,13 +1127,7 @@ export const buildInvoicesPluggyFirst = (
             billId = billIdMap.get(billId)!;
         }
 
-        // Se o usuário alterou manualmente um cartão inteiro (configuração de fechamento da fatura)
-        // Damos primazia total às datas calculadas, desativando o vínculo forçado do banco.
-        const hasConfigurations = !!card?.closingDateSettings?.applyToAll || Object.keys(card?.closingDateSettings?.monthOverrides || {}).length > 0;
-
-        if (hasConfigurations) {
-            unassignedTxs.push(tx);
-        } else if (billId && allBills.some(b => b.id === billId)) {
+        if (billId && allBills.some(b => b.id === billId)) {
             if (!txByBillId.has(billId)) txByBillId.set(billId, []);
             txByBillId.get(billId)!.push(tx);
         } else {
@@ -1272,36 +1135,62 @@ export const buildInvoicesPluggyFirst = (
         }
     });
 
-    // Removida Lógica Antiga 3.5 de Realocação, pois agora colocamos TODAS as transações
-    // em `unassignedTxs` se houver alguma configuração de usuário. A lógica de órfãs vai 
-    // alocar tudo puramente por `periodStart / periodEnd`, dando "liberdade total" ao usuário.
+    // 3.5 Reallocation Logic for Manual Date Overrides
+    // Se o usu├írio mudou as datas manualmente, precisamos garantir que as transa├º├Áes 
+    // respeitem os novos per├¡odos, mesmo que tenham vindo com billId do banco.
+    if (card?.closingDateSettings) {
+         for (const [billId, txs] of txByBillId.entries()) {
+             const bill = allBills.find(b => b.id === billId);
+             if (!bill || !bill.periodStart || !bill.periodEnd) continue;
 
+             const startNum = dateToNumber(parseDate(bill.periodStart));
+             const endNum = dateToNumber(parseDate(bill.periodEnd));
+             
+             // Identificar transa├º├Áes que n├úo cabem mais no per├¡odo (devido ├á mudan├ºa manual)
+             const keptTxs: Transaction[] = [];
+             const movedTxs: Transaction[] = [];
 
+             txs.forEach(tx => {
+                 const dNum = dateToNumber(parseDate(tx.date));
+                 if (dNum >= startNum && dNum <= endNum) {
+                     keptTxs.push(tx);
+                 } else {
+                     movedTxs.push(tx);
+                 }
+             });
 
-    // 4. Atribui itens às faturas principais
+             if (movedTxs.length > 0) {
+                 txByBillId.set(billId, keptTxs);
+                 unassignedTxs.push(...movedTxs);
+                 console.log(`[DEBUG-INVOICE] Reallocating ${movedTxs.length} txs from Bill ${billId} due to manual date override mismatch`);
+             }
+         }
+    }
+
+    // 4. Atribui itens ├ás faturas principais
     invoices.forEach(inv => {
         // Encontra o bill correspondente a esta fatura
         const bill = allBills.find(b => {
-            // Lógica de matching robusta:
-            // 1. Pelo ID (se o invoice foi criado a partir deste bill)
-            if (inv.id === `bill_${b.id}` || inv.id === b.id) return true;
-
-            // 2. Pelo mês de referência (referenceMonth)
-            const billClose = pickNormalizedBillDate(b, ['periodEnd', 'closeDate', 'dueDate']);
-            if (billClose) {
-                return toMonthKey(parseDate(billClose)) === inv.referenceMonth;
-            }
-            return false;
+             // L├│gica de matching robusta:
+             // 1. Pelo ID (se o invoice foi criado a partir deste bill)
+             if (inv.id === `bill_${b.id}` || inv.id === b.id) return true;
+             
+             // 2. Pelo m├¬s de refer├¬ncia (referenceMonth)
+             const billClose = pickNormalizedBillDate(b, ['periodEnd', 'closeDate', 'dueDate']);
+             if (billClose) {
+                 return toMonthKey(parseDate(billClose)) === inv.referenceMonth;
+             }
+             return false;
         });
 
-        // Coleta transações vinculadas a este billId
+        // Coleta transa├º├Áes vinculadas a este billId
         const billTxs = bill ? (txByBillId.get(bill.id) || []) : [];
-
+        
         // Transforma em InvoiceItems
         inv.items = billTxs.map(tx => transactionToInvoiceItem(tx, false));
 
-        // Tenta encaixar as órfãs nesta fatura
-        // Prioridade: Manual Override > Data dentro do Período > Mês de Referência
+        // Tenta encaixar as ├│rf├ús nesta fatura
+        // Prioridade: Manual Override > Data dentro do Per├¡odo > M├¬s de Refer├¬ncia
         const orphansInPeriod = unassignedTxs.filter(tx => {
             // 1. Manual Override (Sempre vence)
             if (hasManualInvoiceOverride(tx)) {
@@ -1309,7 +1198,7 @@ export const buildInvoicesPluggyFirst = (
                 return manualKey === inv.referenceMonth;
             }
 
-            // 2. Data dentro do Período do Bill (se houver bill)
+            // 2. Data dentro do Per├¡odo do Bill (se houver bill)
             if (bill && bill.periodStart && bill.periodEnd) {
                 const startNum = dateToNumber(parseDate(bill.periodStart));
                 const endNum = dateToNumber(parseDate(bill.periodEnd));
@@ -1317,17 +1206,21 @@ export const buildInvoicesPluggyFirst = (
                 return dNum >= startNum && dNum <= endNum;
             }
 
-            // 3. Fallback: Mês da data coincide com mês de referência (apenas para sem billId)
-            // CUIDADO: Isso pode pegar transações de início de mês que seriam da fatura anterior
-            // Só usamos se não tiver bill para definir os limites exatos.
-            return !bill && toMonthKey(parseDate(tx.date)) === inv.referenceMonth;
+            // 3. Fallback: M├¬s da data coincide com m├¬s de refer├¬ncia (apenas para sem billId)
+            // CUIDADO: Isso pode pegar transa├º├Áes de in├¡cio de m├¬s que seriam da fatura anterior
+            // S├│ usamos se n├úo tiver bill para definir os limites exatos.
+            if (!bill) {
+                return toMonthKey(parseDate(tx.date)) === inv.referenceMonth;
+            }
+            
+            return false;
         });
 
         if (orphansInPeriod.length > 0) {
-            console.log(`[DEBUG-INVOICE] Associando ${orphansInPeriod.length} transações órfãs à fatura ${inv.referenceMonth}`);
+            console.log(`[DEBUG-INVOICE] Associando ${orphansInPeriod.length} transa├º├Áes ├│rf├ús ├á fatura ${inv.referenceMonth}`);
             inv.items.push(...orphansInPeriod.map(tx => transactionToInvoiceItem(tx)));
 
-            // Remove as que já foram associadas para não duplicar
+            // Remove as que j├í foram associadas para n├úo duplicar
             // Usando filter in-place reverso ou criando novo array
             const idsToRemove = new Set(orphansInPeriod.map(t => t.id));
             let i = unassignedTxs.length;
@@ -1339,7 +1232,7 @@ export const buildInvoicesPluggyFirst = (
         }
     });
 
-    // 5. Estruturação do Result Final (Sem Projeções)
+    // 5. Estrutura├º├úo do Result Final (Sem Proje├º├Áes)
     const emptyInvoice = (status: 'OPEN' | 'CLOSED' | 'PAID', fallbackMonthOffset = 0): Invoice => {
         const date = new Date(today);
         date.setMonth(date.getMonth() + fallbackMonthOffset);
@@ -1359,28 +1252,14 @@ export const buildInvoicesPluggyFirst = (
         beforeLastInvoice: invoices[effectiveCurrentIdx + 2] || emptyInvoice('PAID', -2),
         closedInvoice: invoices[effectiveCurrentIdx + 1] || emptyInvoice('CLOSED', -1),
         currentInvoice: invoices[effectiveCurrentIdx] || emptyInvoice('OPEN', 0),
-        futureInvoices: invoices.slice(0, effectiveCurrentIdx).reverse(),
+        futureInvoices: invoices.slice(0, effectiveCurrentIdx), // Apenas bills REAIS do Pluggy no futuro
         allFutureTotal: 0,
-        periods
+        periods: calculateInvoicePeriodDates(card, today)
     };
-
-    // Sincronizar periods com as datas REAIS das faturas (que podem ter overrides)
-    const syncPeriod = (inv: Invoice, targetPrefix: string) => {
-        if (inv.closingDate) (result.periods as any)[`${targetPrefix}ClosingDate`] = parseDate(inv.closingDate);
-        if (inv.startDate) (result.periods as any)[`${targetPrefix}InvoiceStart`] = parseDate(inv.startDate);
-        if (inv.dueDate) (result.periods as any)[`${targetPrefix}DueDate`] = parseDate(inv.dueDate);
-    };
-
-    syncPeriod(result.beforeLastInvoice, 'beforeLast');
-    syncPeriod(result.closedInvoice, 'last');
-    syncPeriod(result.currentInvoice, 'current');
-    if (result.futureInvoices.length > 0) {
-        syncPeriod(result.futureInvoices[0], 'next');
-    }
 
     const recalculateTotal = (inv: Invoice) => {
-        // Se a fatura tem itens mas o total está zerado ou se for a atual (que muda sempre), 
-        // recalculamos para garantir precisão visual e evitar o erro de 'valor zerado'
+        // Se a fatura tem itens mas o total est├í zerado ou se for a atual (que muda sempre), 
+        // recalculamos para garantir precis├úo visual e evitar o erro de 'valor zerado'
         const hasItems = inv.items.length > 0;
         const isCurrentOrFuture = inv.status === 'OPEN';
 

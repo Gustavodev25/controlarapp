@@ -1,5 +1,6 @@
-import { useCategories } from '@/hooks/use-categories';
+﻿import { useCategories } from '@/hooks/use-categories';
 import { InvoiceItem } from '@/services/invoiceBuilder';
+import { BlurView } from 'expo-blur';
 import {
     ArrowLeft,
     ArrowRight,
@@ -9,6 +10,7 @@ import {
 } from 'lucide-react-native';
 import React from 'react';
 import {
+    ActivityIndicator,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -26,6 +28,7 @@ interface TransactionOptionsModalProps {
     currentClosingDate?: Date;
     moveOptions?: { target: 'prev' | 'next' | 'current' | 'custom'; label: string; date?: string; icon?: 'prev' | 'next' }[];
     onChangeCategory?: (item: InvoiceItem) => void;
+    loading?: boolean;
 }
 
 export function TransactionOptionsModal({
@@ -37,7 +40,8 @@ export function TransactionOptionsModal({
     onRefund,
     currentClosingDate,
     moveOptions,
-    onChangeCategory
+    onChangeCategory,
+    loading
 }: TransactionOptionsModalProps) {
     const { getCategoryName } = useCategories();
 
@@ -58,7 +62,7 @@ export function TransactionOptionsModal({
             onClose={() => {
                 onClose();
             }}
-            title="Opções da Transação"
+            title="OpÃ§Ãµes da TransaÃ§Ã£o"
         >
             <View style={styles.container}>
                 <View style={styles.headerInfo}>
@@ -66,7 +70,7 @@ export function TransactionOptionsModal({
                         {transaction.description}
                     </Text>
                     <Text style={styles.transactionSubtitle}>
-                        {new Date(transaction.date + 'T12:00:00').toLocaleDateString('pt-BR')} • {getCategoryName(transaction.category)}
+                        {new Date(transaction.date + 'T12:00:00').toLocaleDateString('pt-BR')} â€¢ {getCategoryName(transaction.category)}
                     </Text>
                 </View>
 
@@ -74,7 +78,7 @@ export function TransactionOptionsModal({
                     <View style={styles.sectionWrapper}>
                         <View style={styles.sectionCard}>
                             <Text style={styles.cardTitle}>MOVER FATURA</Text>
-                            {/* Renderiza até 2 opções de movimento relativo (prev/next) com labels customizados */}
+                            {/* Renderiza atÃ© 2 opÃ§Ãµes de movimento relativo (prev/next) com labels customizados */}
                             {moveOptions?.map((opt, index) => (
                                 <React.Fragment key={opt.target}>
                                     <TouchableOpacity
@@ -83,7 +87,6 @@ export function TransactionOptionsModal({
                                         onPress={() => {
                                             if (!canMoveInvoice) return;
                                             onMoveInvoice(opt.target);
-                                            onClose();
                                         }}
                                     >
                                         <View style={[styles.itemIconContainer, { backgroundColor: '#252525' }]}>
@@ -103,65 +106,97 @@ export function TransactionOptionsModal({
 
                         {!canMoveInvoice && (
                             <Text style={styles.projectedHint}>
-                                Transações projetadas sem parcelas não podem ser movidas.
+                                TransaÃ§Ãµes projetadas sem parcelas nÃ£o podem ser movidas.
                             </Text>
                         )}
                     </View>
                 )}
 
                 <View style={styles.sectionCard}>
-                    <Text style={styles.cardTitle}>AÇÕES</Text>
-                    {canRefund && (
+                    <Text style={styles.cardTitle}>AÃ‡Ã•ES</Text>
+                    {isRefund ? (
+                        <TouchableOpacity
+                            style={styles.itemContainer}
+                            onPress={() => {
+                                onDelete(transaction);
+                                onClose();
+                            }}
+                        >
+                            <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 69, 58, 0.15)' }]}>
+                                <Trash2 size={20} color="#FF453A" />
+                            </View>
+                            <View style={styles.itemContent}>
+                                <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transaÃ§Ã£o</Text>
+                            </View>
+                        </TouchableOpacity>
+                    ) : (
                         <>
+                            {canRefund && (
+                                <>
+                                    <TouchableOpacity
+                                        style={styles.itemContainer}
+                                        onPress={() => {
+                                            if (onRefund) onRefund(transaction);
+                                        }}
+                                    >
+                                        <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
+                                            <RotateCcw size={20} color="#4ADE80" />
+                                        </View>
+                                        <View style={styles.itemContent}>
+                                            <Text style={[styles.itemTitle, { color: '#4ADE80' }]}>Estornar transaÃ§Ã£o</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                    <View style={styles.separator} />
+                                </>
+                            )}
+
                             <TouchableOpacity
                                 style={styles.itemContainer}
                                 onPress={() => {
-                                    if (onRefund) onRefund(transaction);
-                                    onClose();
+                                    if (onChangeCategory) onChangeCategory(transaction);
                                 }}
                             >
-                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
-                                    <RotateCcw size={20} color="#4ADE80" />
+                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(217, 119, 87, 0.15)' }]}>
+                                    <Tag size={20} color="#D97757" />
                                 </View>
                                 <View style={styles.itemContent}>
-                                    <Text style={[styles.itemTitle, { color: '#4ADE80' }]}>Estornar transação</Text>
+                                    <Text style={[styles.itemTitle, { color: '#D97757' }]}>Mudar categoria</Text>
                                 </View>
                             </TouchableOpacity>
                             <View style={styles.separator} />
+
+                            <TouchableOpacity
+                                style={styles.itemContainer}
+                                onPress={() => {
+                                    onDelete(transaction);
+                                    onClose();
+                                }}
+                            >
+                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 69, 58, 0.15)' }]}>
+                                    <Trash2 size={20} color="#FF453A" />
+                                </View>
+                                <View style={styles.itemContent}>
+                                    <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transaÃ§Ã£o</Text>
+                                </View>
+                            </TouchableOpacity>
                         </>
                     )}
-
-                    <TouchableOpacity
-                        style={styles.itemContainer}
-                        onPress={() => {
-                            if (onChangeCategory) onChangeCategory(transaction);
-                        }}
-                    >
-                        <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(217, 119, 87, 0.15)' }]}>
-                            <Tag size={20} color="#D97757" />
-                        </View>
-                        <View style={styles.itemContent}>
-                            <Text style={[styles.itemTitle, { color: '#D97757' }]}>Mudar categoria</Text>
-                        </View>
-                    </TouchableOpacity>
-                    <View style={styles.separator} />
-
-                    <TouchableOpacity
-                        style={styles.itemContainer}
-                        onPress={() => {
-                            onDelete(transaction);
-                            onClose();
-                        }}
-                    >
-                        <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 69, 58, 0.15)' }]}>
-                            <Trash2 size={20} color="#FF453A" />
-                        </View>
-                        <View style={styles.itemContent}>
-                            <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transação</Text>
-                        </View>
-                    </TouchableOpacity>
                 </View>
             </View>
+
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <BlurView
+                        intensity={40}
+                        tint="dark"
+                        style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.loaderContainer}>
+                        <ActivityIndicator size="large" color="#D97757" />
+                        <Text style={styles.loadingText}>Processando...</Text>
+                    </View>
+                </View>
+            )}
         </ModalPadrao>
     );
 }
@@ -170,6 +205,28 @@ const styles = StyleSheet.create({
     container: {
         paddingBottom: 20,
         gap: 20
+    },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 28,
+        overflow: 'hidden',
+        zIndex: 999
+    },
+    loaderContainer: {
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: 'rgba(26, 26, 26, 0.8)',
+        padding: 24,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#2A2A2A',
+    },
+    loadingText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
     },
     headerInfo: {
         alignItems: 'flex-start',
