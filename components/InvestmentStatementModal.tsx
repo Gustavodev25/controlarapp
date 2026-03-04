@@ -1,9 +1,9 @@
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { databaseService } from '@/services/firebase';
 import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface Transaction {
     id: string;
@@ -131,12 +131,33 @@ export function InvestmentStatementModal({
         );
     };
 
+    const titleComponent = (
+        <View>
+            <Text style={{ fontSize: 22, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>
+                Extrato
+            </Text>
+            {investmentName.includes(' • ') ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                    <Text style={{ fontSize: 13, color: '#D9D9D9', fontWeight: '500' }}>
+                        {investmentName.split(' • ')[0]}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#909090', marginLeft: 4 }}>
+                        • {investmentName.split(' • ')[1]}
+                    </Text>
+                </View>
+            ) : (
+                <Text style={{ fontSize: 13, color: '#909090', marginTop: 2 }}>
+                    {investmentName}
+                </Text>
+            )}
+        </View>
+    );
+
     return (
-        <BottomModal
+        <ModalPadrao
             visible={visible}
             onClose={onClose}
-            title={`Extrato - ${investmentName}`}
-            height="60%"
+            title={titleComponent}
         >
             <View style={styles.container}>
                 {loading ? (
@@ -144,7 +165,7 @@ export function InvestmentStatementModal({
                         <ActivityIndicator size="large" color="#D97757" />
                     </View>
                 ) : transactions.length > 0 ? (
-                    <ScrollView showsVerticalScrollIndicator={false}>
+                    <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: Dimensions.get('window').height * 0.6 }}>
                         <View style={styles.sectionCard}>
                             {transactions.map((item, index) =>
                                 renderTransaction(item, index, index === transactions.length - 1)
@@ -158,17 +179,17 @@ export function InvestmentStatementModal({
                     </View>
                 )}
             </View>
-        </BottomModal>
+        </ModalPadrao>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
         minHeight: 200,
     },
     centerContainer: {
         flex: 1,
+        minHeight: 200,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,

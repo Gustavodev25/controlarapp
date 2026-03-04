@@ -1,6 +1,6 @@
 import { DeleteConfirmCard } from '@/components/DeleteConfirmCard';
 import { UniversalBackground } from '@/components/UniversalBackground';
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { CategoryGroup, DEFAULT_CATEGORIES } from '@/constants/defaultCategories';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -448,12 +448,11 @@ export default function CategoriesScreen() {
                 </ScrollView>
             </KeyboardAvoidingView>
 
-            <BottomModal
+            <ModalPadrao
                 visible={newCategoryModalVisible}
                 onClose={() => setNewCategoryModalVisible(false)}
                 title="Nova Categoria"
-                height="auto"
-                rightElement={
+                headerRight={
                     <TouchableOpacity
                         onPress={handleCreateCategory}
                         disabled={saving || !newCategoryName.trim()}
@@ -508,7 +507,7 @@ export default function CategoriesScreen() {
                         </View>
                     </View>
                 </ScrollView>
-            </BottomModal>
+            </ModalPadrao>
         </View >
     );
 }

@@ -39,6 +39,7 @@ import {
 } from 'firebase/firestore';
 import { getConnectorLogoUrl } from '../utils/connectorLogo';
 import { isNonInstallmentMerchant } from './installmentRules';
+import { normalizePluggyDate } from './invoiceBuilder';
 import { offlineStorage } from './offlineStorage';
 import { offlineSync } from './offlineSync';
 declare const __DEV__: boolean;
@@ -61,6 +62,21 @@ const normalizeConnectorForStorage = (connector: any) => {
         primaryColor: connectorObject.primaryColor ?? null,
         imageUrl: getConnectorLogoUrl(connectorObject)
     };
+};
+
+const normalizePluggyDateField = (rawDate: any, fieldName: string): string | null => {
+    const normalized = normalizePluggyDate(typeof rawDate === 'string' ? rawDate : null);
+    if (!normalized && rawDate) {
+        console.warn(`[Pluggy] Data inválida em ${fieldName}:`, rawDate);
+    }
+    return normalized;
+};
+
+const pluggyDateTime = (rawDate: any): number => {
+    const normalized = normalizePluggyDate(typeof rawDate === 'string' ? rawDate : null);
+    if (!normalized) return 0;
+    const [y, m, d] = normalized.split('-').map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0).getTime();
 };
 
 const deleteDocRefsInChunks = async (docRefs: any[], chunkSize: number = 200): Promise<number> => {
@@ -99,6 +115,13 @@ const getMonthKeyFromDate = (value: any): string => {
     return datePart.substring(0, 7);
 };
 
+const MONTH_KEY_REGEX = /^\d{4}-\d{2}$/;
+
+const isValidMonthKeyValue = (value: unknown): value is string => {
+    if (typeof value !== 'string') return false;
+    return MONTH_KEY_REGEX.test(value.trim());
+};
+
 const getExistingDocumentIds = async (collectionRef: any, candidateIds: string[]): Promise<Set<string>> => {
     const uniqueIds = Array.from(new Set(
         (candidateIds || [])
@@ -124,6 +147,38 @@ const getExistingDocumentIds = async (collectionRef: any, candidateIds: string[]
     }
 
     return existingIds;
+};
+
+const getExistingDocumentsById = async (
+    collectionRef: any,
+    candidateIds: string[]
+): Promise<Map<string, Record<string, any>>> => {
+    const uniqueIds = Array.from(new Set(
+        (candidateIds || [])
+            .map((id) => String(id || '').trim())
+            .filter(Boolean)
+    ));
+
+    const docsById = new Map<string, Record<string, any>>();
+    if (uniqueIds.length === 0) {
+        return docsById;
+    }
+
+    const idChunks = splitIntoChunks(uniqueIds, FIRESTORE_ID_LOOKUP_CHUNK_SIZE);
+
+    for (let i = 0; i < idChunks.length; i += FIRESTORE_ID_LOOKUP_CONCURRENCY) {
+        const lookupBatch = idChunks.slice(i, i + FIRESTORE_ID_LOOKUP_CONCURRENCY);
+        const snapshots = await Promise.all(
+            lookupBatch.map((chunk) => getDocs(query(collectionRef, where(documentId(), 'in', chunk))))
+        );
+        snapshots.forEach((snapshot) => {
+            snapshot.docs.forEach((docSnap) => {
+                docsById.set(docSnap.id, (docSnap.data() || {}) as Record<string, any>);
+            });
+        });
+    }
+
+    return docsById;
 };
 
 const commitSetDocsInBatches = async (
@@ -1118,10 +1173,17 @@ export const databaseService = {
             const accountsRef = collection(db, 'users', userId, 'accounts');
             const querySnapshot = await getDocs(accountsRef);
 
-            const accounts = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            const accounts = querySnapshot.docs.map(doc => {
+                const data = doc.data() as any;
+                return {
+                    id: doc.id,
+                    ...data,
+                    balanceCloseDate: data.balanceCloseDate ?? data.creditData?.balanceCloseDate ?? null,
+                    balanceDueDate: data.balanceDueDate ?? data.creditData?.balanceDueDate ?? null,
+                    creditLimit: data.creditLimit ?? data.creditData?.creditLimit ?? null,
+                    availableCreditLimit: data.availableCreditLimit ?? data.creditData?.availableCreditLimit ?? null,
+                };
+            });
 
             // Cache for offline use
             offlineStorage.saveAccounts(userId, accounts);
@@ -1223,7 +1285,7 @@ export const databaseService = {
         console.log('[Firebase] updateAccount chamado:', { userId, accountId, data });
         try {
             const docRef = doc(db, 'users', userId, 'accounts', accountId);
-            console.log('[Firebase] ReferÃªncia do documento:', docRef.path);
+            console.log('[Firebase] Referência do documento:', docRef.path);
 
             const updateData = {
                 ...data,
@@ -1257,23 +1319,73 @@ export const databaseService = {
 
             // Find current/latest bill from bills array (if available)
             let currentBill = null;
+            let sortedBills: any[] = [];
+
             if (accountData.bills && accountData.bills.length > 0) {
                 const now = new Date();
                 // Sort bills by dueDate descending
-                const sortedBills = [...accountData.bills].sort((a, b) =>
-                    new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()
+                sortedBills = [...accountData.bills].sort((a, b) =>
+                    pluggyDateTime(b.dueDate) - pluggyDateTime(a.dueDate)
                 );
 
                 // Find the first bill with dueDate >= today (current open bill)
-                currentBill = sortedBills.find(bill => new Date(bill.dueDate) >= now);
+                currentBill = sortedBills.find(bill => pluggyDateTime(bill.dueDate) >= now.getTime());
 
                 // If no future bill found, use the most recent one
                 if (!currentBill && sortedBills.length > 0) {
                     currentBill = sortedBills[0];
                 }
-
-
             }
+
+            // ============================================
+            // DATAS DO PLUGGY: 100% automáticas do banco
+            // Prioridade: creditData (campo direto da API) > fallback bills
+            // ============================================
+            const rawCreditCloseDate = accountData.creditData?.balanceCloseDate || null;
+            const rawCreditDueDate = accountData.creditData?.balanceDueDate || null;
+
+            console.log('[Pluggy] Datas brutas da API creditData:', {
+                accountId,
+                accountName: accountData.name,
+                'creditData.balanceCloseDate': rawCreditCloseDate,
+                'creditData.balanceDueDate': rawCreditDueDate,
+                'accountData.balanceCloseDate': accountData.balanceCloseDate || null,
+                'accountData.balanceDueDate': accountData.balanceDueDate || null,
+            });
+
+            // 1. Prioridade máxima: datas diretas de creditData da API Pluggy
+            let finalBalanceCloseDate = normalizePluggyDateField(
+                rawCreditCloseDate || accountData.balanceCloseDate,
+                'balanceCloseDate'
+            );
+            let finalBalanceDueDate = normalizePluggyDateField(
+                rawCreditDueDate || accountData.balanceDueDate,
+                'balanceDueDate'
+            );
+
+            // 2. Fallback para bills SOMENTE se creditData não forneceu as datas
+            if (!finalBalanceCloseDate && currentBill) {
+                finalBalanceCloseDate = normalizePluggyDateField(
+                    currentBill.date || currentBill.closeDate || currentBill.periodEnd,
+                    'fallback:currentBill.closeDate'
+                );
+            } else if (!finalBalanceCloseDate && sortedBills.length > 0) {
+                const latest = sortedBills[0];
+                finalBalanceCloseDate = normalizePluggyDateField(
+                    latest.date || latest.closeDate || latest.periodEnd,
+                    'fallback:latestBill.closeDate'
+                );
+            }
+
+            if (!finalBalanceDueDate && currentBill) {
+                finalBalanceDueDate = normalizePluggyDateField(currentBill.dueDate, 'fallback:currentBill.dueDate');
+            }
+
+            console.log('[Pluggy] Datas finais normalizadas para salvar:', {
+                accountId,
+                finalBalanceCloseDate,
+                finalBalanceDueDate,
+            });
 
             // Map Pluggy account to our account structure
             const accountDoc = {
@@ -1288,33 +1400,45 @@ export const databaseService = {
                 balance: accountData.balance ?? 0,
                 currencyCode: accountData.currencyCode || 'BRL',
 
-                // Credit card specific
+                // Credit card specific — datas 100% do Pluggy (sem cálculo manual)
                 creditLimit: accountData.creditData?.creditLimit ?? null,
                 availableCreditLimit: accountData.creditData?.availableCreditLimit ?? null,
-                // Datas de fechamento e vencimento do creditData
-                balanceCloseDate: accountData.creditData?.balanceCloseDate ?? null,
-                balanceDueDate: accountData.creditData?.balanceDueDate ?? null,
+                balanceCloseDate: finalBalanceCloseDate || null,
+                balanceDueDate: finalBalanceDueDate || null,
+
+                // Dados creditData originais do Pluggy (preservados para referência)
+                creditData: accountData.creditData ? {
+                    level: accountData.creditData.level ?? null,
+                    brand: accountData.creditData.brand ?? null,
+                    balanceCloseDate: normalizePluggyDateField(rawCreditCloseDate, 'creditData.balanceCloseDate'),
+                    balanceDueDate: normalizePluggyDateField(rawCreditDueDate, 'creditData.balanceDueDate'),
+                    availableCreditLimit: accountData.creditData.availableCreditLimit ?? null,
+                    creditLimit: accountData.creditData.creditLimit ?? null,
+                    isLimitFlexible: accountData.creditData.isLimitFlexible ?? null,
+                    balanceForeignCurrency: accountData.creditData.balanceForeignCurrency ?? null,
+                    minimumPayment: accountData.creditData.minimumPayment ?? null,
+                    status: accountData.creditData.status ?? null,
+                    holderType: accountData.creditData.holderType ?? null,
+                } : null,
 
                 // Bills (faturas) do Pluggy - dados da fatura atual
                 currentBill: currentBill ? {
                     id: currentBill.id ?? null,
-                    dueDate: currentBill.dueDate ? currentBill.dueDate.split('T')[0] : null,
-                    // Try to get closing date from 'date' (Pluggy standard) or 'closeDate'
-                    closeDate: currentBill.date ? currentBill.date.split('T')[0] : (currentBill.closeDate ? currentBill.closeDate.split('T')[0] : null),
-                    // IMPORTANTE: periodStart e periodEnd sÃ£o usados pelo invoiceBuilder para cÃ¡lculo preciso
-                    periodStart: currentBill.periodStart ? currentBill.periodStart.split('T')[0] : null,
-                    periodEnd: currentBill.periodEnd ? currentBill.periodEnd.split('T')[0] : null,
+                    dueDate: normalizePluggyDateField(currentBill.dueDate, 'currentBill.dueDate'),
+                    closeDate: normalizePluggyDateField(currentBill.date || currentBill.closeDate, 'currentBill.closeDate'),
+                    periodStart: normalizePluggyDateField(currentBill.periodStart, 'currentBill.periodStart'),
+                    periodEnd: normalizePluggyDateField(currentBill.periodEnd, 'currentBill.periodEnd'),
                     totalAmount: currentBill.totalAmount ?? null,
                     minimumPaymentAmount: currentBill.minimumPaymentAmount ?? null,
                     allowsInstallments: currentBill.allowsInstallments ?? null,
                 } : null,
-                // Array de todas as bills para histÃ³rico
+                // Array de todas as bills para histórico
                 bills: accountData.bills ? accountData.bills.map((bill: any) => ({
                     id: bill.id ?? null,
-                    dueDate: bill.dueDate ? bill.dueDate.split('T')[0] : null,
-                    closeDate: bill.date ? bill.date.split('T')[0] : (bill.closeDate ? bill.closeDate.split('T')[0] : null),
-                    periodStart: bill.periodStart ? bill.periodStart.split('T')[0] : null,
-                    periodEnd: bill.periodEnd ? bill.periodEnd.split('T')[0] : null,
+                    dueDate: normalizePluggyDateField(bill.dueDate, 'bill.dueDate'),
+                    closeDate: normalizePluggyDateField(bill.date || bill.closeDate, 'bill.closeDate'),
+                    periodStart: normalizePluggyDateField(bill.periodStart, 'bill.periodStart'),
+                    periodEnd: normalizePluggyDateField(bill.periodEnd, 'bill.periodEnd'),
                     totalAmount: bill.totalAmount ?? null,
                     minimumPaymentAmount: bill.minimumPaymentAmount ?? null,
                 })) : null,
@@ -1557,14 +1681,16 @@ export const databaseService = {
             // Use Pluggy transaction ID as document ID to avoid duplicates
             const transactionId = transaction.id;
             const docRef = doc(db, 'users', userId, 'transactions', transactionId);
+            const transactionDate = normalizePluggyDateField(transaction?.date, 'transaction.date')
+                || normalizeDateForStorage(transaction?.date).split('T')[0];
 
             // Map Pluggy transaction to our transaction structure
             const transactionDoc = {
                 id: transactionId,
-                description: transaction.description || transaction.descriptionRaw || 'TransaÃ§Ã£o',
+                description: transaction.description || transaction.descriptionRaw || 'Transação',
                 amount: Math.abs(transaction.amount || 0),
                 type: (transaction.amount || 0) >= 0 ? 'income' : 'expense',
-                date: transaction.date || new Date().toISOString(),
+                date: transactionDate,
                 category: transaction.category || null,
                 categoryId: transaction.categoryId || null,
 
@@ -1632,7 +1758,7 @@ export const databaseService = {
                 ? transaction.date.split('T')[0]
                 : new Date().toISOString().split('T')[0];
 
-            const description = transaction.description || transaction.descriptionRaw || 'TransaÃ§Ã£o';
+            const description = transaction.description || transaction.descriptionRaw || 'Transação';
             const ignoreInstallments = isNonInstallmentMerchant(description);
             const installmentNumber = ignoreInstallments
                 ? 1
@@ -1652,7 +1778,7 @@ export const databaseService = {
 
             // Map Pluggy transaction to credit card transaction structure
             // This format is IDENTICAL to what the web app saves
-            const transactionDoc = {
+            const transactionDoc: Record<string, any> = {
                 // Core transaction fields (same as web)
                 amount: Math.abs(transaction.amount || 0),
                 cardId: transaction.accountId || accountInfo?.id || null,
@@ -1704,6 +1830,34 @@ export const databaseService = {
             // Check if transaction already exists
             const existingDoc = await getDoc(docRef);
             const isNew = !existingDoc.exists();
+
+            if (!isNew) {
+                const existingData = existingDoc.data() || {};
+                const existingManualMonthRaw = typeof existingData.manualInvoiceMonth === 'string'
+                    ? existingData.manualInvoiceMonth.trim()
+                    : '';
+                const existingInvoiceMonthRaw = typeof existingData.invoiceMonthKey === 'string'
+                    ? existingData.invoiceMonthKey.trim()
+                    : '';
+                const existingDateRaw = typeof existingData.date === 'string'
+                    ? existingData.date.trim()
+                    : '';
+                const hasManualOverride = existingData.invoiceMonthKeyManual === true
+                    || isValidMonthKeyValue(existingManualMonthRaw);
+
+                if (hasManualOverride) {
+                    const resolvedManualMonth = isValidMonthKeyValue(existingManualMonthRaw)
+                        ? existingManualMonthRaw
+                        : (isValidMonthKeyValue(existingInvoiceMonthRaw) ? existingInvoiceMonthRaw : invoiceMonthKey);
+
+                    transactionDoc.invoiceMonthKey = resolvedManualMonth;
+                    transactionDoc.invoiceMonthKeyManual = true;
+                    transactionDoc.manualInvoiceMonth = resolvedManualMonth;
+                    if (existingDateRaw) {
+                        transactionDoc.date = existingDateRaw;
+                    }
+                }
+            }
 
             await setDoc(docRef, transactionDoc, { merge: true });
 
@@ -1868,7 +2022,7 @@ export const databaseService = {
                         if (isCreditCard) {
                             const transactionDateRaw = normalizeDateForStorage(tx?.date);
                             const transactionDate = transactionDateRaw.split('T')[0];
-                            const description = tx.description || tx.descriptionRaw || 'Transacao';
+                            const description = tx.description || tx.descriptionRaw || 'Transação';
                             const ignoreInstallments = isNonInstallmentMerchant(description);
                             const installmentNumber = ignoreInstallments
                                 ? 1
@@ -1940,10 +2094,11 @@ export const databaseService = {
                                 results.skippedTransactionTypes++;
                             }
                         } else {
-                            const transactionDate = normalizeDateForStorage(tx?.date);
+                            const transactionDate = normalizePluggyDateField(tx?.date, 'transaction.date')
+                                || normalizeDateForStorage(tx?.date).split('T')[0];
                             const transactionDoc = {
                                 id: transactionId,
-                                description: tx.description || tx.descriptionRaw || 'Transacao',
+                                description: tx.description || tx.descriptionRaw || 'Transação',
                                 amount,
                                 type,
                                 date: transactionDate,
@@ -1994,6 +2149,10 @@ export const databaseService = {
                 getExistingDocumentIds(checkingRef, checkingCandidates.map((candidate) => candidate.id)),
                 getExistingDocumentIds(creditRef, creditCandidates.map((candidate) => candidate.id))
             ]);
+            const existingCreditDocsById = await getExistingDocumentsById(
+                creditRef,
+                Array.from(existingCreditIds)
+            );
 
             const checkingWrites: { docRef: any; data: Record<string, any>; merge?: boolean }[] = [];
             const creditWrites: { docRef: any; data: Record<string, any>; merge?: boolean }[] = [];
@@ -2049,9 +2208,45 @@ export const databaseService = {
             }
 
             for (const candidate of creditCandidates) {
+                const existingCreditData = existingCreditDocsById.get(candidate.id);
+                let writeData = { ...candidate.data };
+
+                if (existingCreditData) {
+                    const existingManualMonthRaw = typeof existingCreditData.manualInvoiceMonth === 'string'
+                        ? existingCreditData.manualInvoiceMonth.trim()
+                        : '';
+                    const existingInvoiceMonthRaw = typeof existingCreditData.invoiceMonthKey === 'string'
+                        ? existingCreditData.invoiceMonthKey.trim()
+                        : '';
+                    const existingDateRaw = typeof existingCreditData.date === 'string'
+                        ? existingCreditData.date.trim()
+                        : '';
+                    const hasManualOverride = existingCreditData.invoiceMonthKeyManual === true
+                        || isValidMonthKeyValue(existingManualMonthRaw);
+
+                    if (hasManualOverride) {
+                        const resolvedManualMonth = isValidMonthKeyValue(existingManualMonthRaw)
+                            ? existingManualMonthRaw
+                            : (isValidMonthKeyValue(existingInvoiceMonthRaw) ? existingInvoiceMonthRaw : writeData.invoiceMonthKey);
+
+                        writeData.invoiceMonthKey = resolvedManualMonth;
+                        writeData.invoiceMonthKeyManual = true;
+                        writeData.manualInvoiceMonth = resolvedManualMonth;
+                        if (existingDateRaw) {
+                            writeData.date = existingDateRaw;
+                        }
+                    } else {
+                        // Para docs já existentes, não sobrescrevemos mês manual/automático no sync.
+                        // Isso evita desfazer ajustes do usuário por corrida de sincronização.
+                        delete writeData.invoiceMonthKey;
+                        delete writeData.invoiceMonthKeyManual;
+                        delete writeData.manualInvoiceMonth;
+                    }
+                }
+
                 creditWrites.push({
                     docRef: doc(creditRef, candidate.id),
-                    data: candidate.data,
+                    data: writeData,
                     merge: true
                 });
 
@@ -3104,11 +3299,11 @@ export const databaseService = {
                     const transactionsRef = collection(db, 'users', userId, 'transactions');
                     const qByInvestment = query(transactionsRef, where('isInvestment', '==', true));
                     const txSnapshot = await getDocs(qByInvestment);
-                    
+
                     const matchingTransactions = txSnapshot.docs
                         .map(doc => ({ id: doc.id, ...doc.data() }))
                         .filter((tx: any) => tx.description?.includes(investmentName));
-                    
+
                     console.log('[Firebase] Transacoes com isInvestment + description:', matchingTransactions.length);
 
                     rawTransactions.push(...matchingTransactions);
@@ -3212,11 +3407,21 @@ export const databaseService = {
 
             // Build investment data
             const bankName = normalizedConnector?.name || account.name || 'Banco';
-            const accountNumber = account.number ? ` (${account.number})` : '';
+            const accountNumber = account.number ? ` • ${account.number}` : '';
+
+            // Clean up existing name if it has encoding errors or old format (parentheses with numbers/dashes)
+            let currentName = existingData?.name;
+            if (currentName) {
+                if (currentName.includes('Ã§')) {
+                    currentName = currentName.replace(/Ã§/g, 'ç').replace(/Ã£/g, 'ã');
+                }
+                // Convert (000...-0) to • 000...-0 format
+                currentName = currentName.replace(/\s\(([\d\-]+)\)$/, ' • $1');
+            }
 
             const investmentData = {
                 // Keep existing name if user renamed it, otherwise use bank name
-                name: existingData?.name || `PoupanÃ§a ${bankName}${accountNumber}`,
+                name: currentName || `Poupança ${bankName}${accountNumber}`,
                 currentAmount: Number(account.balance ?? 0),
                 // Keep existing target if set, otherwise set to 0 (no target for synced accounts)
                 targetAmount: existingData?.targetAmount ?? 0,
@@ -3334,33 +3539,43 @@ export const databaseService = {
         let savingsAccounts: any[] = [];
 
         const notify = () => {
-            // IDs de investimentos que jÃ¡ foram criados a partir de contas poupanÃ§a
+            // IDs de investimentos que já foram criados a partir de contas poupança
             const existingSavingsIds = new Set(
                 manualInvestments
                     .filter(i => i.source === 'pluggy' && i.pluggyAccountId)
                     .map(i => i.pluggyAccountId)
             );
 
-            // Converter contas poupanÃ§a que ainda nÃ£o existem como investments
-            // Filtrar apenas poupanÃ§as com saldo > 0
+            // Converter contas poupança que ainda não existem como investments
+            // Filtrar apenas poupanças com saldo > 0
             const newSavingsAsInvestments = savingsAccounts
                 .filter(acc => !existingSavingsIds.has(acc.id) && Number(acc.balance ?? 0) > 0)
-                .map(acc => ({
-                    id: `savings_${acc.id}`,
-                    name: acc.name || `PoupanÃ§a ${acc.connector?.name || 'Banco'}`,
-                    currentAmount: Number(acc.balance ?? 0),
-                    targetAmount: 0,
-                    color: acc.connector?.primaryColor || '#D97757',
-                    icon: 'savings',
-                    createdAt: acc.createdAt || new Date().toISOString().split('T')[0],
-                    source: 'pluggy',
-                    pluggyAccountId: acc.id,
-                    pluggyItemId: acc.pluggyItemId || null,
-                    connector: acc.connector || null,
-                    lastSyncedAt: acc.lastSyncedAt || null
-                }));
+                .map(acc => {
+                    const bankName = acc.connector?.name || acc.name || 'Banco';
+                    const accNum = acc.number ? ` • ${acc.number}` : '';
+                    let name = acc.name || `Poupança ${bankName}${accNum}`;
 
-            // Combinar: investments manuais/existentes + poupanÃ§as novas
+                    // Cleanup name
+                    name = name.replace(/Ã§/g, 'ç').replace(/Ã£/g, 'ã');
+                    name = name.replace(/\s\(([\d\-]+)\)$/, ' • $1');
+
+                    return {
+                        id: `savings_${acc.id}`,
+                        name: name,
+                        currentAmount: Number(acc.balance ?? 0),
+                        targetAmount: 0,
+                        color: acc.connector?.primaryColor || '#D97757',
+                        icon: 'savings',
+                        createdAt: acc.createdAt || new Date().toISOString().split('T')[0],
+                        source: 'pluggy',
+                        pluggyAccountId: acc.id,
+                        pluggyItemId: acc.pluggyItemId || null,
+                        connector: acc.connector || null,
+                        lastSyncedAt: acc.lastSyncedAt || null
+                    };
+                });
+
+            // Combinar: investments manuais/existentes + poupanças novas
             const allItems = [...manualInvestments, ...newSavingsAsInvestments];
 
             // Ordenar por createdAt
@@ -3373,16 +3588,26 @@ export const databaseService = {
             callback(allItems);
         };
 
-        // Listener para investments (caixinhas manuais e poupanÃ§as jÃ¡ convertidas)
+        // Listener para investments (caixinhas manuais e poupanças já convertidas)
         const unsubInvestments = onSnapshot(investmentsRef, (snapshot) => {
-            manualInvestments = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            manualInvestments = snapshot.docs.map(doc => {
+                const data = doc.data();
+                let name = data.name || '';
+                if (name.includes('Ã§')) {
+                    name = name.replace(/Ã§/g, 'ç').replace(/Ã£/g, 'ã');
+                }
+                // Convert (000...-0) to • 000...-0 format
+                name = name.replace(/\s\(([\d\-]+)\)$/, ' • $1');
+                return {
+                    id: doc.id,
+                    ...data,
+                    name
+                };
+            });
             notify();
         });
 
-        // Listener para accounts (buscar contas poupanÃ§a)
+        // Listener para accounts (buscar contas poupança)
         const qSavings = query(accountsRef, where('subtype', '==', 'SAVINGS_ACCOUNT'));
         const unsubSavings = onSnapshot(qSavings, (snapshot) => {
             savingsAccounts = snapshot.docs.map(doc => ({
@@ -3392,7 +3617,7 @@ export const databaseService = {
             notify();
         });
 
-        // Retornar funÃ§Ã£o para cancelar ambos os listeners
+        // Retornar função para cancelar ambos os listeners
         return () => {
             unsubInvestments();
             unsubSavings();

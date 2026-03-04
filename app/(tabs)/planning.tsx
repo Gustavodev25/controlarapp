@@ -205,7 +205,16 @@ const InvestmentCard = React.memo(({ item, index, onPress, onHoldStart, onHoldEn
                         />
                     </View>
                     <View style={{ flex: 1 }}>
-                        <Text style={styles.cardTitle}>{item.name}</Text>
+                        <Text style={styles.cardTitle} numberOfLines={1}>
+                            {item.name.includes(' • ') ? (
+                                <>
+                                    {item.name.split(' • ')[0]}
+                                    <Text style={styles.accountNumberText}> • {item.name.split(' • ')[1]}</Text>
+                                </>
+                            ) : (
+                                item.name
+                            )}
+                        </Text>
                         {item.source === 'pluggy' ? (
                             <View style={styles.openFinancePill}>
                                 <Text style={styles.openFinancePillText}>Poupança • Conta Bancária</Text>
@@ -222,43 +231,34 @@ const InvestmentCard = React.memo(({ item, index, onPress, onHoldStart, onHoldEn
                 </View>
 
                 {/* Amounts */}
+                <View style={styles.amountContainer}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text style={styles.amountLabel}>{item.source === 'pluggy' ? 'Saldo Poupança' : 'Guardado'}</Text>
+                        <Text style={[styles.currentAmount, item.source === 'pluggy' && { color: '#04D361' }]} numberOfLines={1} adjustsFontSizeToFit>
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.currentAmount)}
+                        </Text>
+                    </View>
+                    <View style={{ flexShrink: 0, alignItems: 'flex-end' }}>
+                        <Text style={styles.amountLabel}>Meta</Text>
+                        <Text style={[styles.targetAmount, { textAlign: 'right' }]} numberOfLines={1}>
+                            {item.targetAmount > 0
+                                ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.targetAmount)
+                                : 'Sem meta'}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Footer: Progress Bar or Sync Info */}
                 {item.source === 'pluggy' ? (
-                    // Layout simplificado para poupança sincronizada
-                    <View style={styles.amountContainer}>
-                        <View>
-                            <Text style={styles.amountLabel}>Saldo Poupança</Text>
-                            <Text style={[styles.currentAmount, { color: '#04D361' }]}>
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.currentAmount)}
+                    item.lastSyncedAt && (
+                        <View style={{ marginTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', paddingTop: 8, marginHorizontal: -12, paddingHorizontal: 12 }}>
+                            <Text style={[styles.amountLabel, { fontSize: 10, marginBottom: 0, textAlign: 'right' }]}>
+                                Última atualização em {new Date(item.lastSyncedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </Text>
                         </View>
-                        {item.lastSyncedAt && (
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={styles.amountLabel}>Última Sync</Text>
-                                <Text style={styles.targetAmount}>
-                                    {new Date(item.lastSyncedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                </Text>
-                            </View>
-                        )}
-                    </View>
+                    )
                 ) : (
-                    // Layout original para caixinhas manuais
-                    <>
-                        <View style={styles.amountContainer}>
-                            <View>
-                                <Text style={styles.amountLabel}>Guardado</Text>
-                                <Text style={styles.currentAmount}>
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.currentAmount)}
-                                </Text>
-                            </View>
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={styles.amountLabel}>Meta</Text>
-                                <Text style={styles.targetAmount}>
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.targetAmount)}
-                                </Text>
-                            </View>
-                        </View>
-
-                        {/* Progress Bar */}
+                    item.targetAmount > 0 && (
                         <View style={styles.progressContainer}>
                             <View style={styles.progressHeader}>
                                 <Text style={styles.progressTextLeft}>{Math.round(percentage)}% concluído</Text>
@@ -275,7 +275,7 @@ const InvestmentCard = React.memo(({ item, index, onPress, onHoldStart, onHoldEn
                                 />
                             </View>
                         </View>
-                    </>
+                    )
                 )}
             </Pressable>
         </Animated.View>
@@ -316,7 +316,8 @@ export default function PlanningScreen() {
         if (!user) return;
 
         const unsubscribe = databaseService.onInvestmentsChange(user.uid, (data) => {
-            setInvestments(data as Investment[]);
+            const filteredData = (data as Investment[]).filter(inv => inv.currentAmount > 0);
+            setInvestments(filteredData);
             setLoading(false);
         });
 
@@ -684,6 +685,11 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#FFFFFF',
         marginBottom: 1,
+    },
+    accountNumberText: {
+        fontSize: 11,
+        fontWeight: '400',
+        color: '#909090',
     },
     cardSubtitle: {
         fontSize: 10,

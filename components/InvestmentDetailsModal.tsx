@@ -1,4 +1,4 @@
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { ArrowLeftRight, ArrowUpCircle, DollarSign, List, Pencil, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -89,12 +89,24 @@ export function InvestmentDetailsModal({
 
     // Render Menu Options
     if (view === 'menu') {
+        const titleComponent = investmentName.includes(' • ') ? (
+            <View>
+                <Text style={{ fontSize: 22, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>
+                    {investmentName.split(' • ')[0]}
+                </Text>
+                <Text style={{ fontSize: 13, color: '#909090', marginTop: 2 }}>
+                    {investmentName.split(' • ')[1]}
+                </Text>
+            </View>
+        ) : (
+            investmentName
+        );
+
         return (
-            <BottomModal
+            <ModalPadrao
                 visible={visible}
                 onClose={onClose}
-                title={investmentName}
-                height="auto"
+                title={titleComponent}
             >
                 <View style={styles.container}>
                     <View style={styles.sectionCard}>
@@ -153,20 +165,28 @@ export function InvestmentDetailsModal({
                         </View>
                     </View>
                 </View>
-            </BottomModal>
+            </ModalPadrao>
         );
     }
 
     // Render Movement Form
     return (
-        <BottomModal
+        <ModalPadrao
             visible={visible}
             onClose={() => {
                 Keyboard.dismiss();
                 setView('menu');
             }}
             title={type === 'deposit' ? 'Guardar Dinheiro' : 'Resgatar Dinheiro'}
-            height={500}
+            headerRight={
+                <TouchableOpacity
+                    onPress={handleSave}
+                    disabled={!amountStr}
+                    style={{ opacity: (!amountStr) ? 0.5 : 1 }}
+                >
+                    <Text style={{ color: '#D97757', fontWeight: 'bold', fontSize: 16 }}>Confirmar</Text>
+                </TouchableOpacity>
+            }
         >
             <ScrollView
                 contentContainerStyle={{ paddingBottom: 20 }}
@@ -230,21 +250,9 @@ export function InvestmentDetailsModal({
                             </View>
                         </View>
                     </View>
-
-                    {/* Botão Salvar */}
-                    <TouchableOpacity
-                        style={[
-                            styles.saveButton,
-                            (!amountStr) && { opacity: 0.5 }
-                        ]}
-                        onPress={handleSave}
-                        disabled={!amountStr}
-                    >
-                        <Text style={styles.saveButtonText}>Confirmar</Text>
-                    </TouchableOpacity>
                 </View>
             </ScrollView>
-        </BottomModal>
+        </ModalPadrao>
     );
 }
 

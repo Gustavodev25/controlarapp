@@ -1,14 +1,12 @@
 import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
-import { CreditCardSettingsModal } from '@/components/CreditCardSettingsModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
-import { WalletStackSelector } from '@/components/WalletStackSelector';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useCategories } from '@/hooks/use-categories';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
-import { databaseService, db } from '@/services/firebase';
+import { db } from '@/services/firebase';
+import { normalizePluggyDate } from '@/services/invoiceBuilder';
 import { isNonInstallmentMerchant } from '@/services/installmentRules';
-import { CreditCardAccount } from '@/services/invoiceBuilder';
 import {
     dedupeTransactionsBySourceId,
     mergeSortedTransactions
@@ -37,7 +35,6 @@ import {
     Landmark,
     Music,
     Plane,
-    Settings,
     Shirt,
     ShoppingBag,
     ShoppingCart,
@@ -114,7 +111,7 @@ const getCategoryConfig = (category?: string) => {
     if (cat.includes('uber') || cat.includes('99') || cat.includes('transport') || cat.includes('taxi') || cat.includes('cab')) { icon = Car; color = colors.transport; }
     else if (cat.includes('fuel') || cat.includes('gas') || cat.includes('posto') || cat.includes('shell') || cat.includes('ipiranga')) { icon = Fuel; color = colors.transport; }
     else if (cat.includes('parking') || cat.includes('estacionamento') || cat.includes('park')) { icon = Car; color = colors.transport; }
-    else if (cat.includes('auto') || cat.includes('repair') || cat.includes('mecanic') || cat.includes('manuten')) { icon = Settings; color = colors.transport; }
+    else if (cat.includes('auto') || cat.includes('repair') || cat.includes('mecanic') || cat.includes('manuten')) { icon = Car; color = colors.transport; }
 
     // Travel
     else if (cat.includes('flight') || cat.includes('airline') || cat.includes('travel') || cat.includes('viagem') || cat.includes('latam') || cat.includes('azul')) { icon = Plane; color = colors.tech; }
@@ -166,6 +163,16 @@ const formatCurrency = (amount: number) => {
         style: 'currency',
         currency: 'BRL',
     }).format(amount);
+};
+
+const normalizeTransactionDate = (value?: string): string => {
+    const normalized = normalizePluggyDate(typeof value === 'string' ? value : null);
+    if (normalized) return normalized;
+    if (typeof value === 'string' && value.trim()) {
+        const trimmed = value.trim();
+        return trimmed.includes('T') ? trimmed.split('T')[0] : trimmed;
+    }
+    return '';
 };
 
 // Componente de item de transação com ícone
@@ -262,16 +269,10 @@ export default function TransactionsScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // Credit Card Settings State
-    const [settingsVisible, setSettingsVisible] = useState(false);
-    const [creditAccounts, setCreditAccounts] = useState<CreditCardAccount[]>([]);
-    const [selectedCardId, setSelectedCardId] = useState<string>('');
-    const [loadingAccount, setLoadingAccount] = useState(false);
-
     const [loadingDots, setLoadingDots] = useState('');
 
     useEffect(() => {
-        if (!loading && !loadingAccount) return;
+        if (!loading) return;
         const interval = setInterval(() => {
             setLoadingDots(prev => {
                 if (prev === '...') return '';
@@ -279,7 +280,7 @@ export default function TransactionsScreen() {
             });
         }, 500);
         return () => clearInterval(interval);
-    }, [loading, loadingAccount]);
+    }, [loading]);
 
     // Pagination State
     const [lastCheckingDoc, setLastCheckingDoc] = useState<QueryDocumentSnapshot | null>(null);
@@ -305,9 +306,6 @@ export default function TransactionsScreen() {
         : filter === 'account'
             ? hasMoreChecking
             : (hasMoreChecking || hasMoreCredit);
-    // If filtering by card, check if the selected card has settings. If multiple cards, check the selected one.
-    const selectedAccount = creditAccounts.find(c => c.id === selectedCardId);
-    const hasSettings = isCredit ? !!selectedAccount?.closingDateSettings : true;
 
     // Calcular quantidade de filtros ativos
     const activeFilterCount = [
@@ -401,14 +399,9 @@ export default function TransactionsScreen() {
                 matches = matches && item.date.startsWith(filters.year);
             }
 
-            // Card Filter
-            if (isCredit && selectedCardId && creditAccounts.length > 0) {
-                matches = matches && (item.cardId === selectedCardId || item.accountId === selectedCardId);
-            }
-
             return matches;
         });
-    }, [transactions, filters, activeFilterCount, isCredit, selectedCardId, creditAccounts]);
+    }, [transactions, filters, activeFilterCount, isCredit]);
 
     // Agrupar transações por dia
     const groupedTransactions = useMemo(() => {
@@ -505,7 +498,7 @@ export default function TransactionsScreen() {
                             description: data.description || '',
                             amount: Number(data.amount || 0),
                             type: data.type === 'income' ? 'income' : 'expense',
-                            date: data.date || '',
+                            date: normalizeTransactionDate(data.date),
                             category: data.category,
                             invoiceMonthKey: data.invoiceMonthKey,
                             installmentNumber: data.installmentNumber,
@@ -551,7 +544,7 @@ export default function TransactionsScreen() {
                             description: data.description || '',
                             amount: Number(data.amount || 0),
                             type: data.type === 'income' ? 'income' : 'expense',
-                            date: data.date || '',
+                            date: normalizeTransactionDate(data.date),
                             category: data.category,
                             invoiceMonthKey: data.invoiceMonthKey,
                             invoiceMonthKeyManual: (data as any).invoiceMonthKeyManual === true,
@@ -603,24 +596,6 @@ export default function TransactionsScreen() {
         }
     };
 
-    const fetchCreditAccounts = async () => {
-        if (!user || !isCredit) return;
-        setLoadingAccount(true);
-        try {
-            const result = await databaseService.getAccounts(user.uid);
-            if (result.success && result.data) {
-                const cards = result.data.filter((a: any) => a.type === 'credit' || a.type === 'CREDIT') as CreditCardAccount[];
-                setCreditAccounts(cards);
-                if (cards.length > 0 && !selectedCardId) {
-                    setSelectedCardId(cards[0].id);
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching credit accounts:', error);
-        } finally {
-            setLoadingAccount(false);
-        }
-    };
 
     useEffect(() => {
         // Reset pagination state when filters change or user changes
@@ -631,10 +606,6 @@ export default function TransactionsScreen() {
         setTransactions([]); // Clear list to show loading state correctly
 
         fetchTransactions(false);
-
-        if (isCredit) {
-            fetchCreditAccounts();
-        }
     }, [user, filter]);
 
     // Refresh data when screen comes into focus (e.g., after connecting a bank)
@@ -647,17 +618,10 @@ export default function TransactionsScreen() {
                 setHasMoreChecking(true);
                 setHasMoreCredit(true);
                 fetchTransactions(false);
-                if (isCredit) {
-                    fetchCreditAccounts();
-                }
             }
         }, [user, filter, isCredit])
     );
 
-    const handleSettingsSave = () => {
-        fetchCreditAccounts();
-        fetchTransactions();
-    };
 
     const onRefresh = () => {
         setRefreshing(true);
@@ -709,7 +673,7 @@ export default function TransactionsScreen() {
 
             <View style={styles.container}>
                 {/* Mostrar header apenas se tiver transações ou filtros ativos */}
-                {(filteredTransactions.length > 0 || activeFilterCount > 0 || loading || (isCredit && loadingAccount)) && (
+                {(filteredTransactions.length > 0 || activeFilterCount > 0 || loading) && (
                     <>
                         <View style={styles.header}>
                             <Text style={styles.title}>Transações</Text>
@@ -728,31 +692,16 @@ export default function TransactionsScreen() {
                                         </View>
                                     )}
                                 </TouchableOpacity>
-                                {isCredit && (
-                                    <TouchableOpacity
-                                        style={styles.settingsButton}
-                                        onPress={() => setSettingsVisible(true)}
-                                    >
-                                        <Settings size={18} color="#888" />
-                                    </TouchableOpacity>
-                                )}
                             </View>
                         </View>
 
-                        {isCredit && creditAccounts.length > 0 && (
-                            <WalletStackSelector
-                                cards={creditAccounts}
-                                selectedCardId={selectedCardId}
-                                onSelectCard={setSelectedCardId}
-                            />
-                        )}
                     </>
                 )}
 
 
 
                 <View style={styles.content}>
-                    {loading || (isCredit && loadingAccount) ? (
+                    {loading ? (
                         <View style={styles.loadingContainer}>
                             <LottieView
                                 source={require('@/assets/carregando.json')}
@@ -761,31 +710,6 @@ export default function TransactionsScreen() {
                                 style={{ width: 50, height: 50 }}
                             />
                             <Text style={styles.loadingText}>Carregando transações{loadingDots}</Text>
-                        </View>
-                    ) : isCredit && !hasSettings ? (
-                        <View style={styles.emptyState}>
-                            <View style={styles.emptyIconContainer}>
-                                <DelayedLoopLottie
-                                    source={require('@/assets/cartabranco.json')}
-                                    style={{ width: 80, height: 80 }}
-                                    delay={3000}
-                                    initialDelay={100}
-                                    jitterRatio={0.2}
-                                    renderMode="HARDWARE"
-                                />
-                            </View>
-                            <Text style={styles.emptyTitle}>Configure seu Cartão</Text>
-                            <Text style={styles.emptyText}>
-                                Para visualizar as transações e o ciclo da fatura, configure as datas de fechamento.
-                            </Text>
-                            
-                            <TouchableOpacity
-                                style={styles.connectButton}
-                                onPress={() => router.push('/(tabs)/open-finance')}
-                                activeOpacity={0.8}
-                            >
-                                <Text style={styles.connectButtonText}>Conectar Conta</Text>
-                            </TouchableOpacity>
                         </View>
                     ) : (
                         <SectionList
@@ -845,7 +769,7 @@ export default function TransactionsScreen() {
                                             ? 'Tente ajustar os filtros para encontrar transações.'
                                             : 'Suas movimentações financeiras aparecerão aqui.'}
                                     </Text>
-                                    
+
                                     {activeFilterCount === 0 && (
                                         <TouchableOpacity
                                             style={styles.connectButton}
@@ -862,16 +786,6 @@ export default function TransactionsScreen() {
                 </View>
             </View>
 
-            {/* Settings Modal */}
-            {user && selectedAccount && (
-                <CreditCardSettingsModal
-                    visible={settingsVisible}
-                    onClose={() => setSettingsVisible(false)}
-                    userId={user.uid}
-                    account={selectedAccount}
-                    onSave={handleSettingsSave}
-                />
-            )}
 
             {/* Filter Modal */}
             <CreditCardFilterModal
@@ -1095,17 +1009,17 @@ const styles = StyleSheet.create({
         lineHeight: 20,
         marginBottom: 24,
     },
-    connectButton: { 
-        backgroundColor: '#D97757', 
-        paddingHorizontal: 16, 
-        paddingVertical: 8, 
-        borderRadius: 20, 
-        marginTop: 8 
+    connectButton: {
+        backgroundColor: '#D97757',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 8
     },
-    connectButtonText: { 
-        color: '#FFFFFF', 
-        fontSize: 14, 
-        fontWeight: '600' 
+    connectButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600'
     },
 });
 

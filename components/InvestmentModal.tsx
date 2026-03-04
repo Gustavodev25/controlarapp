@@ -1,4 +1,4 @@
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { Calendar, DollarSign, FileText } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -91,12 +91,11 @@ export function InvestmentModal({ visible, onClose, onSave, title, initialData }
     };
 
     return (
-        <BottomModal
+        <ModalPadrao
             visible={visible}
             onClose={onClose}
             title={title || "Nova Caixinha"}
-            height="auto"
-            rightElement={
+            headerRight={
                 <TouchableOpacity
                     onPress={handleSave}
                     disabled={!nameInput || !amountStr}
@@ -177,7 +176,7 @@ export function InvestmentModal({ visible, onClose, onSave, title, initialData }
                     </View>
                 </View>
             </View>
-        </BottomModal>
+        </ModalPadrao>
     );
 }
 

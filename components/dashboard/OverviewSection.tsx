@@ -73,48 +73,48 @@ const OverviewSection = React.memo(({
     }
 
     // Reminders & Subscriptions
+    const pendingReminders = recurrences.filter(r => {
+      if (r.type !== 'reminder' || r.status === 'paid') return false;
+      const itemMonthKey = extractMonthKey(r.dueDate);
+      // Include current month AND pending/overdue from previous months
+      return itemMonthKey <= selectedMonthKey;
+    });
+
+    const expenseReminders = pendingReminders.filter(r => r.transactionType !== 'income');
+    const incomeReminders = pendingReminders.filter(r => r.transactionType === 'income');
+
     if (projectionSettings.includeReminders) {
-      const pendingReminders = recurrences.filter(r =>
-        r.type === 'reminder' &&
-        r.status !== 'paid' &&
-        extractMonthKey(r.dueDate) === selectedMonthKey
-      );
-
-      const expenseReminders = pendingReminders.filter(r => r.transactionType !== 'income');
-      const incomeReminders = pendingReminders.filter(r => r.transactionType === 'income');
-
       projectedExpense += expenseReminders.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
       projectedIncome += incomeReminders.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
     }
 
+    // Filter out subscriptions that are paid for the selected month
+    const pendingSubs = recurrences.filter(r => {
+      if (r.type !== 'subscription') return false;
+
+      // Check if paid for this month
+      const [year, month] = selectedMonthKey.split('-');
+      const zeroPaddedMonthKey = `${year}-${month.padStart(2, '0')}`;
+      const simpleMonthKey = `${year}-${Number(month)}`;
+
+      const isPaid = r.paidMonths?.some((m: string) => m === zeroPaddedMonthKey || m === simpleMonthKey);
+      if (isPaid) return false;
+
+      // Check frequency and recurrence logic
+      if (r.frequency === 'monthly') return true;
+
+      if (r.frequency === 'yearly') {
+        const dueMonth = r.dueDate.split('-')[1];
+        return Number(dueMonth) === Number(month);
+      }
+
+      return false;
+    });
+
+    const expenseSubs = pendingSubs.filter(r => r.transactionType !== 'income');
+    const incomeSubs = pendingSubs.filter(r => r.transactionType === 'income');
+
     if (projectionSettings.includeSubscriptions) {
-      // Filter out subscriptions that are paid for the selected month
-      const pendingSubs = recurrences.filter(r => {
-        if (r.type !== 'subscription') return false;
-
-        // Check if paid for this month
-        const [year, month] = selectedMonthKey.split('-');
-        const zeroPaddedMonthKey = `${year}-${month.padStart(2, '0')}`;
-        const simpleMonthKey = `${year}-${Number(month)}`;
-
-        const isPaid = r.paidMonths?.some((m: string) => m === zeroPaddedMonthKey || m === simpleMonthKey);
-        if (isPaid) return false;
-
-        // Check frequency and recurrence logic
-        if (r.frequency === 'monthly') return true;
-
-        if (r.frequency === 'yearly') {
-          // Only include if the month matches due date month
-          const dueMonth = r.dueDate.split('-')[1];
-          return Number(dueMonth) === Number(month);
-        }
-
-        return false;
-      });
-
-      const expenseSubs = pendingSubs.filter(r => r.transactionType !== 'income');
-      const incomeSubs = pendingSubs.filter(r => r.transactionType === 'income');
-
       projectedExpense += expenseSubs.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
       projectedIncome += incomeSubs.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
     }
@@ -137,7 +137,7 @@ const OverviewSection = React.memo(({
     return {
       saldo: calculatedSaldo,
       totalReceitas: calculatedTotalReceitas,
-      totalDespesas: calculatedTotalDespesas
+      totalDespesas: calculatedTotalDespesas,
     };
   }, [
     checkingTransactions,

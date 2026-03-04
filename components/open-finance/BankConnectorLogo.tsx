@@ -2,8 +2,8 @@ import { getConnectorLogoUrl, normalizeHexColor, normalizeImageUrl } from '@/uti
 import { Landmark } from 'lucide-react-native';
 import React, { memo, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, View, type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
-import { SvgCssUri } from 'react-native-svg/css';
 import { SvgUri } from 'react-native-svg';
+import { SvgCssUri } from 'react-native-svg/css';
 
 type ConnectorLike = {
     imageUrl?: string | null;
@@ -27,6 +27,7 @@ interface BankConnectorLogoProps {
     showBorder?: boolean;
     containerStyle?: StyleProp<ViewStyle>;
     imageStyle?: StyleProp<ImageStyle>;
+    tintColor?: string;
 }
 
 const isSvgLogo = (url: string): boolean => {
@@ -49,7 +50,8 @@ export const BankConnectorLogo = memo(({
     backgroundColor = 'white',
     showBorder = true,
     containerStyle,
-    imageStyle
+    imageStyle,
+    tintColor,
 }: BankConnectorLogoProps) => {
     const resolvedUri = useMemo(() => {
         const url = uri ?? getConnectorLogoUrl(connector);
@@ -70,6 +72,9 @@ export const BankConnectorLogo = memo(({
     const renderedIconSize = iconSize || Math.max(14, Math.round(size * 0.45));
     const shouldRenderSvg = resolvedUri ? isSvgLogo(resolvedUri) : false;
 
+    // Usa a URL original - sem transformações
+    const finalUri = resolvedUri;
+
     return (
         <View
             style={[
@@ -85,18 +90,18 @@ export const BankConnectorLogo = memo(({
                 containerStyle
             ]}
         >
-            {resolvedUri && !hasError ? (
+            {finalUri && !hasError ? (
                 shouldRenderSvg ? (
                     svgStrategy === 'css' ? (
                         <SvgCssUri
-                            uri={resolvedUri}
+                            uri={finalUri}
                             width="100%"
                             height="100%"
                             onError={() => setSvgStrategy('basic')}
                         />
                     ) : (
                         <SvgUri
-                            uri={resolvedUri}
+                            uri={finalUri}
                             width="100%"
                             height="100%"
                             onError={() => setHasError(true)}
@@ -104,10 +109,11 @@ export const BankConnectorLogo = memo(({
                     )
                 ) : (
                     <Image
-                        source={{ uri: resolvedUri }}
+                        source={{ uri: finalUri }}
                         style={[
                             styles.image,
                             { borderRadius: Math.max(0, borderRadius - 2) },
+                            tintColor ? { tintColor } : undefined,
                             imageStyle
                         ]}
                         resizeMode="contain"

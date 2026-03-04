@@ -1,4 +1,4 @@
-﻿
+﻿﻿
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { databaseService } from './firebase';
@@ -71,7 +71,11 @@ const NotificationTemplates = {
     },
     sync: {
         daily_reset: 'Seus creditos de sincronizacao foram renovados! Aproveite para atualizar seus dados.',
-        bank_released: (name: string) => `O banco ${name} ja pode ser sincronizado novamente.`
+        bank_released: (name: string) => `O banco ${name} ja pode ser sincronizado novamente.`,
+        connection_success: (name: string) => `Suas contas e transações do ${name} foram sincronizadas com sucesso!`,
+        connection_error: (name: string, error?: string) => error
+            ? `Falha ao conectar com ${name}: ${error}`
+            : `Não foi possível conectar ao ${name}. Tente novamente.`,
     },
     plan: {
         7: () => `Seu plano expira em 7 dias. Renove para manter o acesso.`,
@@ -251,7 +255,6 @@ const mapAccountsForInvoiceAlerts = (accounts: any[]): CreditCardAccount[] => {
             availableCreditLimit: acc.availableCreditLimit || null,
             balance: acc.balance || null,
             connector: acc.connector || null,
-            closingDateSettings: acc.closingDateSettings || null,
             balanceCloseDate: acc.balanceCloseDate || null,
             balanceDueDate: acc.balanceDueDate || null,
             currentBill: acc.currentBill || null,
@@ -798,13 +801,8 @@ export const notificationService = {
         for (const account of accounts) {
             try {
                 // Determine Due Date
-                // Priority: currentBill.dueDate > balanceDueDate > calculated
-                let dueDateStr = account.currentBill?.dueDate || account.balanceDueDate;
-
-                // If we don't have a reliable due date from API, skip for now to avoid false alerts
-                if (!dueDateStr && account.closingDateSettings?.lastDueDate) {
-                    dueDateStr = account.closingDateSettings.lastDueDate;
-                }
+                // Priority: balanceDueDate > currentBill.dueDate > calculated
+                let dueDateStr = account.balanceDueDate || account.currentBill?.dueDate;
 
                 if (!dueDateStr) continue;
 
@@ -973,6 +971,45 @@ export const notificationService = {
             await logActivity(`Scheduled bank availability notification for ${bankName}`);
         } catch (error) {
             await logActivity('Error scheduling bank availability', error);
+        }
+    },
+
+    // ====================== SYNC CONNECTION NOTIFICATIONS ======================
+    async sendSyncCompleteNotification(bankName: string, success: boolean, errorMessage?: string) {
+        const Notifications = getNotifications();
+        if (!Notifications) return;
+
+        const hasPermission = await this.registerForPushNotificationsAsync();
+        if (!hasPermission) return;
+
+        try {
+            const title = success
+                ? `${bankName} conectado! ✅`
+                : `Falha na conexão ❌`;
+            const body = success
+                ? NotificationTemplates.sync.connection_success(bankName)
+                : NotificationTemplates.sync.connection_error(bankName, errorMessage);
+
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title,
+                    body,
+                    sound: true,
+                    data: {
+                        category: 'sync',
+                        entityId: bankName,
+                        triggerKey: success ? 'connection_success' : 'connection_error',
+                    },
+                },
+                trigger: {
+                    type: 'date',
+                    date: new Date(Date.now() + 1500), // 1.5s delay
+                },
+            });
+
+            await logActivity(`Sync notification sent: ${success ? 'success' : 'error'} for ${bankName}`);
+        } catch (error) {
+            await logActivity('Error sending sync notification', error);
         }
     },
 

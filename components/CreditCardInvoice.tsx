@@ -1,4 +1,4 @@
-import BankSelector from '@/components/BankSelector';
+﻿import BankSelector from '@/components/BankSelector';
 import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
 import { CreditCardSettingsModal } from '@/components/CreditCardSettingsModal';
 import { DeleteConfirmCard } from '@/components/DeleteConfirmCard';
@@ -19,6 +19,7 @@ import {
     formatDateShort,
     InvoiceBuildResult,
     InvoiceItem,
+    normalizePluggyDate,
     Transaction
 } from '@/services/invoiceBuilder';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -232,7 +233,7 @@ const StackCard = React.memo(({
     totalCards: number;
     onPressCard: (index: number) => void;
 }) => {
-    // Estilo animado principal do cartão - usando o mesmo hook do Dashboard (Visão Geral)
+    // Estilo animado principal do cart├úo - usando o mesmo hook do Dashboard (Vis├úo Geral)
     const animatedStyle = useStackCardStyle(
         index,
         animatedIndex,
@@ -247,7 +248,7 @@ const StackCard = React.memo(({
     // "Rendered more hooks than during the previous render"
     const futureBadgeAnimatedStyle = useAnimatedStyle(() => {
         const diff = Math.abs(index - animatedIndex.value);
-        // Animação de entrada: desliza de cima (-20px) para a posição original (0px)
+        // Anima├º├úo de entrada: desliza de cima (-20px) para a posi├º├úo original (0px)
         const translateY = interpolate(diff, [0, 1], [0, -20], Extrapolation.CLAMP);
         // Opacidade: some rapidamente ao sair do foco
         const opacity = interpolate(diff, [0, 0.5], [1, 0], Extrapolation.CLAMP);
@@ -325,7 +326,7 @@ const InvoiceCarousel = React.memo(({
     onTabChange: (tab: InvoiceTab) => void;
     historyTotal: number;
 }) => {
-    const [currentIndex, setCurrentIndex] = useState(2); // Começa em "Fatura Atual"
+    const [currentIndex, setCurrentIndex] = useState(2); // Come├ºa em "Fatura Atual"
     const animatedIndex = useSharedValue(2);
     const translateX = useSharedValue(0);
     const [showTutorial, setShowTutorial] = useState(false);
@@ -343,21 +344,21 @@ const InvoiceCarousel = React.memo(({
             {
                 key: 'history',
                 type: 'history',
-                label: 'Histórico',
-                subLabel: 'Transações passadas',
+                label: 'Hist├│rico',
+                subLabel: 'Transa├º├Áes passadas',
                 amount: historyTotal,
-                dateRange: 'Todas as transações',
+                dateRange: 'Todas as transa├º├Áes',
                 status: 'all',
                 tabId: 'all'
             },
             {
                 key: 'last',
                 type: 'invoice',
-                label: 'Última Fatura',
+                label: '├Ültima Fatura',
                 // Soma o valor absoluto de todos os items (exceto pagamentos)
                 // Soma os valores reais (despesas aumentam, estornos diminuem)
                 amount: Math.abs(invoiceData.closedInvoice.total || 0),
-                dateRange: `${formatDateShort(invoiceData.periods.lastInvoiceStart)} –  ${formatDateShort(invoiceData.periods.lastClosingDate)}`,
+                dateRange: `${formatDateShort(invoiceData.periods.lastInvoiceStart)} ÔÇô  ${formatDateShort(invoiceData.periods.lastClosingDate)}`,
                 dueInfo: `Venceu ${formatDateFull(invoiceData.periods.lastDueDate)}`,
                 status: invoiceData.closedInvoice.status,
                 tabId: 'last',
@@ -370,7 +371,7 @@ const InvoiceCarousel = React.memo(({
                 // Soma o valor absoluto de todos os items (exceto pagamentos)
                 // Soma os valores reais (despesas aumentam, estornos diminuem)
                 amount: Math.abs(invoiceData.currentInvoice.total || 0),
-                dateRange: `${formatDateShort(invoiceData.periods.currentInvoiceStart)} –  ${formatDateShort(invoiceData.periods.currentClosingDate)}`,
+                dateRange: `${formatDateShort(invoiceData.periods.currentInvoiceStart)} ÔÇô  ${formatDateShort(invoiceData.periods.currentClosingDate)}`,
                 dueInfo: `Vence ${formatDateFull(invoiceData.periods.currentDueDate)}`,
                 status: 'OPEN',
                 tabId: 'current',
@@ -384,11 +385,11 @@ const InvoiceCarousel = React.memo(({
             items.push({
                 key: 'future_0',
                 type: 'invoice',
-                label: 'Próxima Fatura',
+                label: 'Pr├│xima Fatura',
                 // Soma o valor absoluto de todos os items (exceto pagamentos)
                 // Soma os valores reais (despesas aumentam, estornos diminuem)
                 amount: Math.abs(inv.total || 0),
-                dateRange: `${formatDateShort(new Date(inv.startDate))} –  ${formatDateShort(new Date(inv.closingDate))}`,
+                dateRange: `${formatDateShort(new Date(inv.startDate))} ÔÇô  ${formatDateShort(new Date(inv.closingDate))}`,
                 dueInfo: `Vence ${formatDateFull(new Date(inv.dueDate))}`,
                 status: 'OPEN',
                 tabId: 'future_0' as InvoiceTab,
@@ -517,10 +518,10 @@ const categoryTranslations: Record<string, string> = { ... };
 const translateCategory = (category?: string) => { ... };
 */
 
-// Função movida para fora do componente para evitar recriação, mas getCategoryConfig depende de cores...
-// Movo ela de volta para dentro ou crio uma versão que aceita cores? 
+// Fun├º├úo movida para fora do componente para evitar recria├º├úo, mas getCategoryConfig depende de cores...
+// Movo ela de volta para dentro ou crio uma vers├úo que aceita cores? 
 // No momento, vou restaurar o getCategoryConfig mas simplificado ou importado?
-// Melhor: Vou recriar as funções aqui, pois elas são puras, MAS o translateCategory agora é via hook.
+// Melhor: Vou recriar as fun├º├Áes aqui, pois elas s├úo puras, MAS o translateCategory agora ├® via hook.
 
 // Re-implementing helper functions locally or importing if available.
 // Since getCategoryConfig suggests colors, keep it here for now but renamed or scoped?
@@ -617,7 +618,7 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 
 const monthShortFormatter = new Intl.DateTimeFormat('pt-BR', { month: 'short' });
 const monthLongFormatter = new Intl.DateTimeFormat('pt-BR', { month: 'long' });
 
-// Função movida para fora do componente para evitar recriação
+// Fun├º├úo movida para fora do componente para evitar recria├º├úo
 const formatTransactionDate = (dateString: string): string => {
     try {
         const [y, m, d] = dateString.split('-');
@@ -629,13 +630,13 @@ const formatTransactionDate = (dateString: string): string => {
 const getMonthShortUpper = (date: Date) => monthShortFormatter.format(date).toUpperCase().replace('.', '');
 const getMonthLongUpper = (date: Date) => monthLongFormatter.format(date).toUpperCase();
 const formatCardDisplayName = (rawName?: string | null, maxLength = 20): string => {
-    const baseName = (rawName || '').trim() || 'Cartão';
+    const baseName = (rawName || '').trim() || 'Cart├úo';
     const capitalized = `${baseName.charAt(0).toLocaleUpperCase('pt-BR')}${baseName.slice(1)}`;
     if (capitalized.length <= maxLength) return capitalized;
     return `${capitalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 };
 
-// Memoizado para evitar re-renders desnecessários
+// Memoizado para evitar re-renders desnecess├írios
 const TransactionItem = React.memo(({
     item,
     index,
@@ -663,7 +664,7 @@ const TransactionItem = React.memo(({
 
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-    // Efeito para sincronizar pedido de exclusão externo
+    // Efeito para sincronizar pedido de exclus├úo externo
     useEffect(() => {
         if (isConfirmingDelete) {
             setShowDeleteConfirm(true);
@@ -679,17 +680,17 @@ const TransactionItem = React.memo(({
     const cardRef = React.useRef<View>(null);
     const hideInstallments = isNonInstallmentMerchant(item.description);
 
-    // Pode fazer estorno apenas se: não é projetada, não é pagamento, não é estorno
+    // Pode fazer estorno apenas se: n├úo ├® projetada, n├úo ├® pagamento, n├úo ├® estorno
     const canRefund = !isProjected && !isPayment && !isRefund;
 
     const amountColor = isPayment || isRefund ? '#04D361' : (isProjected ? '#60BC57' : '#FFFFFF');
 
-    // Se estiver confirmando exclusão, mostra o card de confirmação
+    // Se estiver confirmando exclus├úo, mostra o card de confirma├º├úo
     if (showDeleteConfirm) {
         return (
             <View style={{ marginBottom: isLast ? 0 : 1, marginHorizontal: 20 }}>
                 <DeleteConfirmCard
-                    title="Excluir transação?"
+                    title="Excluir transa├º├úo?"
                     onCancel={() => {
                         setShowDeleteConfirm(false);
                         if (onCancelDelete) onCancelDelete();
@@ -698,7 +699,7 @@ const TransactionItem = React.memo(({
                         onDelete?.(item);
                         setShowDeleteConfirm(false);
                         setShowActions(false);
-                        if (onCancelDelete) onCancelDelete(); // Limpa estado pai também
+                        if (onCancelDelete) onCancelDelete(); // Limpa estado pai tamb├®m
                     }}
                     style={{
                         borderRadius: 16,
@@ -872,7 +873,7 @@ TransactionItem.displayName = 'CreditCardInvoiceTransactionItem';
 const EmptyTransactionsState = () => {
     return (
         <View style={[styles.emptyContainer, { marginTop: 40, marginBottom: 40 }]}>
-            <Text style={styles.emptyOverlayText}>Não encontramos transações com os filtros atuais.</Text>
+            <Text style={styles.emptyOverlayText}>N├úo encontramos transa├º├Áes com os filtros atuais.</Text>
         </View>
     );
 };
@@ -895,10 +896,10 @@ const NeedsConfigurationState = ({ onOpenSettings }: NeedsConfigurationStateProp
                 />
             </View>
 
-            <Text style={styles.configNeededTitle}>Fatura não configurada</Text>
+            <Text style={styles.configNeededTitle}>Fatura n├úo configurada</Text>
 
             <Text style={styles.configNeededText}>
-                Para visualizar seus gastos organizados por mês, informe a data de fechamento do cartão.
+                Para visualizar seus gastos organizados por m├¬s, informe a data de fechamento do cart├úo.
             </Text>
 
             <TouchableOpacity
@@ -1118,7 +1119,7 @@ export function CreditCardInvoice({
                 updateData.date = customIsoDate;
                 updateData.invoiceMonthKey = customIsoDate.slice(0, 7);
                 updateData.invoiceMonthKeyManual = false;
-                // Compatibilidade: remover manualInvoiceMonth quando não é manual
+                // Compatibilidade: remover manualInvoiceMonth quando n├úo ├® manual
                 updateData.manualInvoiceMonth = undefined;
             } else if (target === 'next' || target === 'prev') {
                 const selectedTabMonthKey = getSelectedTabMonthKey();
@@ -1133,13 +1134,13 @@ export function CreditCardInvoice({
                 // Keep purchase date unchanged and override only invoice assignment.
                 updateData.invoiceMonthKey = shiftedMonthKey;
                 updateData.invoiceMonthKeyManual = true;
-                // Compatibilidade: salvar também no formato do web
+                // Compatibilidade: salvar tamb├®m no formato do web
                 updateData.manualInvoiceMonth = shiftedMonthKey;
             } else {
                 // "current" clears manual override and falls back to date-based classification.
                 updateData.invoiceMonthKey = normalizedCurrentDate.slice(0, 7);
                 updateData.invoiceMonthKeyManual = false;
-                // Compatibilidade: remover manualInvoiceMonth quando não é manual
+                // Compatibilidade: remover manualInvoiceMonth quando n├úo ├® manual
                 updateData.manualInvoiceMonth = undefined;
             }
 
@@ -1194,13 +1195,13 @@ export function CreditCardInvoice({
 
     const handleDeleteTransaction = useCallback(async (item: InvoiceItem) => {
         try {
-            // A confirmação visual já foi feita pelo DeleteConfirmCard dentro do item
+            // A confirma├º├úo visual j├í foi feita pelo DeleteConfirmCard dentro do item
             await databaseService.deleteOpenFinanceCreditCardTransaction(userId, item.id);
 
             // Simula uma espera e refresh para feedback visual
             if (onRefresh) onRefresh();
         } catch (error) {
-            console.error('Erro ao excluir transação:', error);
+            console.error('Erro ao excluir transa├º├úo:', error);
         }
     }, [onRefresh, userId]);
 
@@ -1210,7 +1211,7 @@ export function CreditCardInvoice({
         setRefundModalVisible(true);
     }, []);
 
-    // Handler para confirmar estorno - cria nova transação de crédito
+    // Handler para confirmar estorno - cria nova transa├º├úo de cr├®dito
     const handleConfirmRefund = useCallback(async (
         transaction: { id: string; description: string; amount: number; date: string; category?: string; cardId?: string; accountId?: string },
         customAmount?: number
@@ -1219,7 +1220,7 @@ export function CreditCardInvoice({
         const now = new Date();
         const refundDate = transaction.date; // Usar mesma data para ficar na mesma fatura
 
-        // Criar nova transação de estorno
+        // Criar nova transa├º├úo de estorno
         const refundTransactionData = {
             description: `Estorno - ${transaction.description}`,
             amount: refundAmount, // Valor positivo
@@ -1229,7 +1230,7 @@ export function CreditCardInvoice({
             cardId: transaction.cardId || transaction.accountId || selectedCardId,
             isRefund: true,
             originalTransactionId: transaction.id,
-            // Campos adicionais para consistência
+            // Campos adicionais para consist├¬ncia
             installmentNumber: 1,
             totalInstallments: 1,
             status: 'completed',
@@ -1280,8 +1281,8 @@ export function CreditCardInvoice({
         return map;
     }, [transactions]);
 
-    // PRÉ0-FILTRAR transações pelo cartão selecionado ANTES de passar para buildInvoices
-    // Isso garante que cada cartão receba APENAS suas próprias transações
+    // PR├ë0-FILTRAR transa├º├Áes pelo cart├úo selecionado ANTES de passar para buildInvoices
+    // Isso garante que cada cart├úo receba APENAS suas pr├│prias transa├º├Áes
     const filteredTransactions = useMemo(() => {
         if (!selectedCardId || selectedCardId === 'all') {
             return transactions;
@@ -1374,7 +1375,7 @@ export function CreditCardInvoice({
         return filteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
     }, [filteredTransactions, selectedCardId]);
 
-    // currentItems computado primeiro para que currentItemsLength esteja disponível
+    // currentItems computado primeiro para que currentItemsLength esteja dispon├¡vel
     const currentItems = useMemo((): InvoiceItem[] => {
         let items: InvoiceItem[] = [];
 
@@ -1455,10 +1456,10 @@ export function CreditCardInvoice({
         const sorted = currentItems;
         const sortedIds = new Set(sorted.map(item => item.id));
 
-        // Reordenar para manter estornos "grudados" na transação original (logo abaixo)
+        // Reordenar para manter estornos "grudados" na transa├º├úo original (logo abaixo)
         const reordered: InvoiceItem[] = [];
 
-        // Mapa de estornos por ID original para acesso rápido
+        // Mapa de estornos por ID original para acesso r├ípido
         const refundsByOriginalId = new Map<string, InvoiceItem[]>();
         sorted.forEach(item => {
             if (item.isRefund && item.originalTransactionId) {
@@ -1469,7 +1470,7 @@ export function CreditCardInvoice({
         });
 
         sorted.forEach(item => {
-            // Se for estorno com pai na lista, pular (será adicionado com o pai)
+            // Se for estorno com pai na lista, pular (ser├í adicionado com o pai)
             if (item.isRefund && item.originalTransactionId && sortedIds.has(item.originalTransactionId)) {
                 return;
             }
@@ -1518,7 +1519,7 @@ export function CreditCardInvoice({
         return groups;
     }, [currentItems]);
 
-    // Calcular anos disponíveis
+    // Calcular anos dispon├¡veis
     const availableYears = useMemo(() => {
         const years = new Set<string>();
         // Add current year as default
@@ -1534,7 +1535,7 @@ export function CreditCardInvoice({
         return Array.from(years).sort().reverse();
     }, [filteredTransactions]);
 
-    // Calcular categorias disponíveis das transações
+    // Calcular categorias dispon├¡veis das transa├º├Áes
     const availableCategories = useMemo(() => {
         const cats = new Set<string>();
 
@@ -1544,7 +1545,7 @@ export function CreditCardInvoice({
             }
         });
 
-        // Ordenar alfabeticamente pelo nome traduzido (Português)
+        // Ordenar alfabeticamente pelo nome traduzido (Portugu├¬s)
         return Array.from(cats).sort((a, b) => {
             const nameA = getCategoryName(a);
             const nameB = getCategoryName(b);
@@ -1611,10 +1612,16 @@ export function CreditCardInvoice({
         setShowInvoiceCards(!showInvoiceCards);
     };
 
-    // Verificar se o cartão tem configuração manual do fechamento
-    // O usuário PRECISA configurar manualmente a data de fechamento para ver as faturas
-    const hasManualConfig = selectedCard?.closingDateSettings?.lastClosingDate;
-    const needsConfiguration = selectedCard && !hasManualConfig;
+    // Só exigir configuração manual se NÃO houver qualquer dado automático do Pluggy.
+    const hasManualConfig = Boolean(selectedCard?.closingDateSettings?.lastClosingDate);
+    const hasAutomaticBillingData = Boolean(
+        normalizePluggyDate(selectedCard?.currentBill?.periodEnd || null) ||
+        normalizePluggyDate(selectedCard?.currentBill?.closeDate || null) ||
+        normalizePluggyDate(selectedCard?.currentBill?.dueDate || null) ||
+        normalizePluggyDate(selectedCard?.balanceCloseDate || null) ||
+        normalizePluggyDate(selectedCard?.balanceDueDate || null)
+    );
+    const needsConfiguration = Boolean(selectedCard && !hasManualConfig && !hasAutomaticBillingData);
 
     if (creditCards.length === 0) return (
         <View style={styles.emptyState}>
@@ -1628,8 +1635,8 @@ export function CreditCardInvoice({
                     renderMode="HARDWARE"
                 />
             </View>
-            <Text style={styles.emptyTitle}>Nenhum cartão conectado</Text>
-            <Text style={styles.emptyText}>Conecte seu cartão de crédito via Open Finance para visualizar suas faturas.</Text>
+            <Text style={styles.emptyTitle}>Nenhum cart├úo conectado</Text>
+            <Text style={styles.emptyText}>Conecte seu cart├úo de cr├®dito via Open Finance para visualizar suas faturas.</Text>
             
             <TouchableOpacity
                 style={styles.connectButton}
@@ -1719,7 +1726,7 @@ export function CreditCardInvoice({
                 ListHeaderComponent={
                     <>
                         <View style={styles.headerRow}>
-                            <Text style={styles.screenHeader}>Fatura do cartão</Text>
+                            <Text style={styles.screenHeader}>Fatura do cart├úo</Text>
                             <BankSelector
                                 currentCardId={selectedCard?.id || null}
                                 cards={creditCards}
@@ -1745,12 +1752,12 @@ export function CreditCardInvoice({
                                             // Helper para parsear datas que podem vir em formato ISO ou YYYY-MM-DD
                                             const parseDateSafe = (dateStr: string): Date | null => {
                                                 if (!dateStr) return null;
-                                                // Se já tem 'T', é ISO completo, parse direto
+                                                // Se j├í tem 'T', ├® ISO completo, parse direto
                                                 if (dateStr.includes('T')) {
                                                     const d = new Date(dateStr);
                                                     return isNaN(d.getTime()) ? null : d;
                                                 }
-                                                // Senão, adiciona horário para evitar problemas de timezone
+                                                // Sen├úo, adiciona hor├írio para evitar problemas de timezone
                                                 const d = new Date(dateStr + 'T12:00:00');
                                                 return isNaN(d.getTime()) ? null : d;
                                             };
@@ -1826,9 +1833,9 @@ export function CreditCardInvoice({
                         {!needsConfiguration && (
                             <View style={styles.listHeader}>
                                 <Text style={styles.listHeaderTitle}>
-                                    {selectedTab === 'all' ? 'Histórico' : selectedTab === 'last' ? 'Última Fatura' : selectedTab === 'current' ? 'Fatura Atual' : selectedTab === 'future_0' ? 'Próxima Fatura' : `Fatura Futura ${parseInt(selectedTab.split('_')[1]) + 1}`}
+                                    {selectedTab === 'all' ? 'Hist├│rico' : selectedTab === 'last' ? '├Ültima Fatura' : selectedTab === 'current' ? 'Fatura Atual' : selectedTab === 'future_0' ? 'Pr├│xima Fatura' : `Fatura Futura ${parseInt(selectedTab.split('_')[1]) + 1}`}
                                 </Text>
-                                <Text style={styles.listHeaderCount}>{currentItemsLength} lançamentos</Text>
+                                <Text style={styles.listHeaderCount}>{currentItemsLength} lan├ºamentos</Text>
                             </View>
                         )}
                     </>
@@ -2020,7 +2027,7 @@ const styles = StyleSheet.create({
         bottom: -28, // Ajustado para ficar logo abaixo
         backgroundColor: '#2A1C19', // Laranja escuro
         paddingHorizontal: 16,
-        paddingTop: 12, // Compensar a parte que fica escondida atrás do card
+        paddingTop: 12, // Compensar a parte que fica escondida atr├ís do card
         paddingBottom: 6,
         borderBottomLeftRadius: 12,
         borderBottomRightRadius: 12,
@@ -2030,7 +2037,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        zIndex: -1, // Atrás do card
+        zIndex: -1, // Atr├ís do card
         elevation: -1
     },
     futureTotalLabel: { color: '#888', fontSize: 11, fontWeight: '500' },
@@ -2340,7 +2347,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     configIconWrapper: {
-        marginBottom: 0, // Lottie já tem um padding natural geralmente, ou ajustamos aqui
+        marginBottom: 0, // Lottie j├í tem um padding natural geralmente, ou ajustamos aqui
         alignItems: 'center',
         justifyContent: 'center',
     },

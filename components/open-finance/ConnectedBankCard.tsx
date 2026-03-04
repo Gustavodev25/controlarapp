@@ -3,7 +3,6 @@ import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { DynamicText } from '@/components/ui/DynamicText';
 import { databaseService } from '@/services/firebase';
 import { notificationService } from '@/services/notifications';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     CheckCircle,
     Database,
@@ -106,10 +105,7 @@ export const ConnectedBankCard = ({
     hiddenAccountIds,
     onToggleVisibility
 }: ConnectedBankCardProps) => {
-    const cardId = group.connector?.id || group.accounts?.[0]?.itemId || 'unknown_bank';
-    const storageKey = `bank_card_expanded_${cardId}`;
-
-    const [expanded, setExpanded] = useState(true);
+    const [expanded, setExpanded] = useState(false);
     const [syncStatus, setSyncStatus] = useState<BankSyncStatus>({
         step: 'idle',
         message: '',
@@ -121,24 +117,6 @@ export const ConnectedBankCard = ({
         syncStepRef.current = syncStatus.step;
     }, [syncStatus.step]);
 
-
-    // Load persisted expansion state
-    useEffect(() => {
-        const loadState = async () => {
-            try {
-                const stored = await AsyncStorage.getItem(storageKey);
-                if (stored !== null) {
-                    const shouldExpand = stored === 'true';
-                    setExpanded(shouldExpand);
-                    // Update shared value immediately to match state without animation if mounting
-                    rotation.value = shouldExpand ? 0 : 180;
-                }
-            } catch (e) {
-                console.log('Error loading bank card state', e);
-            }
-        };
-        loadState();
-    }, [storageKey]);
 
     // Timer state for countdown until midnight
     const [timeUntilReset, setTimeUntilReset] = useState<string>('');
@@ -437,18 +415,26 @@ export const ConnectedBankCard = ({
                                     ? acc.name
                                     : defaultName;
 
-                                const value = isCredit ? acc.creditLimit : acc.balance;
-                                const label = isCredit ? 'Limite Total' : 'Saldo Disponível';
-                                const formattedValue = value !== null && value !== undefined
-                                    ? formatCurrency(value)
+                                const creditLimit = acc.creditLimit ?? acc.creditData?.creditLimit ?? null;
+                                const availableCreditLimit = acc.availableCreditLimit ?? acc.creditData?.availableCreditLimit ?? null;
+                                const value = isCredit
+                                    ? (creditLimit ?? availableCreditLimit)
+                                    : acc.balance;
+                                const numericValue = value !== null && value !== undefined ? Number(value) : NaN;
+                                const label = isCredit
+                                    ? 'Limite Total'
+                                    : 'Saldo Disponivel';
+                                const formattedValue = Number.isFinite(numericValue)
+                                    ? formatCurrency(numericValue)
                                     : '---';
+                                const secondaryCreditLabel = null;
 
                                 // Visibility Logic
                                 const isVisible = !(hiddenAccountIds || []).includes(acc.id);
 
                                 return (
-                                    <View 
-                                        key={acc.id} 
+                                    <View
+                                        key={acc.id}
                                         style={[
                                             styles.accountRowContainer,
                                             i === group.accounts.length - 1 && { marginBottom: 0 }
@@ -477,11 +463,14 @@ export const ConnectedBankCard = ({
                                             <View style={styles.accountBalanceInfo}>
                                                 <Text style={[
                                                     styles.accountValue,
-                                                    !isCredit && (value > 0 ? styles.positiveValue : value < 0 ? styles.negativeValue : {})
+                                                    !isCredit && (numericValue > 0 ? styles.positiveValue : numericValue < 0 ? styles.negativeValue : {})
                                                 ]}>
                                                     {formattedValue}
                                                 </Text>
                                                 <Text style={styles.accountLabel}>{label}</Text>
+                                                {secondaryCreditLabel && (
+                                                    <Text style={styles.accountSecondaryLabel}>{secondaryCreditLabel}</Text>
+                                                )}
                                             </View>
 
                                             {/* Visibility Toggle for Checking Accounts */}
@@ -638,6 +627,11 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         fontWeight: '500',
         letterSpacing: 0.5,
+    },
+    accountSecondaryLabel: {
+        fontSize: 9,
+        color: '#A1A1AA',
+        marginTop: 2,
     },
     positiveValue: {
         color: '#04D361',

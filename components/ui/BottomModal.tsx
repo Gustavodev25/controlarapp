@@ -13,6 +13,7 @@ import {
     useWindowDimensions
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface BottomModalProps {
     visible: boolean;
@@ -35,14 +36,15 @@ export function BottomModal({
     subtitle,
     onBack,
 }: BottomModalProps) {
+    const insets = useSafeAreaInsets();
     const sheetRef = useRef<BottomSheetMethods>(null);
     const [isMounted, setIsMounted] = useState(false);
     const [calculatedHeight, setCalculatedHeight] = useState<number>(0);
     const [keyboardHeight, setKeyboardHeight] = useState(0);
-    
+
     // NOVO: Controla se a medição da altura inteligente já terminou
     const [isReady, setIsReady] = useState(height !== 'auto');
-    
+
     const { height: windowHeight } = useWindowDimensions();
 
     // Listeners do Teclado (agrupados e otimizados)
@@ -91,30 +93,32 @@ export function BottomModal({
         if (onClose) onClose();
     }, [onClose]);
 
-    // Otimização: SnapPoints precisos e sem sobras
+    // Otimização: SnapPoints precisos e sem sobras - Ajustado para Safe Area e Teclado
     const snapPoints = useMemo(() => {
         if (height === 'auto') {
             if (calculatedHeight > 0) {
                 // Limita a altura máxima a 90% da tela para não cobrir tudo
                 const capped = Math.min(calculatedHeight, windowHeight * 0.9);
-                
+
                 // Reduz o espaço do teclado, se ele estiver aberto
                 if (keyboardHeight > 0) {
-                    return [Math.min(capped, windowHeight - keyboardHeight - 20)];
+                    // Subtrai teclado + margem de segurança + insets
+                    const availableSpace = windowHeight - keyboardHeight - insets.bottom - 20;
+                    return [Math.max(40, Math.min(capped, availableSpace))];
                 }
                 return [capped];
             }
-            // NOVO: Retorna 1px enquanto mede para não mostrar um painel vazio gigante
+            // Retorna 1px enquanto mede para não mostrar um painel vazio gigante
             return [1];
         }
 
-        // Se uma altura fixa foi passada, respeita ela e o teclado (removemos o "90%" hardcoded que gerava vazio)
+        // Se uma altura fixa foi passada, respeita ela e o teclado
         return [
             typeof height === 'number'
-                ? (keyboardHeight > 0 ? Math.min(height, windowHeight - keyboardHeight - 20) : height)
+                ? (keyboardHeight > 0 ? Math.min(height, windowHeight - keyboardHeight - insets.bottom - 20) : height)
                 : height
         ];
-    }, [height, calculatedHeight, windowHeight, keyboardHeight]);
+    }, [height, calculatedHeight, windowHeight, keyboardHeight, insets.bottom]);
 
     // Função que mede o conteúdo inteligentemente
     const handleLayout = useCallback((e: LayoutChangeEvent) => {
@@ -149,10 +153,11 @@ export function BottomModal({
                     borderRadius={24}
                     onClose={handleClose}
                 >
-                    <View 
-                        onLayout={handleLayout} 
+                    <View
+                        onLayout={handleLayout}
                         style={[
                             containerStyle,
+                            { paddingBottom: (height === 'auto' ? 24 : 0) + insets.bottom },
                             // NOVO: Esconde visualmente enquanto calcula para não dar "pulo" na tela
                             { opacity: isReady ? 1 : 0 }
                         ]}
@@ -199,7 +204,6 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     containerAuto: {
-        paddingBottom: 24,
         // Propositalmente sem flex: 1 para que a view abrace apenas o conteúdo necessário
     },
     header: {

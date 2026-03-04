@@ -128,18 +128,7 @@ export default function Index() {
     }, [isBiometricAuth]);
 
     if (isAuthLoading || isBiometricLoading) {
-        return (
-            <UniversalBackground
-                backgroundColor="#0C0C0C"
-                glowSize={350}
-                showParticles={true}
-                particleCount={15}
-            >
-                <View style={styles.centeredContainer}>
-                    <ActivityIndicator size="large" color="#d97757" style={{ transform: [{ scale: 1.5 }] }} />
-                </View>
-            </UniversalBackground>
-        );
+        return <View style={{ flex: 1, backgroundColor: '#000000' }} />;
     }
 
     // Mantém a tela de biometria visível enquanto biometria está habilitada

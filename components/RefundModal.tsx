@@ -1,4 +1,4 @@
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { formatCurrency } from '@/services/invoiceBuilder';
 import { AlertCircle, RotateCcw } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -43,7 +43,6 @@ export function RefundModal({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    // Reset state when modal opens
     useEffect(() => {
         if (visible) {
             setRefundType('total');
@@ -53,17 +52,10 @@ export function RefundModal({
         }
     }, [visible]);
 
-    // Format value for display (R$ X,XX)
     const formatInputValue = (text: string) => {
-        // Remove non-numeric characters
         let cleaned = text.replace(/\D/g, '');
-
-        // Convert to number (cents)
         let value = parseInt(cleaned) || 0;
-
-        // Format as currency
         let formatted = (value / 100).toFixed(2).replace('.', ',');
-
         return formatted;
     };
 
@@ -73,10 +65,8 @@ export function RefundModal({
         setError('');
     };
 
-    // Parse the custom value to number
     const parseCustomValue = (): number => {
         if (!customValue) return 0;
-        // Convert "123,45" to 123.45
         const value = parseFloat(customValue.replace(',', '.'));
         return isNaN(value) ? 0 : value;
     };
@@ -116,48 +106,33 @@ export function RefundModal({
     if (!transaction) return null;
 
     return (
-        <BottomModal
+        <ModalPadrao
             visible={visible}
             onClose={onClose}
             title="Estorno de Transação"
-            height="auto"
-            rightElement={
-                <TouchableOpacity
-                    onPress={handleConfirm}
-                    disabled={loading}
-                    style={styles.headerConfirmButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    {loading ? (
-                        <ActivityIndicator size="small" color="#4ADE80" />
-                    ) : (
-                        <RotateCcw size={22} color="#4ADE80" />
-                    )}
-                </TouchableOpacity>
-            }
         >
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-                {/* Transaction Info */}
-                <View style={styles.transactionInfo}>
-                    <View style={styles.transactionIconContainer}>
-                        <RotateCcw size={24} color="#4ADE80" />
-                    </View>
-                    <View style={styles.transactionDetails}>
-                        <Text style={styles.transactionDescription} numberOfLines={2}>
-                            {transaction.description}
-                        </Text>
-                        <Text style={styles.transactionAmount}>
-                            Valor: {formatCurrency(transaction.amount)}
+            <View style={styles.modalContent}>
+                <ScrollView
+                    contentContainerStyle={styles.container}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
+                <Text style={styles.subtitle}>
+                    Selecione como deseja realizar o estorno desta transação.
+                </Text>
+
+                <View style={styles.infoBox}>
+                    <RotateCcw size={16} color="#4ADE80" style={{ marginRight: 8, marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.infoBoxText}>
+                            Você está estornando: <Text style={styles.boldText}>{transaction.description}</Text> no valor de <Text style={styles.boldText}>{formatCurrency(transaction.amount)}</Text>.
                         </Text>
                     </View>
                 </View>
 
-                {/* Refund Type Selection */}
-                <Text style={styles.sectionHeader}>TIPO DE ESTORNO</Text>
                 <View style={styles.sectionCard}>
-                    {/* Total Value Option */}
                     <TouchableOpacity
-                        style={styles.optionContainer}
+                        style={styles.itemContainer}
                         onPress={() => setRefundType('total')}
                         activeOpacity={0.7}
                     >
@@ -167,19 +142,18 @@ export function RefundModal({
                         ]}>
                             {refundType === 'total' && <View style={styles.radioInner} />}
                         </View>
-                        <View style={styles.optionContent}>
-                            <Text style={styles.optionTitle}>Valor total</Text>
-                            <Text style={styles.optionSubtitle}>
+                        <View style={styles.itemContent}>
+                            <Text style={styles.itemTitle}>Valor total</Text>
+                            <Text style={styles.itemSubLabel}>
                                 Estornar {formatCurrency(transaction.amount)}
                             </Text>
                         </View>
                     </TouchableOpacity>
 
-                    <View style={styles.optionDivider} />
+                    <View style={styles.itemSeparator} />
 
-                    {/* Custom Value Option */}
                     <TouchableOpacity
-                        style={styles.optionContainer}
+                        style={styles.itemContainer}
                         onPress={() => setRefundType('custom')}
                         activeOpacity={0.7}
                     >
@@ -189,33 +163,35 @@ export function RefundModal({
                         ]}>
                             {refundType === 'custom' && <View style={styles.radioInner} />}
                         </View>
-                        <View style={styles.optionContent}>
-                            <Text style={styles.optionTitle}>Valor personalizado</Text>
-                            <Text style={styles.optionSubtitle}>
-                                Escolha um valor de estorno parcial
-                            </Text>
+                        <View style={styles.itemContent}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.itemTitle}>Valor personalizado</Text>
+                                    <Text style={styles.itemSubLabel}>
+                                        Escolha um valor de estorno parcial
+                                    </Text>
+                                </View>
+                                {refundType === 'custom' && (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }}>
+                                        <Text style={{ color: '#909090', fontSize: 16, marginRight: 8 }}>R$</Text>
+                                        <TextInput
+                                            style={styles.inputRight}
+                                            value={customValue}
+                                            onChangeText={handleValueChange}
+                                            placeholder="0,00"
+                                            placeholderTextColor="#555"
+                                            keyboardType="numeric"
+                                            textAlign="right"
+                                            maxLength={12}
+                                            autoFocus
+                                        />
+                                    </View>
+                                )}
+                            </View>
                         </View>
                     </TouchableOpacity>
-
-                    {/* Custom Value Input */}
-                    {refundType === 'custom' && (
-                        <View style={styles.customInputContainer}>
-                            <Text style={styles.currencyPrefix}>R$</Text>
-                            <TextInput
-                                style={styles.customInput}
-                                value={customValue}
-                                onChangeText={handleValueChange}
-                                placeholder="0,00"
-                                placeholderTextColor="#666"
-                                keyboardType="numeric"
-                                maxLength={10}
-                                autoFocus
-                            />
-                        </View>
-                    )}
                 </View>
 
-                {/* Error Message */}
                 {error ? (
                     <View style={styles.errorContainer}>
                         <AlertCircle size={16} color="#FF453A" />
@@ -223,84 +199,84 @@ export function RefundModal({
                     </View>
                 ) : null}
 
-                {/* Info Box */}
-                <View style={styles.helpContainer}>
-                    <View style={styles.helpHeaderRow}>
-                        <AlertCircle size={18} color="#4ADE80" />
-                        <Text style={styles.helpTitle}>O que vai acontecer?</Text>
-                    </View>
-                    <Text style={styles.helpText}>
-                        Uma nova transação de <Text style={styles.helpTextBold}>crédito</Text> será
-                        criada nesta fatura com o valor do estorno. A transação original será mantida.
-                    </Text>
-                </View>
-            </ScrollView>
-        </BottomModal>
+                </ScrollView>
+
+                <TouchableOpacity
+                    style={styles.saveButton}
+                    onPress={handleConfirm}
+                    activeOpacity={0.85}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                        <Text style={styles.saveButtonText}>Estornar</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+        </ModalPadrao>
     );
 }
 
 const styles = StyleSheet.create({
+    modalContent: {
+        gap: 8,
+    },
     container: {
-        paddingBottom: 0
+        gap: 16,
     },
-    transactionInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#151515',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: '#252525'
-    },
-    transactionIconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 12,
-        backgroundColor: 'rgba(74, 222, 128, 0.15)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 14
-    },
-    transactionDetails: {
-        flex: 1
-    },
-    transactionDescription: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FFF',
-        marginBottom: 4
-    },
-    transactionAmount: {
+    subtitle: {
         fontSize: 14,
-        color: '#888'
-    },
-    sectionHeader: {
-        fontSize: 12,
-        fontWeight: '600',
         color: '#8E8E93',
+        textAlign: 'left',
+        lineHeight: 20,
+        marginBottom: 4,
+    },
+    infoBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: -4,
         marginBottom: 8,
-        marginLeft: 4,
-        letterSpacing: 0.5,
-        textTransform: 'uppercase',
+    },
+    infoBoxText: {
+        fontSize: 13,
+        color: '#8E8E93',
+        lineHeight: 18,
+    },
+    boldText: {
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
     sectionCard: {
-        backgroundColor: '#151515',
+        backgroundColor: '#1A1A1A',
         borderRadius: 16,
-        overflow: 'hidden',
         borderWidth: 1,
-        borderColor: '#252525',
-        marginBottom: 16
+        borderColor: '#2A2A2A',
+        overflow: 'hidden',
     },
-    optionContainer: {
+    itemContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+        backgroundColor: '#1A1A1A',
     },
-    optionDivider: {
+    itemContent: {
+        flex: 1,
+    },
+    itemTitle: {
+        fontSize: 16,
+        color: '#FFFFFF',
+        fontWeight: '500',
+    },
+    itemSubLabel: {
+        fontSize: 12,
+        color: '#8E8E93',
+        marginTop: 2,
+    },
+    itemSeparator: {
         height: 1,
-        backgroundColor: '#252525',
-        marginHorizontal: 0
+        backgroundColor: '#2A2A2A',
     },
     radioOuter: {
         width: 22,
@@ -321,43 +297,12 @@ const styles = StyleSheet.create({
         borderRadius: 6,
         backgroundColor: '#4ADE80'
     },
-    optionContent: {
-        flex: 1
-    },
-    optionTitle: {
+    inputRight: {
+        color: '#FFFFFF',
         fontSize: 16,
-        fontWeight: '500',
-        color: '#FFF'
-    },
-    optionSubtitle: {
-        fontSize: 13,
-        color: '#888',
-        marginTop: 2
-    },
-    customInputContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingBottom: 16,
-        paddingTop: 8
-    },
-    currencyPrefix: {
-        fontSize: 18,
+        minWidth: 60,
+        padding: 0,
         fontWeight: '600',
-        color: '#4ADE80',
-        marginRight: 8
-    },
-    customInput: {
-        flex: 1,
-        fontSize: 24,
-        fontWeight: '600',
-        color: '#FFF',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        backgroundColor: '#1A1A1A',
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: '#4ADE80'
     },
     errorContainer: {
         flexDirection: 'row',
@@ -365,7 +310,6 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255, 69, 58, 0.1)',
         padding: 12,
         borderRadius: 10,
-        marginBottom: 16,
         gap: 8
     },
     errorText: {
@@ -373,35 +317,17 @@ const styles = StyleSheet.create({
         color: '#FF453A',
         flex: 1
     },
-    helpContainer: {
-        backgroundColor: '#1A1A1A',
-        padding: 16,
+    saveButton: {
+        backgroundColor: '#D97757',
+        paddingVertical: 14,
         borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#333',
-        marginBottom: 0
-    },
-    helpHeaderRow: {
-        flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 8
+        marginTop: 8,
     },
-    helpTitle: {
-        fontSize: 14,
-        color: '#4ADE80',
-        fontWeight: '600'
-    },
-    helpText: {
-        fontSize: 13,
-        color: '#CCC',
-        lineHeight: 18
-    },
-    helpTextBold: {
+    saveButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
         fontWeight: '700',
-        color: '#4ADE80'
     },
-    headerConfirmButton: {
-        padding: 4
-    }
 });
+

@@ -12,6 +12,7 @@ import Animated, {
     useSharedValue,
     withSpring
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TAB_BAR_WIDTH = SCREEN_WIDTH * 0.75;
@@ -32,6 +33,7 @@ const IntervalLottie = ({ source, size, interval = 5000 }: { source: any; size: 
 type IslandState = 'HIDDEN' | 'SYNCING' | 'OFFLINE';
 
 export function OfflineBanner() {
+    const insets = useSafeAreaInsets();
     const { isOnline, pendingOps, isSyncing, refresh } = useNetwork();
     const [islandState, setIslandState] = useState<IslandState>('HIDDEN');
 
@@ -66,6 +68,7 @@ export function OfflineBanner() {
     const animatedStyle = useAnimatedStyle(() => ({
         width: islandWidth.value,
         height: islandHeight.value,
+        bottom: 80 + Math.max(insets.bottom, 0),
     }));
 
     if (islandState === 'HIDDEN') return null;
@@ -98,7 +101,6 @@ export function OfflineBanner() {
                         <IntervalLottie
                             source={require('@/assets/perigo.json')}
                             size={18}
-                            interval={4000}
                         />
                         <Text style={styles.offlineText} numberOfLines={1}>
                             Sem conexão
@@ -118,7 +120,7 @@ export function OfflineBanner() {
 const styles = StyleSheet.create({
     dynamicIsland: {
         position: 'absolute',
-        bottom: 70, // Alinhado ao topo do navbar
+        bottom: 80, // Base
         alignSelf: 'center',
         backgroundColor: '#141414',
         overflow: 'hidden',

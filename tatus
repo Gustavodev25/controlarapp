@@ -1,0 +1,248 @@
+[33mcommit 08a6b921221ca66bcd40ed662574863730280d68[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m
+Author: Your Name <you@example.com>
+Date:   Sun Mar 1 13:52:20 2026 -0300
+
+    feat(pluggy): add creditData debug logging for CREDIT accounts during sync
+
+[33mcommit b250caa91338ba9df22c45b18174fd7384e8293d[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 14:17:27 2026 -0300
+
+    chore: update app and backend sync changes
+
+[33mcommit 84be800967ac1b5a11637b1e2ee6b0736e6ca9ca[m[33m ([m[1;31morigin/main[m[33m)[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 13:29:55 2026 -0300
+
+    feat(pluggy): parse validation error details to frontend
+
+[33mcommit e904123d052a1ab0f4f81be3b9872992dd2eb2df[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 12:56:55 2026 -0300
+
+    fix(pluggy): Remove empty credential parameters before connecting
+
+[33mcommit 7da6f065596ad8efc7d0411780f770e63cab6c1e[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 12:48:31 2026 -0300
+
+    chore: commit pending changes before sync
+
+[33mcommit 67277345120c8804b2707b8a04f775067f1377e5[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 12:47:47 2026 -0300
+
+    fix: allow deep links in pluggy redirect uris
+
+[33mcommit 7ca0592d99ece2c3755b91fcea3d9c7b57028321[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 12:21:27 2026 -0300
+
+    Pluggy versão final
+
+[33mcommit 40cc49fb76cabeb347a8a4384a5884b3d7c49f37[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 12:04:14 2026 -0300
+
+    Melhorias pluggy
+
+[33mcommit ca808d34428bf16fedfd52c0300b52b0348f94b5[m
+Author: Your Name <you@example.com>
+Date:   Wed Feb 25 09:52:49 2026 -0300
+
+    fix(pluggy): expand initial sync full history window
+
+[33mcommit 6b6156326d67c619e4e803f111f8317a65e4c626[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 17:01:03 2026 -0300
+
+    fix: abrir OAuth do Pluggy via parameter.data em waiting_user_input
+
+[33mcommit f04c8dd2ce35706ad4a3a9bb0cf077b351e54001[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 17:00:18 2026 -0300
+
+    fix: aceitar oauth URL em parameter.data no create-item
+
+[33mcommit 0b0f8513200ae31b3c0269f6fa065285a026e343[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 16:40:07 2026 -0300
+
+    fix: detalhar logs de erro do Pluggy no callback/webhook
+
+[33mcommit e6311a91e7e7bfe1bae552a05f27921f7c1e5382[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 13:59:39 2026 -0300
+
+    Pluggy agora funcional
+
+[33mcommit fd4a71ee99adcca3a9d5999a076062c8e8d402a7[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 12:55:46 2026 -0300
+
+    Pluggy mudança
+
+[33mcommit d042ecf39dd6daa0500ff75d1b0be8fa060cdd02[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 12:49:11 2026 -0300
+
+    Pluggy 100% funcional
+
+[33mcommit edb79633df80eda2577854444fc25493581e791c[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 12:03:46 2026 -0300
+
+    update: pluggy.js version fintech 2026
+
+[33mcommit 2179b033cbc0185e23b32c6223ed6a6919e9a3ce[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 11:48:15 2026 -0300
+
+    update app
+
+[33mcommit 631c2d9015a4658b810953735379dfb0daa8ea15[m
+Author: Your Name <you@example.com>
+Date:   Tue Feb 24 11:43:34 2026 -0300
+
+    update pluggy logic
+
+[33mcommit 37aa3283de089dbfb45231555026434dc49168fb[m
+Author: Your Name <you@example.com>
+Date:   Mon Feb 23 10:19:13 2026 -0300
+
+    fix: sincronização agora dispara atualização real no banco via PATCH com polling de status, tratamento de erros e logging detalhado
+
+[33mcommit 206db8cd2c4960c3512f2eab2b930fd76031651a[m
+Merge: 02e7bba 2ad0c41
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 22:28:40 2026 -0300
+
+    fix: resolver conflitos de merge e atualizar backend v2
+
+[33mcommit 02e7bba080d49a114048f99624b794280d13bf8b[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 22:22:49 2026 -0300
+
+    fix: corrigir erro schema.parse no middleware validate para rotas com params
+
+[33mcommit d3ebb57042ef78843f2d097e6e7ab17a92894a64[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 21:57:43 2026 -0300
+
+    Pluggy nova versão
+
+[33mcommit 0d2a6fd67d6ec2bf346cc193a847c09a813c1168[m
+Merge: c92ffff e76e007
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 21:44:28 2026 -0300
+
+    Split 'server/' into commit 'e76e00716586492545c096f3245aa5c21a142358'
+    
+    git-subtree-dir: server
+    git-subtree-mainline: c92ffffa4619a97861946927e17919c4067dfe2c
+    git-subtree-split: e76e00716586492545c096f3245aa5c21a142358
+
+[33mcommit c92ffffa4619a97861946927e17919c4067dfe2c[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 21:34:56 2026 -0300
+
+    Trigger Railway deploy
+
+[33mcommit ffaf8f3906111deedd5e79d0f9213b366a78faa4[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 21:33:13 2026 -0300
+
+    Atualização do backend para deploy no Railway
+
+[33mcommit e76e00716586492545c096f3245aa5c21a142358[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 19:07:48 2026 -0300
+
+    feat: Configurar URL do Pluggy para funcionar com backend Railway
+    
+    - Adicionar endpoint OAuth callback no servidor (/api/pluggy/oauth-callback)
+    - Configurar redirectUri para usar URL do Railway
+    - Endpoint redireciona de volta para o app via deep link
+    - Adicionar documentação completa do fluxo OAuth
+
+[33mcommit cd80a9825e3e61078f6faa70aced8b05aae9eec5[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 19:32:39 2026 -0300
+
+    Melhorias no modal de conexão bancária: remover progressbar, adicionar DynamicText e melhorar tratamento de erros
+
+[33mcommit 2560cb56b8d23a8351b4a5339c1156be8f0996f3[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 19:07:48 2026 -0300
+
+    feat: Configurar URL do Pluggy para funcionar com backend Railway
+    
+    - Adicionar endpoint OAuth callback no servidor (/api/pluggy/oauth-callback)
+    - Configurar redirectUri para usar URL do Railway
+    - Endpoint redireciona de volta para o app via deep link
+    - Adicionar documentação completa do fluxo OAuth
+
+[33mcommit 846c74dea0f4c7983b43f806220687f45110081b[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 18:45:04 2026 -0300
+
+    Configurar Railway
+
+[33mcommit 2ad0c41936e7c1347d9f50a4de5a6b27ad339afd[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 21:34:56 2026 -0300
+
+    Trigger Railway deploy
+
+[33mcommit d6631ca6cff07396a55a73f3e5f21990159304ef[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 21:33:13 2026 -0300
+
+    Atualização do backend para deploy no Railway
+
+[33mcommit ff24690ff10006fe4cace583518b4de51af48cd0[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 19:32:39 2026 -0300
+
+    Melhorias no modal de conexão bancária: remover progressbar, adicionar DynamicText e melhorar tratamento de erros
+
+[33mcommit afc011b5291b298892386a66739b1ec0d3e05927[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 19:07:48 2026 -0300
+
+    feat: Configurar URL do Pluggy para funcionar com backend Railway
+    
+    - Adicionar endpoint OAuth callback no servidor (/api/pluggy/oauth-callback)
+    - Configurar redirectUri para usar URL do Railway
+    - Endpoint redireciona de volta para o app via deep link
+    - Adicionar documentação completa do fluxo OAuth
+
+[33mcommit 96795ddf9740add036f87b5517e03e8de795bd28[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 18:59:03 2026 -0300
+
+    Fix: Corrigir URL da API e adicionar logs detalhados para debug
+
+[33mcommit bee45453dd35c714a4c72c9579bf6aa939080a31[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 18:59:03 2026 -0300
+
+    Fix: Corrigir URL da API e adicionar logs detalhados para debug
+
+[33mcommit 76c12396b46faad55f9073454f42c898c131aad4[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 18:53:55 2026 -0300
+
+    Fix: Adicionar logs de debug para porta
+
+[33mcommit afb80bde5399a583e6a430011cb0428f58e8081c[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 18:53:55 2026 -0300
+
+    Fix: Adicionar logs de debug para porta
+
+[33mcommit a46c0938cf8e63af2b96802ccb8d7215596d0285[m
+Author: Your Name <you@example.com>
+Date:   Sun Feb 22 18:51:18 2026 -0300
+
+    Fix: Adicionar con

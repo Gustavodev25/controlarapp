@@ -1,4 +1,4 @@
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { Save, Search, Trash2, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
@@ -87,12 +87,11 @@ export function RecurrenceFilterModal({
     ];
 
     return (
-        <BottomModal
+        <ModalPadrao
             visible={visible}
             onClose={onClose}
             title="Filtrar"
-            height="auto"
-            rightElement={
+            headerRight={
                 <TouchableOpacity onPress={handleApply} style={styles.headerSaveButton}>
                     <Save size={18} color="#D97757" />
                     <Text style={styles.headerSaveText}>Salvar</Text>
@@ -171,7 +170,7 @@ export function RecurrenceFilterModal({
                     <Text style={styles.clearButtonTextSimple}>Limpar Filtros</Text>
                 </TouchableOpacity>
             </View>
-        </BottomModal>
+        </ModalPadrao>
     );
 }
 

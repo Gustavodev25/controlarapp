@@ -7,6 +7,7 @@ import { SubscriptionBlocker } from '@/components/SubscriptionBlocker';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CategoryProvider } from '@/contexts/CategoryContext';
 import { NetworkProvider } from '@/contexts/NetworkContext';
+import { OpenFinanceSyncProvider } from '@/contexts/OpenFinanceSyncContext';
 import { PerformanceProvider } from '@/contexts/PerformanceContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -51,16 +52,18 @@ export default function RootLayout() {
             <AuthProvider>
               <SubscriptionBlocker>
                 <CategoryProvider>
-                  <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                    <Stack initialRouteName="index" screenOptions={{ animation: 'fade' }}>
-                      <Stack.Screen name="index" options={{ headerShown: false }} />
-                      <Stack.Screen name="(public)" options={{ headerShown: false }} />
-                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                      <Stack.Screen name="settings" options={{ headerShown: false }} />
-                      <Stack.Screen name="open-finance/callback" options={{ headerShown: false }} />
-                    </Stack>
-                    <StatusBar style="light" translucent backgroundColor="transparent" />
-                  </ThemeProvider>
+                  <OpenFinanceSyncProvider>
+                    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                      <Stack initialRouteName="index" screenOptions={{ animation: 'fade' }}>
+                        <Stack.Screen name="index" options={{ headerShown: false }} />
+                        <Stack.Screen name="(public)" options={{ headerShown: false }} />
+                        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                        <Stack.Screen name="settings" options={{ headerShown: false }} />
+                        <Stack.Screen name="open-finance/callback" options={{ headerShown: false }} />
+                      </Stack>
+                      <StatusBar style="light" translucent backgroundColor="transparent" />
+                    </ThemeProvider>
+                  </OpenFinanceSyncProvider>
                 </CategoryProvider>
               </SubscriptionBlocker>
             </AuthProvider>

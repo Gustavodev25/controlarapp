@@ -1,8 +1,8 @@
 import MonthSelector from '@/components/MonthSelector';
+import { RecurrenceDeleteModal } from '@/components/RecurrenceDeleteModal';
 import { RecurrenceFilterModal, RecurrenceFilterState } from '@/components/RecurrenceFilterModal';
 import { ReminderModal } from '@/components/ReminderModal';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
-import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { databaseService } from '@/services/firebase';
@@ -362,8 +362,8 @@ const ListItem = ({
                         ) : (
                             // Value and status when collapsed
                             <>
-                                <Text style={[styles.listItemAmount, { color: item.transactionType === 'income' ? '#04D361' : '#FFFFFF' }]}>
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.amount)}
+                                <Text style={[styles.listItemAmount, { color: item.transactionType === 'income' ? '#04D361' : '#FF453A' }]}>
+                                    {item.transactionType === 'income' ? '+' : '-'} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.amount)}
                                 </Text>
                                 <View style={[styles.statusBadge, {
                                     backgroundColor: item.status === 'paid'
@@ -1044,7 +1044,7 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
         const [dayRaw, monthRaw, year] = data.date.split('/');
         const day = dayRaw.padStart(2, '0');
         const month = monthRaw.padStart(2, '0');
-        const dueDate = `${year} -${month} -${day} `;
+        const dueDate = `${year}-${month}-${day}`;
 
         let cancellationDate = null;
         if (data.cancellationReminder) {
@@ -1056,7 +1056,7 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
             const cYear = dueObj.getFullYear();
             const cMonth = String(dueObj.getMonth() + 1).padStart(2, '0');
             const cDay = String(dueObj.getDate()).padStart(2, '0');
-            cancellationDate = `${cYear} -${cMonth} -${cDay} `;
+            cancellationDate = `${cYear}-${cMonth}-${cDay}`;
         }
 
         const type = selectedTab === 'subscriptions' ? 'subscription' : 'reminder';
@@ -1288,11 +1288,21 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
             } else {
                 // REMINDERS: Discrete document model (new doc created on payment).
                 // Do NOT project. Strictly filter by stored dueDate.
-                // This prevents "future" (next month's) pending reminder from showing up in current month.
+                // Include "past" (overdue) pending reminders in the current month view.
 
+                // Exact match for the selected month
                 if ((m - 1) === selectedMonthIndex && y === selectedYear) {
                     return item;
                 }
+
+                // If overdue (before the selected month) and unpaid, show it in the current month
+                const itemMonthValue = y * 12 + (m - 1);
+                const selectedMonthValue = selectedYear * 12 + selectedMonthIndex;
+
+                if (item.status !== 'paid' && itemMonthValue < selectedMonthValue) {
+                    return item;
+                }
+
                 return null;
             }
 
@@ -1457,91 +1467,71 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
 
     const renderSummaryCard = () => (
         <View style={styles.summaryCard}>
-            {selectedTab === 'subscriptions' ? (
-                <View style={styles.summaryRow}>
-                    <View style={styles.summaryCol}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            <View style={{ backgroundColor: 'rgba(255, 76, 76, 0.15)', borderRadius: 12, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
-                                <IntervalLottie source={require('@/assets/despesa.json')} size={14} interval={5000} />
-                            </View>
-                            <Text style={[styles.summaryLabel, { marginBottom: 0 }]}>A Pagar</Text>
-                        </View>
-                        <Text style={styles.summaryValue}>
-                            {formatCurrency((totals as any).monthlyRemaining || 0)}
-                        </Text>
-                        <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
-                            <Text style={styles.summarySubValue}>
-                                Pago: {formatCurrency((totals as any).monthlyPaid || 0)}
-                            </Text>
-                            <Text style={[styles.summarySubValue, { marginTop: 0 }]}>
-                                Falta: {formatCurrency((totals as any).monthlyRemaining || 0)}
-                            </Text>
-                        </View>
-                    </View>
-                    <View style={styles.summaryDivider} />
-                    <View style={styles.summaryCol}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            <View style={{ backgroundColor: 'rgba(10, 132, 255, 0.15)', borderRadius: 12, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
-                                <IntervalLottie source={require('@/assets/previsao.json')} size={14} interval={5000} />
-                            </View>
-                            <Text style={[styles.summaryLabel, { marginBottom: 0 }]}>Estimativa Anual</Text>
-                        </View>
-                        <Text style={[styles.summaryValue, { color: '#888' }]}>
-                            {formatCurrency((totals as any).yearlyEstimation || 0)}
-                        </Text>
-                        <View style={{ alignItems: 'flex-start', marginTop: 4, opacity: 0 }}>
-                            <Text style={styles.summarySubValue}>Spacer</Text>
-                            <Text style={[styles.summarySubValue, { marginTop: 0 }]}>Spacer</Text>
-                        </View>
-                    </View>
-                </View>
-            ) : (
-                <View style={styles.summaryRow}>
-                    <View style={styles.summaryCol}>
-                        <View style={{ alignItems: 'flex-start' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <View style={{ backgroundColor: 'rgba(255, 76, 76, 0.15)', borderRadius: 12, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={styles.summaryRow}>
+                {selectedTab === 'subscriptions' ? (
+                    <>
+                        <View style={styles.summaryCol}>
+                            <View style={styles.summaryHeaderRow}>
+                                <View style={[styles.summaryIconBox, { backgroundColor: 'rgba(255, 69, 58, 0.1)' }]}>
                                     <IntervalLottie source={require('@/assets/despesa.json')} size={14} interval={5000} />
                                 </View>
-                                <Text style={[styles.summaryLabel, { marginBottom: 0 }]}>A Pagar</Text>
+                                <Text style={styles.summaryLabelSmall}>A Pagar</Text>
                             </View>
-                            <Text style={styles.summaryValue}>
+                            <Text style={styles.summaryValueSmall}>
+                                {formatCurrency((totals as any).monthlyRemaining || 0)}
+                            </Text>
+                            <Text style={styles.summarySubLabelSmall}>
+                                Pago: {formatCurrency((totals as any).monthlyPaid || 0)}
+                            </Text>
+                        </View>
+                        <View style={styles.summaryDivider} />
+                        <View style={styles.summaryCol}>
+                            <View style={styles.summaryHeaderRow}>
+                                <View style={[styles.summaryIconBox, { backgroundColor: 'rgba(10, 132, 255, 0.1)' }]}>
+                                    <IntervalLottie source={require('@/assets/previsao.json')} size={14} interval={5000} />
+                                </View>
+                                <Text style={styles.summaryLabelSmall}>Anual</Text>
+                            </View>
+                            <Text style={[styles.summaryValueSmall, { color: '#888' }]}>
+                                {formatCurrency((totals as any).yearlyEstimation || 0)}
+                            </Text>
+                            <Text style={styles.summarySubLabelSmall}>Projeção ativa</Text>
+                        </View>
+                    </>
+                ) : (
+                    <>
+                        <View style={styles.summaryCol}>
+                            <View style={styles.summaryHeaderRow}>
+                                <View style={[styles.summaryIconBox, { backgroundColor: 'rgba(255, 69, 58, 0.1)' }]}>
+                                    <IntervalLottie source={require('@/assets/despesa.json')} size={14} interval={5000} />
+                                </View>
+                                <Text style={styles.summaryLabelSmall}>A Pagar</Text>
+                            </View>
+                            <Text style={[styles.summaryValueSmall, { color: '#FF453A' }]}>
                                 {formatCurrency((totals as any).expensePending || 0)}
                             </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
-                            <Text style={styles.summarySubValue}>
+                            <Text style={styles.summarySubLabelSmall}>
                                 Pago: {formatCurrency((totals as any).expensePaid || 0)}
                             </Text>
-                            <Text style={[styles.summarySubValue, { marginTop: 0 }]}>
-                                Falta: {formatCurrency((totals as any).expensePending || 0)}
-                            </Text>
                         </View>
-                    </View>
-                    <View style={styles.summaryDivider} />
-                    <View style={styles.summaryCol}>
-                        <View style={{ alignItems: 'flex-start' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <View style={{ backgroundColor: 'rgba(4, 211, 97, 0.15)', borderRadius: 12, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={styles.summaryDivider} />
+                        <View style={styles.summaryCol}>
+                            <View style={styles.summaryHeaderRow}>
+                                <View style={[styles.summaryIconBox, { backgroundColor: 'rgba(4, 211, 97, 0.1)' }]}>
                                     <IntervalLottie source={require('@/assets/receita.json')} size={14} interval={5000} />
                                 </View>
-                                <Text style={[styles.summaryLabel, { marginBottom: 0 }]}>A Receber</Text>
+                                <Text style={styles.summaryLabelSmall}>Receber</Text>
                             </View>
-                            <Text style={[styles.summaryValue, { color: '#04D361' }]}>
+                            <Text style={[styles.summaryValueSmall, { color: '#04D361' }]}>
                                 {formatCurrency((totals as any).incomePending || 0)}
                             </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
-                            <Text style={styles.summarySubValue}>
+                            <Text style={styles.summarySubLabelSmall}>
                                 Recebido: {formatCurrency((totals as any).incomeReceived || 0)}
                             </Text>
-                            <Text style={[styles.summarySubValue, { marginTop: 0 }]}>
-                                Falta: {formatCurrency((totals as any).incomePending || 0)}
-                            </Text>
                         </View>
-                    </View>
-                </View>
-            )}
+                    </>
+                )}
+            </View>
         </View>
     );
 
@@ -1755,12 +1745,13 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
                     onConfirmDelete={confirmBulkDelete}
                 />
             )}
-            {/* Delete Confirmation Modal (Top Pill) */}
-            <DeleteConfirmationModal
+            {/* Delete Confirmation Modal */}
+            <RecurrenceDeleteModal
                 visible={deleteModalVisible}
-                onCancel={() => setDeleteModalVisible(false)}
+                onClose={() => setDeleteModalVisible(false)}
                 onConfirm={handleConfirmDelete}
                 title={`Excluir ${itemToDelete?.type === 'subscription' ? 'Assinatura' : 'Lembrete'}?`}
+                message="Esta ação não pode ser desfeita."
                 confirmText="Excluir"
                 cancelText="Cancelar"
             />
@@ -1773,7 +1764,7 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
                     setEditingItem(null);
                 }}
                 onSave={handleSaveReminder}
-                title={editingItem ? `Editar ${selectedTab === 'subscriptions' ? 'Assinatura' : 'Lembrete'} ` : (selectedTab === 'subscriptions' ? 'Nova Assinatura' : 'Novo Lembrete')}
+                mode={selectedTab}
                 initialData={editingItem ? {
                     title: editingItem.name,
                     amount: editingItem.amount,
@@ -2228,37 +2219,43 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
     },
+    summaryLabelSmall: {
+        fontSize: 12,
+        color: '#8E8E93',
+        fontWeight: '600',
+    },
+    summaryValueSmall: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+    summarySubLabelSmall: {
+        fontSize: 10,
+        color: '#666',
+        marginTop: 2,
+    },
+    summaryIconBox: {
+        width: 24,
+        height: 24,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    summaryHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 4,
+    },
     summaryCol: {
         flex: 1,
         alignItems: 'flex-start',
-        justifyContent: 'center',
-        gap: 4,
     },
     summaryDivider: {
         width: 1,
         height: '100%',
-        minHeight: 40,
-        backgroundColor: '#333',
-        marginHorizontal: 16,
-    },
-    summaryLabel: {
-        fontSize: 12,
-        color: '#888',
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-        marginBottom: 4,
-    },
-    summaryValue: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#E0E0E0',
-    },
-    summarySubValue: {
-        fontSize: 11,
-        color: '#666',
-        marginTop: 4,
-        fontWeight: '500',
+        backgroundColor: '#2A2A2A',
+        marginHorizontal: 12,
     },
     // Detection Actions Styles
     detectionActions: {

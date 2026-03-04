@@ -1,9 +1,10 @@
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { databaseService } from '@/services/firebase';
 import { Wallet } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Dimensions,
     ScrollView,
     StyleSheet,
     Text,
@@ -11,6 +12,9 @@ import {
     View
 } from 'react-native';
 import { ModernSwitch } from './ui/ModernSwitch';
+
+const { height: windowHeight } = Dimensions.get('window');
+
 
 interface BankAccount {
     id: string;
@@ -60,9 +64,6 @@ export function BalanceAccountsModal({
     const toggleAccount = (accountId: string) => {
         setSelected(prev => {
             if (prev.includes(accountId)) {
-                // Don't allow deselecting all accounts if only one is left?
-                // Actually with switches user might want to turn off one.
-                // But we usually want at least one selected or maybe none is fine -> "R$ 0,00"
                 return prev.filter(id => id !== accountId);
             }
             return [...prev, accountId];
@@ -72,7 +73,6 @@ export function BalanceAccountsModal({
     const handleSave = async () => {
         setLoading(true);
         try {
-            // Save preference to user profile (uses dot notation to avoid overwriting other prefs)
             await databaseService.updatePreference(userId, {
                 balanceAccountIds: selected
             });
@@ -94,12 +94,11 @@ export function BalanceAccountsModal({
     };
 
     return (
-        <BottomModal
+        <ModalPadrao
             visible={visible}
             onClose={onClose}
-            title="Configurar Saldo"
-            height="auto"
-            rightElement={
+            title="Minhas Contas"
+            headerRight={
                 <TouchableOpacity onPress={handleSave} disabled={loading} style={styles.headerSaveButton}>
                     {loading ? (
                         <ActivityIndicator size="small" color="#D97757" />
@@ -109,7 +108,11 @@ export function BalanceAccountsModal({
                 </TouchableOpacity>
             }
         >
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.container}
+                showsVerticalScrollIndicator={false}
+                style={{ maxHeight: windowHeight * 0.7 }}
+            >
                 {/* Accounts List */}
                 <Text style={styles.sectionHeader}>CONTAS DISPONÍVEIS</Text>
                 <View style={styles.sectionCard}>
@@ -165,13 +168,13 @@ export function BalanceAccountsModal({
                     })}
                 </View>
             </ScrollView>
-        </BottomModal>
+        </ModalPadrao>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        paddingBottom: 0
+        paddingBottom: 20
     },
     positiveValue: {
         color: '#04D361'
@@ -254,7 +257,7 @@ const styles = StyleSheet.create({
     },
     headerSaveText: {
         color: '#D97757',
-        fontSize: 14,
-        fontWeight: '600'
+        fontSize: 16,
+        fontWeight: 'bold'
     }
 });

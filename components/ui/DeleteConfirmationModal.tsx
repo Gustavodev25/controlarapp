@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         zIndex: 9999,
         justifyContent: 'flex-start',
-        paddingTop: Platform.OS === 'ios' ? 60 : 40,
+        paddingTop: Platform.OS === 'ios' ? 40 : 20,
         alignItems: 'center',
     },
     pillWrapper: {

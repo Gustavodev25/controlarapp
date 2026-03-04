@@ -1,3 +1,4 @@
+import { GlobalSyncBanner } from '@/components/ui/GlobalSyncBanner';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
@@ -30,6 +31,7 @@ import Animated, {
   ZoomIn,
   ZoomOut
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 52;
@@ -90,6 +92,7 @@ const TabItem = ({ title, icon: IconSource, isActive, onPress }: TabItemProps) =
 };
 
 function CustomTabBar({ state, navigation }: { state: any, navigation: any }) {
+  const insets = useSafeAreaInsets();
   const { budget, lod } = usePerformanceBudget();
 
   const currentRouteName = state.routes[state.index].name;
@@ -150,9 +153,9 @@ function CustomTabBar({ state, navigation }: { state: any, navigation: any }) {
     height: withSpring(TAB_BAR_HEIGHT, springConfig),
   }));
 
-  // Menus sobem suavemente
+  // Menus sobem suavemente - Ajustado para considerar Safe Area
   const menuContainerStyle = useAnimatedStyle(() => ({
-    bottom: withSpring(85, springConfig),
+    bottom: withSpring(85 + (insets.bottom > 0 ? insets.bottom - 10 : 0), springConfig),
   }));
 
   const tabBlurIntensity = Math.round(Math.max(18, budget.blurIntensity * 0.45));
@@ -214,11 +217,16 @@ function CustomTabBar({ state, navigation }: { state: any, navigation: any }) {
         </Animated.View>
       )}
 
-      {/* OFFLINE BANNER (Emerge por trás do navbar) */}
+      {/* OFFLINE BANNER E SYNC BANNER */}
+      <GlobalSyncBanner />
       <OfflineBanner />
 
       {/* NAVBAR UNIFICADA */}
-      <Animated.View style={[styles.tabBarShadow, tabBarStyle]}>
+      <Animated.View style={[
+        styles.tabBarShadow,
+        tabBarStyle,
+        { bottom: 20 + Math.max(insets.bottom, 0) }
+      ]}>
 
         <View style={styles.tabBarInner} onLayout={(e) => setTabBarWidth(e.nativeEvent.layout.width)}>
 

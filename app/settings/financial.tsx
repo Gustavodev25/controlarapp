@@ -1,5 +1,5 @@
 import { UniversalBackground } from '@/components/UniversalBackground';
-import { BottomModal } from '@/components/ui/BottomModal';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -11,8 +11,10 @@ import {
     ChevronRight,
     CreditCard,
     DollarSign,
+    Info,
     Percent,
     Plus,
+    Tag,
     Trash2,
     Wallet
 } from 'lucide-react-native';
@@ -631,119 +633,176 @@ export default function FinancialSettingsScreen() {
             </KeyboardAvoidingView>
 
             {/* Discount Modal */}
-            <BottomModal
+            <ModalPadrao
                 visible={showDiscountModal}
                 onClose={() => setShowDiscountModal(false)}
                 title="Novo Desconto"
-                height="auto"
-                rightElement={
-                    <TouchableOpacity onPress={handleAddDiscount} style={styles.headerSaveButton}>
-                        <Text style={styles.headerSaveText}>Adicionar</Text>
-                    </TouchableOpacity>
-                }
             >
-                <View style={{ gap: 20 }}>
-                    <View>
-                        <Text style={styles.modalLabel}>NOME DO DESCONTO</Text>
-                        <TextInput
-                            style={styles.modalInput}
-                            value={newDiscountName}
-                            onChangeText={setNewDiscountName}
-                            placeholder="Ex: Plano de Saúde"
-                            placeholderTextColor="#555"
-                        />
+                <View style={{ gap: 16 }}>
+                    <Text style={styles.modalSubtitle}>
+                        Informe os detalhes do novo desconto que será aplicado ao seu salário.
+                    </Text>
+
+                    <View style={styles.sectionCard}>
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                <Tag size={20} color="#E0E0E0" />
+                            </View>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <Text style={styles.itemTitle}>Nome</Text>
+                                    <TextInput
+                                        style={styles.inputRight}
+                                        value={newDiscountName}
+                                        onChangeText={setNewDiscountName}
+                                        placeholder="Ex: Plano de Saúde"
+                                        placeholderTextColor="#555"
+                                        textAlign="right"
+                                    />
+                                </View>
+                            </View>
+                        </View>
+                        <View style={styles.itemSeparator} />
+
+                        <View style={[styles.itemContainer, { paddingVertical: 12 }]}>
+                            <SmoothTabs
+                                value={newDiscountType}
+                                onChange={(v) => setNewDiscountType(v as any)}
+                                options={[
+                                    { label: 'Valor (R$)', value: 'fixed' },
+                                    { label: 'Porcentagem (%)', value: 'percentage' }
+                                ]}
+                            />
+                        </View>
+                        <View style={styles.itemSeparator} />
+
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                {newDiscountType === 'percentage' ? <Percent size={20} color="#E0E0E0" /> : <DollarSign size={20} color="#E0E0E0" />}
+                            </View>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <Text style={styles.itemTitle}>
+                                        {newDiscountType === 'fixed' ? 'Valor' : 'Porcentagem'}
+                                    </Text>
+                                    <TextInput
+                                        style={styles.inputRight}
+                                        value={newDiscountValue}
+                                        onChangeText={(t) => newDiscountType === 'percentage' ? setNewDiscountValue(t) : setNewDiscountValue(formatInputCurrency(t))}
+                                        keyboardType="numeric"
+                                        placeholder={newDiscountType === 'percentage' ? "Ex: 5" : "R$ 0,00"}
+                                        placeholderTextColor="#555"
+                                        textAlign="right"
+                                    />
+                                </View>
+                            </View>
+                        </View>
                     </View>
 
-                    <SmoothTabs
-                        value={newDiscountType}
-                        onChange={(v) => setNewDiscountType(v as any)}
-                        options={[
-                            { label: 'Valor (R$)', value: 'fixed' },
-                            { label: 'Porcentagem (%)', value: 'percentage' }
-                        ]}
-                    />
-
-                    <View>
-                        <Text style={styles.modalLabel}>
-                            {newDiscountType === 'fixed' ? 'VALOR A DESCONTAR' : 'PORCENTAGEM DO DESCONTO'}
-                        </Text>
-                        <TextInput
-                            style={styles.modalInput}
-                            value={newDiscountValue}
-                            onChangeText={(t) => newDiscountType === 'percentage' ? setNewDiscountValue(t) : setNewDiscountValue(formatInputCurrency(t))}
-                            keyboardType="numeric"
-                            placeholder={newDiscountType === 'percentage' ? "Ex: 5" : "R$ 0,00"}
-                            placeholderTextColor="#555"
-                        />
-                    </View>
-
+                    <TouchableOpacity
+                        style={styles.modalSaveButton}
+                        onPress={handleAddDiscount}
+                        activeOpacity={0.85}
+                    >
+                        <Text style={styles.modalSaveButtonText}>Adicionar Desconto</Text>
+                    </TouchableOpacity>
                 </View>
-            </BottomModal>
+            </ModalPadrao>
 
             {/* Payday Modal */}
-            <BottomModal
+            <ModalPadrao
                 visible={showPaydayModal}
                 onClose={() => setShowPaydayModal(false)}
                 title="Dia do Pagamento"
-                height="auto"
-                rightElement={
-                    paydayType === 'manual' ? (
-                        <TouchableOpacity onPress={() => setShowPaydayModal(false)} style={styles.headerSaveButton}>
-                            <Text style={styles.headerSaveText}>Confirmar</Text>
-                        </TouchableOpacity>
-                    ) : null
-                }
+                headerRight={null}
             >
-                <View style={{ gap: 0, backgroundColor: '#1A1A1A', borderRadius: 16, overflow: 'hidden' }}>
-                    {[
-                        { label: '5º Dia Útil', value: '5th_business' },
-                        { label: 'Último Dia Útil', value: 'last_business' },
-                        { label: 'Último Dia do Mês', value: 'last_month' },
-                        { label: 'Dia Fixo (Manual)', value: 'manual' }
-                    ].map((opt, index, arr) => (
-                        <TouchableOpacity
-                            key={opt.value}
-                            style={[
-                                styles.modalOption,
-                                {
-                                    borderBottomWidth: index === arr.length - 1 ? 0 : 1,
-                                    borderBottomColor: '#333',
-                                    paddingVertical: 16,
-                                    paddingHorizontal: 16
-                                }
-                            ]}
-                            onPress={() => {
-                                setPaydayType(opt.value as any);
-                                if (opt.value !== 'manual') {
-                                    setShowPaydayModal(false);
-                                }
-                            }}
-                        >
-                            <Text style={[
-                                styles.modalOptionText,
-                                paydayType === opt.value && styles.modalOptionTextSelected
-                            ]}>{opt.label}</Text>
-                            {paydayType === opt.value && <View style={styles.checkCircle}><View style={styles.checkInner} /></View>}
-                        </TouchableOpacity>
-                    ))}
-                </View>
+                <View style={{ gap: 16 }}>
+                    <Text style={styles.modalSubtitle}>
+                        Escolha como o sistema deve projetar o dia do seu pagamento mensalmente.
+                    </Text>
 
-                {paydayType === 'manual' && (
-                    <Animated.View entering={FadeIn} style={{ marginTop: 24 }}>
-                        <Text style={styles.modalLabel}>DIA DO MÊS</Text>
-                        <TextInput
-                            style={styles.modalInput}
-                            value={paydayDate}
-                            onChangeText={setPaydayDate}
-                            placeholder="Dia do mês (1-31)"
-                            placeholderTextColor="#555"
-                            keyboardType="numeric"
-                            maxLength={2}
-                            autoFocus={true}
-                        />
-                    </Animated.View>
-                )}
-            </BottomModal>
+                    <View style={styles.sectionCard}>
+                        {[
+                            { label: '5º Dia Útil', value: '5th_business' },
+                            { label: 'Último Dia Útil', value: 'last_business' },
+                            { label: 'Último Dia do Mês', value: 'last_month' },
+                            { label: 'Dia Fixo (Manual)', value: 'manual' }
+                        ].map((opt, index, arr) => (
+                            <View key={opt.value}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.itemContainer,
+                                        paydayType === opt.value && { backgroundColor: 'rgba(217, 119, 87, 0.05)' }
+                                    ]}
+                                    onPress={() => {
+                                        setPaydayType(opt.value as any);
+                                        if (opt.value !== 'manual') {
+                                            setTimeout(() => setShowPaydayModal(false), 200);
+                                        }
+                                    }}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={styles.itemIconContainer}>
+                                        <Calendar size={20} color={paydayType === opt.value ? "#d97757" : "#E0E0E0"} />
+                                    </View>
+                                    <View style={styles.itemRightContainer}>
+                                        <View style={styles.itemContent}>
+                                            <Text style={[
+                                                styles.itemTitle,
+                                                paydayType === opt.value && { color: '#d97757', fontWeight: '700' }
+                                            ]}>{opt.label}</Text>
+                                            {paydayType === opt.value && <View style={styles.checkCircle}><View style={styles.checkInner} /></View>}
+                                        </View>
+                                    </View>
+                                </TouchableOpacity>
+                                {index < arr.length - 1 && <View style={styles.itemSeparator} />}
+                            </View>
+                        ))}
+                    </View>
+
+                    {paydayType === 'manual' && (
+                        <Animated.View entering={FadeIn} style={{ gap: 16 }}>
+                            <View style={styles.infoBox}>
+                                <Info size={16} color="#8E8E93" style={{ marginRight: 8, marginTop: 2 }} />
+                                <Text style={styles.infoBoxText}>
+                                    O dia fixo ignora finais de semana e feriados, projetando sempre no dia escolhido.
+                                </Text>
+                            </View>
+
+                            <View style={styles.sectionCard}>
+                                <View style={styles.itemContainer}>
+                                    <View style={styles.itemIconContainer}>
+                                        <Calendar size={20} color="#E0E0E0" />
+                                    </View>
+                                    <View style={styles.itemRightContainer}>
+                                        <View style={styles.itemContent}>
+                                            <Text style={styles.itemTitle}>Dia do Mês</Text>
+                                            <TextInput
+                                                style={styles.inputRight}
+                                                value={paydayDate}
+                                                onChangeText={setPaydayDate}
+                                                placeholder="1-31"
+                                                placeholderTextColor="#555"
+                                                keyboardType="numeric"
+                                                maxLength={2}
+                                                textAlign="right"
+                                            />
+                                        </View>
+                                    </View>
+                                </View>
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.modalSaveButton}
+                                onPress={() => setShowPaydayModal(false)}
+                                activeOpacity={0.85}
+                            >
+                                <Text style={styles.modalSaveButtonText}>Confirmar Dia Fixo</Text>
+                            </TouchableOpacity>
+                        </Animated.View>
+                    )}
+                </View>
+            </ModalPadrao>
 
         </View>
     );
@@ -861,40 +920,32 @@ const styles = StyleSheet.create({
     totalLabel: { color: '#fff', fontSize: 16, fontWeight: '600' },
     totalValue: { color: '#d97757', fontSize: 20, fontWeight: 'bold' },
 
-    // Modals
-    modalInput: {
-        backgroundColor: '#1A1A1A',
-        borderRadius: 12,
-        padding: 16,
-        color: '#fff',
-        fontSize: 16,
-        borderWidth: 1,
-        borderColor: '#262626'
+    modalSubtitle: {
+        fontSize: 14,
+        color: '#8E8E93',
+        lineHeight: 20,
+        marginBottom: 4,
     },
-    modalLabel: {
-        color: '#909090',
-        fontSize: 12,
-        fontWeight: '600',
-        marginBottom: 8,
-        marginLeft: 4,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5
+    infoBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
     },
-    actionButton: {
-        backgroundColor: '#d97757',
-        padding: 16,
+    infoBoxText: {
+        fontSize: 13,
+        color: '#8E8E93',
+        lineHeight: 18,
+        flex: 1,
+    },
+    modalSaveButton: {
+        backgroundColor: '#D97757',
+        paddingVertical: 14,
         borderRadius: 12,
         alignItems: 'center',
         marginTop: 8
     },
-    actionButtonText: {
-        color: '#fff',
-        fontWeight: '600',
-        fontSize: 16
+    modalSaveButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
     },
-
-    modalOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    modalOptionSelected: { backgroundColor: '#252525' },
-    modalOptionText: { fontSize: 16, color: '#ccc' },
-    modalOptionTextSelected: { color: '#fff', fontWeight: '600' },
 });

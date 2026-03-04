@@ -1,29 +1,24 @@
-import BottomSheet from '@/components/templates/bottom-sheet';
-import { BottomSheetMethods } from '@/components/templates/bottom-sheet/types';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { buildEventsByDateIndex, EventsForDate } from '@/utils/financialCalendarIndex';
-import { addMonths, compareMonths, isSameMonth, startOfMonth } from '@/utils/monthWindow';
+import { compareMonths, isSameMonth, startOfMonth } from '@/utils/monthWindow';
 
 import { useCategories } from '@/hooks/use-categories';
 import LottieView from 'lottie-react-native';
 import {
     ArrowDownCircle,
     ArrowUpCircle,
-    ChevronLeft,
-    ChevronRight,
     CreditCard,
     DollarSign,
     Repeat
 } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import {
-    Modal,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { AnimatedCurrency } from './AnimatedCurrency';
 
@@ -89,7 +84,6 @@ export function FinancialCalendar({
     const [displayedMonth, setDisplayedMonth] = useState(() =>
         normalizeMonthInBounds(selectedMonth || new Date())
     );
-    const sheetRef = React.useRef<BottomSheetMethods>(null);
     const [isModalMounted, setIsModalMounted] = useState(false);
 
     // Sync with selectedMonth from parent
@@ -154,7 +148,8 @@ export function FinancialCalendar({
                 icon: r.type === 'subscription' ? 'repeat' : 'calendar',
                 date: r.dueDate,
                 category: r.category,
-                status: r.status
+                status: r.status,
+                transactionType: (r as any).transactionType
             }))
         ];
 
@@ -204,22 +199,6 @@ export function FinancialCalendar({
     };
 
     const calendarDays = useMemo(generateCalendar, [displayedMonth]);
-
-    const canGoPrev = !minMonth || compareMonths(displayedMonth, startOfMonth(minMonth)) > 0;
-    const canGoNext = !maxMonth || compareMonths(displayedMonth, startOfMonth(maxMonth)) < 0;
-
-    const changeMonth = (increment: number) => {
-        const candidate = addMonths(displayedMonth, increment);
-        const nextMonth = normalizeMonthInBounds(candidate);
-        if (isSameMonth(nextMonth, displayedMonth)) return;
-
-        setDisplayedMonth(nextMonth);
-
-        // Notify parent about month change
-        if (onMonthChange) {
-            onMonthChange(nextMonth);
-        }
-    };
 
     const months = [
         'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -272,7 +251,7 @@ export function FinancialCalendar({
                             <AnimatedCurrency
                                 value={item.amount}
                                 style={[styles.itemAmount, {
-                                    color: item.type === 'checking_income' ? '#FFFFFF' : '#FA5C5C'
+                                    color: (item.type === 'checking_income' || item.transactionType === 'income') ? '#04D361' : '#FA5C5C'
                                 }]}
                                 prefix="R$ "
                             />
@@ -298,27 +277,6 @@ export function FinancialCalendar({
             </View>
 
             <View style={styles.calendarCard}>
-                {/* Month Navigation */}
-                <View style={styles.monthHeader}>
-                    <TouchableOpacity
-                        onPress={() => changeMonth(-1)}
-                        style={[styles.arrowButton, !canGoPrev && styles.arrowButtonDisabled]}
-                        disabled={!canGoPrev}
-                    >
-                        <ChevronLeft size={20} color="#E0E0E0" />
-                    </TouchableOpacity>
-                    <Text style={styles.monthText}>
-                        {months[displayedMonth.getMonth()]} {displayedMonth.getFullYear()}
-                    </Text>
-                    <TouchableOpacity
-                        onPress={() => changeMonth(1)}
-                        style={[styles.arrowButton, !canGoNext && styles.arrowButtonDisabled]}
-                        disabled={!canGoNext}
-                    >
-                        <ChevronRight size={20} color="#E0E0E0" />
-                    </TouchableOpacity>
-                </View>
-
                 {/* Week Days */}
                 <View style={styles.weekDays}>
                     {weekDays.map(day => (
@@ -334,8 +292,8 @@ export function FinancialCalendar({
                         const isToday = normalizeDate(new Date()) === dateStr;
 
                         const { checking, cards, recs } = eventsByDate.get(dateStr) || EMPTY_EVENTS;
-                        const hasIncome = checking.some(t => t.type === 'income');
-                        const hasExpense = checking.some(t => t.type === 'expense') || cards.length > 0;
+                        const hasIncome = checking.some(t => t.type === 'income') || recs.some(r => (r as any).transactionType === 'income');
+                        const hasExpense = checking.some(t => t.type === 'expense') || cards.length > 0 || recs.some(r => (r as any).transactionType !== 'income');
                         const hasRecurrence = recs.length > 0;
 
                         return (
@@ -349,9 +307,6 @@ export function FinancialCalendar({
                                 onPress={() => {
                                     setSelectedDate(dayObj.date);
                                     setIsModalMounted(true);
-                                    requestAnimationFrame(() => {
-                                        sheetRef.current?.snapToIndex(0);
-                                    });
                                 }}
                             >
                                 <Text style={[
@@ -375,50 +330,43 @@ export function FinancialCalendar({
 
 
             {/* Bottom Modal Day Details */}
-            <Modal visible={isModalMounted} transparent animationType="none" statusBarTranslucent hardwareAccelerated>
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                    <BottomSheet
-                        ref={sheetRef}
-                        snapPoints={["60%", "90%"]} // Initial and expanded state
-                        backgroundColor="#141414"
-                        backdropOpacity={0.6}
-                        borderRadius={24}
-                        onClose={() => setIsModalMounted(false)}
-                    >
-                        <View style={[styles.header, { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, marginBottom: 0, borderBottomWidth: 1, borderBottomColor: '#2A2A2A', backgroundColor: '#141414' }]}>
-                            <Text style={[styles.title, { fontSize: 18, color: '#FFFFFF' }]}>
-                                {`${selectedDate.getDate()} de ${months[selectedDate.getMonth()]}`}
-                            </Text>
-                            <Text style={{ fontSize: 13, color: '#8E8E93', marginTop: 2, fontFamily: 'AROneSans_500Medium' }}>
-                                {weekDays[selectedDate.getDay()]}
-                            </Text>
-                        </View>
-
-                        <ScrollView
-                            contentContainerStyle={{ gap: 12, padding: 20, paddingBottom: 40 }}
-                            showsVerticalScrollIndicator={false}
-                        >
-                            {selectedEvents.length > 0 ? (
-                                <View style={styles.sectionCard}>
-                                    {selectedEvents.map((item, index) =>
-                                        renderEventItem({ item, index })
-                                    )}
-                                </View>
-                            ) : (
-                                <View style={styles.emptyStateExpanded}>
-                                    <LottieView
-                                        source={require('@/assets/calendario.json')}
-                                        autoPlay
-                                        loop={false}
-                                        style={{ width: 50, height: 50 }}
-                                    />
-                                    <Text style={styles.emptyStateText}>Nenhum evento neste dia</Text>
-                                </View>
+            <ModalPadrao
+                visible={isModalMounted}
+                onClose={() => setIsModalMounted(false)}
+                title={
+                    <View>
+                        <Text style={[styles.title, { fontSize: 18, color: '#FFFFFF' }]}>
+                            {`${selectedDate.getDate()} de ${months[selectedDate.getMonth()]}`}
+                        </Text>
+                        <Text style={{ fontSize: 13, color: '#8E8E93', marginTop: 2, fontFamily: 'AROneSans_500Medium' }}>
+                            {weekDays[selectedDate.getDay()]}
+                        </Text>
+                    </View>
+                }
+            >
+                <ScrollView
+                    contentContainerStyle={{ gap: 12, paddingBottom: 40 }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {selectedEvents.length > 0 ? (
+                        <View style={styles.sectionCard}>
+                            {selectedEvents.map((item, index) =>
+                                renderEventItem({ item, index })
                             )}
-                        </ScrollView>
-                    </BottomSheet>
-                </GestureHandlerRootView>
-            </Modal>
+                        </View>
+                    ) : (
+                        <View style={styles.emptyStateExpanded}>
+                            <LottieView
+                                source={require('@/assets/calendario.json')}
+                                autoPlay
+                                loop={false}
+                                style={{ width: 50, height: 50 }}
+                            />
+                            <Text style={styles.emptyStateText}>Nenhum evento neste dia</Text>
+                        </View>
+                    )}
+                </ScrollView>
+            </ModalPadrao>
         </View>
     );
 }

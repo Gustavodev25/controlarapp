@@ -2,7 +2,6 @@ import { AnimatedCurrency } from '@/components/AnimatedCurrency';
 import { BalanceAccountsModal } from '@/components/BalanceAccountsModal';
 import { ExtraIncomeModal } from '@/components/ExtraIncomeModal';
 import { FinancialCalendar } from '@/components/FinancialCalendar';
-import MonthSelector from '@/components/MonthSelector';
 import { ProjectionSettings, ProjectionsModal } from '@/components/ProjectionsModal';
 import OverviewSection from '@/components/dashboard/OverviewSection';
 import { RollingCounter } from '@/components/organisms/rolling-counter';
@@ -10,41 +9,41 @@ import Avvvatars from '@/components/ui/Avvvatars';
 
 import { ConfigIncomeModal } from '@/components/ConfigIncomeModal';
 import { UniversalBackground } from '@/components/UniversalBackground';
-import { BottomModal } from '@/components/ui/BottomModal';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { StackCarousel, useStackCardStyle } from '@/components/ui/StackCarousel';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useCategories } from '@/hooks/use-categories';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
 import { databaseService, db } from '@/services/firebase';
-import { buildInvoices, CreditCardAccount, parseDate, Transaction } from '@/services/invoiceBuilder';
+import { buildInvoices, buildInvoicesPluggyFirst, CreditCardAccount, parseDate, Transaction } from '@/services/invoiceBuilder';
 import { notificationService } from '@/services/notifications';
 import { queryCache } from '@/services/queryCache'; // New Cache Service
 import { getDashboardLoadPlan } from '@/utils/dashboardDataPipeline';
 import {
-    calculateFinancials,
-    Discount
+  calculateFinancials,
+  Discount
 } from '@/utils/financial-math';
 import {
-    clampMonth,
-    extractMonthKey,
-    getFirestoreMonthRange,
-    getRecentMonthWindow,
-    startOfMonth,
-    toMonthKey
+  clampMonth,
+  extractMonthKey,
+  getFirestoreMonthRange,
+  getRecentMonthWindow,
+  startOfMonth,
+  toMonthKey
 } from '@/utils/monthWindow';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { collection, DocumentData, getDocs, limit, orderBy, query, Query, QueryDocumentSnapshot, startAfter, where } from 'firebase/firestore';
-import { Ban, Calendar, ChevronLeft, ChevronRight, CreditCard, RotateCcw, TrendingUp } from 'lucide-react-native';
+import { Ban, ChevronLeft, ChevronRight, CreditCard, RotateCcw, TrendingUp } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, InteractionManager, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
-    interpolate,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 import { VictoryLabel, VictoryPie } from 'victory-native';
 
@@ -88,6 +87,69 @@ const getAvatarGradient = (name?: string): [string, string] => {
     `hsl(${h}, 75%, 85%)`,
     `hsl(${(h + 40) % 360}, 75%, 80%)`
   ];
+};
+
+const toLocalDateString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeTransactionDateValue = (value: unknown): string => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    return trimmed.includes('T') ? trimmed.split('T')[0] : trimmed;
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return toLocalDateString(value);
+  }
+
+  if (value && typeof (value as { toDate?: () => Date }).toDate === 'function') {
+    const parsed = (value as { toDate: () => Date }).toDate();
+    if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+      return toLocalDateString(parsed);
+    }
+  }
+
+  return '';
+};
+
+const normalizeCheckingTransactionType = (data: DocumentData): 'income' | 'expense' => {
+  const explicitType = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
+  const pluggyType = typeof data?.pluggyRaw?.type === 'string' ? data.pluggyRaw.type.toLowerCase() : '';
+  const rawAmount = Number(data?.pluggyRaw?.amount ?? data?.amount ?? 0);
+
+  if (pluggyType === 'debit' || pluggyType === 'expense') return 'expense';
+  if (pluggyType === 'credit' || pluggyType === 'income') return 'income';
+
+  if (explicitType === 'expense' || explicitType === 'debit') return 'expense';
+  if (explicitType === 'income' || explicitType === 'credit') return 'income';
+
+  return rawAmount < 0 ? 'expense' : 'income';
+};
+
+const normalizeCreditTransactionType = (data: DocumentData): 'income' | 'expense' => {
+  const explicitType = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
+  const pluggyType = typeof data?.pluggyRaw?.type === 'string' ? data.pluggyRaw.type.toLowerCase() : '';
+  const rawAmount = Number(data?.pluggyRaw?.amount ?? data?.amount ?? 0);
+  const isRefund = data?.isRefund === true || data?.category === 'Refund' || typeof data?.originalTransactionId === 'string';
+
+  if (isRefund) return 'income';
+
+  if (pluggyType === 'debit' || pluggyType === 'expense') return 'expense';
+  if (pluggyType === 'credit' || pluggyType === 'income') return 'income';
+
+  if (explicitType === 'expense' || explicitType === 'debit') return 'expense';
+  if (explicitType === 'income' || explicitType === 'credit') {
+    // Legacy docs may store regular purchases as "income" with positive amount.
+    return rawAmount < 0 ? 'income' : 'expense';
+  }
+
+  // For credit cards, positive amounts are usually purchases and should increase the bill.
+  return rawAmount < 0 ? 'income' : 'expense';
 };
 
 
@@ -564,8 +626,8 @@ export default function DashboardScreen() {
         id: doc.id,
         description: data.description || '',
         amount: Math.abs(data.amount || 0),
-        date: data.date || '',
-        type: data.type || 'expense',
+        date: normalizeTransactionDateValue(data.date),
+        type: normalizeCheckingTransactionType(data),
         category: data.category || undefined,
         accountId: data.accountId || undefined,
       };
@@ -578,8 +640,8 @@ export default function DashboardScreen() {
         id: doc.id,
         description: data.description || '',
         amount: Math.abs(data.amount || 0),
-        date: data.date || '',
-        type: data.type || 'expense',
+        date: normalizeTransactionDateValue(data.date),
+        type: normalizeCreditTransactionType(data),
         category: data.category || null,
         cardId: txCardId,
         accountId: txCardId,
@@ -675,7 +737,6 @@ export default function DashboardScreen() {
       type: 'credit',
       creditLimit: card.creditData?.creditLimit || 0,
       currentBill: card.currentBill,
-      closingDateSettings: card.closingDateSettings
     }));
     setPaymentAlertCards(notificationCards);
 
@@ -736,8 +797,8 @@ export default function DashboardScreen() {
               id: doc.id,
               description: data.description || '',
               amount: Math.abs(data.amount || 0),
-              date: data.date || '',
-              type: data.type || 'expense',
+              date: normalizeTransactionDateValue(data.date),
+              type: normalizeCreditTransactionType(data),
               category: data.category || null,
               cardId: txCardId,
               accountId: txCardId,
@@ -809,7 +870,9 @@ export default function DashboardScreen() {
 
           creditCards.forEach((card: any) => {
             const cardTransactions = (transactionsByCard.get(card.id) || []).slice(0, CREDIT_OVERVIEW_MAX_ITEMS_PER_CARD);
-            const builtInvoices = buildInvoices(card, cardTransactions, card.id);
+            const builtInvoices = card.currentBill?.id && card.bills?.length
+              ? buildInvoicesPluggyFirst(card, cardTransactions, card.id)
+              : buildInvoices(card, cardTransactions, card.id);
 
             const cardLimit = card.creditData?.creditLimit || card.creditLimit || 0;
             const available = card.creditData?.availableCreditLimit || card.availableCreditLimit || 0;
@@ -1157,13 +1220,7 @@ export default function DashboardScreen() {
               </Animated.View>
             </View>
 
-            {/* Month Navigator */}
-            <MonthSelector
-              currentMonth={selectedMonth}
-              onMonthChange={(date) => setSelectedMonth(clampMonth(date, minMonth, maxMonth))}
-              minDate={minMonth}
-              maxDate={maxMonth}
-            />
+
           </View>
         </View>
 
@@ -1493,9 +1550,9 @@ export default function DashboardScreen() {
 
           {/* Financial Calendar */}
           <FinancialCalendar
-            checkingTransactions={expenseSource === 'checking' ? checkingTransactions : []}
-            creditCardTransactions={expenseSource === 'credit' ? creditCardTransactions : []}
-            recurrences={expenseSource === 'checking' ? recurrences : []}
+            checkingTransactions={checkingTransactions}
+            creditCardTransactions={creditCardTransactions}
+            recurrences={recurrences}
             selectedMonth={selectedMonth}
             minMonth={minMonth}
             maxMonth={maxMonth}
@@ -1510,20 +1567,21 @@ export default function DashboardScreen() {
             onSave={handleSaveProjections}
             salaryPreview={salaryPreview}
             valePreview={valePreview}
+            includeOpenFinance={includeOpenFinance}
+            onToggleOpenFinance={handleToggleOpenFinance}
           />
 
         </View >
       </ScrollView >
 
       {invoiceModalVisible && (
-        <BottomModal
+        <ModalPadrao
           visible={invoiceModalVisible}
           onClose={() => setInvoiceModalVisible(false)}
-          title="Selecionar Fatura"
-          subtitle={selectedCardForModalData?.name?.trim()}
-          height="auto"
+          title={`Selecionar Fatura - ${selectedCardForModalData?.name?.trim() || ''}`}
         >
           <View style={modalOptionStyles.sectionCard}>
+
             {/* Fatura Anterior */}
             <TouchableOpacity
               style={modalOptionStyles.itemContainer}
@@ -1562,28 +1620,6 @@ export default function DashboardScreen() {
                   </View>
                   <Text style={modalOptionStyles.itemValue}>
                     R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(selectedCardForModalData ? selectedCardForModalData.current : invoiceData.currentTotal))}
-                  </Text>
-                </View>
-              </View>
-              <View style={modalOptionStyles.itemSeparator} />
-            </TouchableOpacity>
-
-            {/* Próxima Fatura */}
-            <TouchableOpacity
-              style={modalOptionStyles.itemContainer}
-              onPress={() => handleInvoicePeriodChange('next')}
-            >
-              <View style={modalOptionStyles.itemIconContainer}>
-                <Calendar size={20} color={selectedCardModalPeriod === 'next' ? '#D97757' : '#E0E0E0'} />
-              </View>
-              <View style={modalOptionStyles.itemRightContainer}>
-                <View style={modalOptionStyles.itemContent}>
-                  <View>
-                    <Text style={[modalOptionStyles.itemTitle, selectedCardModalPeriod === 'next' && { color: '#D97757' }]}>Próxima</Text>
-                    <Text style={modalOptionStyles.itemSubtitle}>Previsão do próximo mês</Text>
-                  </View>
-                  <Text style={modalOptionStyles.itemValue}>
-                    R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(selectedCardForModalData ? selectedCardForModalData.next : invoiceData.nextTotal))}
                   </Text>
                 </View>
               </View>
@@ -1630,7 +1666,7 @@ export default function DashboardScreen() {
               </View>
             </TouchableOpacity>
           </View>
-        </BottomModal >
+        </ModalPadrao >
       )}
 
       {/* Balance Accounts Configuration Modal */}

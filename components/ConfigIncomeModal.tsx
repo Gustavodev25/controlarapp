@@ -1,10 +1,8 @@
-import BottomSheet from '@/components/templates/bottom-sheet';
-import { BottomSheetMethods } from '@/components/templates/bottom-sheet/types';
+import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
-import { X } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Wallet } from 'lucide-react-native';
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 interface ConfigIncomeModalProps {
     visible: boolean;
@@ -19,48 +17,22 @@ export function ConfigIncomeModal({
     includeOpenFinance,
     onToggleOpenFinance,
 }: ConfigIncomeModalProps) {
-    const sheetRef = React.useRef<BottomSheetMethods>(null);
-    const [isModalMounted, setIsModalMounted] = useState(false);
-
-    useEffect(() => {
-        if (visible) {
-            setIsModalMounted(true);
-            requestAnimationFrame(() => {
-                sheetRef.current?.snapToIndex(0);
-            });
-        } else if (isModalMounted) {
-            sheetRef.current?.close();
-        }
-    }, [visible, isModalMounted]);
-
-    const handleBottomSheetClose = () => {
-        setIsModalMounted(false);
-        onClose();
-    };
-
     return (
-        <Modal visible={isModalMounted} transparent animationType="none" statusBarTranslucent hardwareAccelerated>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                <BottomSheet
-                    ref={sheetRef}
-                    snapPoints={["35%", "45%"]}
-                    backgroundColor="#141414"
-                    backdropOpacity={0.6}
-                    borderRadius={24}
-                    onClose={handleBottomSheetClose}
-                >
-                    <View style={styles.header}>
-                        <Text style={styles.title}>Configurações de Renda</Text>
-                        <TouchableOpacity onPress={() => sheetRef.current?.close()}>
-                            <X size={20} color="#909090" />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.content}>
-                        <View style={styles.configItemContainer}>
+        <ModalPadrao
+            visible={visible}
+            onClose={onClose}
+            title="Configurações de Renda"
+        >
+            <View style={styles.container}>
+                <View style={styles.sectionCard}>
+                    <View style={styles.itemContainer}>
+                        <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(4, 211, 97, 0.15)' }]}>
+                            <Wallet size={20} color="#04D361" />
+                        </View>
+                        <View style={styles.itemContent}>
                             <View style={{ flex: 1, paddingRight: 16 }}>
-                                <Text style={styles.configItemTitle}>Transações de Contas Bancárias</Text>
-                                <Text style={styles.configItemSubtitle}>
+                                <Text style={styles.itemTitle}>Transações de Contas Bancárias</Text>
+                                <Text style={styles.itemSubtitle}>
                                     Incluir dados da transação da conta corrente das Contas Bancárias nos cálculos de Receitas e Despesas.
                                 </Text>
                             </View>
@@ -68,57 +40,57 @@ export function ConfigIncomeModal({
                                 value={includeOpenFinance}
                                 onValueChange={onToggleOpenFinance}
                                 activeColor="#d97757"
-                                width={50}
-                                height={28}
                             />
                         </View>
                     </View>
-                </BottomSheet>
-            </GestureHandlerRootView>
-        </Modal>
+                </View>
+            </View>
+        </ModalPadrao>
     );
 }
 
 const styles = StyleSheet.create({
-    header: {
-        paddingHorizontal: 20,
-        paddingTop: 16,
-        paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#2A2A2A',
-        backgroundColor: '#141414',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+    container: {
+        paddingBottom: 20,
     },
-    title: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
-    content: {
-        padding: 20,
-        paddingBottom: 40,
-    },
-    configItemContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#1C1C1E',
-        padding: 16,
-        borderRadius: 12,
+    sectionCard: {
+        backgroundColor: '#1A1A1A',
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: '#2A2A2A',
+        overflow: 'hidden',
     },
-    configItemTitle: {
-        color: '#FFFFFF',
+    itemContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+        backgroundColor: '#1A1A1A',
+    },
+    itemIconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    itemContent: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    itemTitle: {
         fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4,
+        color: '#FFFFFF',
+        fontWeight: '500',
     },
-    configItemSubtitle: {
-        color: '#909090',
-        fontSize: 13,
-        lineHeight: 18,
+    itemSubtitle: {
+        fontSize: 12,
+        color: '#8E8E93',
+        marginTop: 2,
+        lineHeight: 16
     },
 });

@@ -34,23 +34,50 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const INITIAL_BATCH = 2000;
 const PAGE_BATCH = 500;
 const MAX_HISTORY_LIMIT = 2000;
+const SILENT_REFRESH_BATCH = 350;
+
+function normalizeCreditTransactionType(data: DocumentData): 'income' | 'expense' {
+    const explicitType = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
+    const pluggyType = typeof data?.pluggyRaw?.type === 'string' ? data.pluggyRaw.type.toLowerCase() : '';
+    const rawAmount = Number(data?.pluggyRaw?.amount ?? data?.amount ?? 0);
+    const isRefund = data?.isRefund === true || data?.category === 'Refund' || typeof data?.originalTransactionId === 'string';
+
+    if (isRefund) return 'income';
+
+    if (pluggyType === 'debit' || pluggyType === 'expense') return 'expense';
+    if (pluggyType === 'credit' || pluggyType === 'income') return 'income';
+
+    if (explicitType === 'expense' || explicitType === 'debit') return 'expense';
+    if (explicitType === 'income' || explicitType === 'credit') {
+        // Legacy docs may store regular purchases as "income" with positive amount.
+        return rawAmount < 0 ? 'income' : 'expense';
+    }
+
+    // For credit cards, positive amounts are usually purchases and should increase the bill.
+    return rawAmount < 0 ? 'income' : 'expense';
+}
 
 function mapCreditTransaction(doc: QueryDocumentSnapshot<DocumentData>): Transaction {
     const data = doc.data();
     const txCardId = data.cardId || data.accountId || data.pluggyAccountId || data.pluggyRaw?.accountId || null;
+    const isRefund = data.isRefund === true || data.category === 'Refund' || typeof data.originalTransactionId === 'string';
     return {
         id: doc.id,
         description: data.description || '',
         amount: Math.abs(data.amount || 0),
         date: data.date || '',
-        type: data.type || 'expense',
+        type: normalizeCreditTransactionType(data),
         category: data.category || null,
         cardId: txCardId,
         accountId: txCardId,
         installmentNumber: data.installmentNumber || 1,
         totalInstallments: data.totalInstallments || 1,
+        isRefund,
+        originalTransactionId: typeof data.originalTransactionId === 'string' ? data.originalTransactionId : undefined,
+        pluggyRaw: data.pluggyRaw ?? undefined,
         invoiceMonthKey: data.invoiceMonthKey || null,
-        invoiceMonthKeyManual: data.invoiceMonthKeyManual === true
+        invoiceMonthKeyManual: data.invoiceMonthKeyManual === true,
+        manualInvoiceMonth: typeof data.manualInvoiceMonth === 'string' ? data.manualInvoiceMonth : undefined
     } as Transaction;
 }
 
@@ -205,7 +232,6 @@ export default function InvoicesScreen() {
                     await new Promise((resolve) => setTimeout(resolve, 220));
                 }
             } catch (error) {
-                console.error('Error prefetching invoices history:', error);
             } finally {
                 if (session === prefetchSessionRef.current) {
                     prefetchingRef.current = false;
@@ -231,15 +257,15 @@ export default function InvoicesScreen() {
                     name: data.name || null,
                     type: data.type || 'credit',
                     subtype: data.subtype || null,
-                    creditLimit: data.creditLimit || null,
-                    availableCreditLimit: data.availableCreditLimit || null,
+                    creditLimit: data.creditLimit || data.creditData?.creditLimit || null,
+                    availableCreditLimit: data.availableCreditLimit || data.creditData?.availableCreditLimit || null,
                     balance: data.balance || null,
                     connector: data.connector || null,
-                    closingDateSettings: data.closingDateSettings || null,
-                    balanceCloseDate: data.balanceCloseDate || null,
-                    balanceDueDate: data.balanceDueDate || null,
+                    balanceCloseDate: data.balanceCloseDate || data.creditData?.balanceCloseDate || null,
+                    balanceDueDate: data.balanceDueDate || data.creditData?.balanceDueDate || null,
                     currentBill: data.currentBill || null,
-                    bills: data.bills || null
+                    bills: data.bills || null,
+                    closingDateSettings: data.closingDateSettings || null
                 } as CreditCardAccount;
             });
         };
@@ -265,63 +291,92 @@ export default function InvoicesScreen() {
         });
     }, [user?.uid]);
 
-    const loadInitialData = useCallback(async () => {
+    const loadInitialData = useCallback(async (isSilent = false) => {
         if (!user?.uid) {
-            setLoading(false);
+            if (!isSilent) setLoading(false);
             return;
         }
 
-        prefetchSessionRef.current += 1;
-        prefetchingRef.current = false;
-        transactionsRef.current = [];
-        knownTransactionIdsRef.current.clear();
-        historyCursorRef.current = null;
-        hasMoreHistoryRef.current = false;
-        setLoadingMoreHistory(false);
+        // Modo silencioso evita reset pesado de estado para manter a UI responsiva.
+        if (!isSilent) {
+            prefetchSessionRef.current += 1;
+            prefetchingRef.current = false;
+            transactionsRef.current = [];
+            knownTransactionIdsRef.current.clear();
+            historyCursorRef.current = null;
+            hasMoreHistoryRef.current = false;
+            setLoadingMoreHistory(false);
+        }
 
         try {
-            setLoading(true);
-            await queryCache.invalidate(`dashboard_credit_transactions_${user.uid}_v2`);
-            await queryCache.invalidate(`dashboard_credit_transactions_${user.uid}`);
-            await queryCache.invalidate(`invoices_accounts_${user.uid}`);
+            if (!isSilent) setLoading(true);
+            if (!isSilent) {
+                await queryCache.invalidate(`dashboard_credit_transactions_${user.uid}_v2`);
+                await queryCache.invalidate(`dashboard_credit_transactions_${user.uid}`);
+                await queryCache.invalidate(`invoices_accounts_${user.uid}`);
+            }
+
             const [firstBatch, cards] = await Promise.all([
-                fetchCreditTransactionsBatch(INITIAL_BATCH, null),
-                fetchAccounts()
+                fetchCreditTransactionsBatch(isSilent ? SILENT_REFRESH_BATCH : INITIAL_BATCH, null),
+                isSilent ? Promise.resolve<CreditCardAccount[] | null>(null) : fetchAccounts()
             ]);
 
             const firstUnique: Transaction[] = [];
+            // Se for silent, mantemos o que já tínhamos e apenas atualizamos/adicionamos
+            const newKnownIds = isSilent ? new Set(knownTransactionIdsRef.current) : new Set<string>();
+
             firstBatch.data.forEach((item) => {
-                if (knownTransactionIdsRef.current.has(item.id)) {
+                if (!isSilent && knownTransactionIdsRef.current.has(item.id)) {
                     return;
                 }
-                knownTransactionIdsRef.current.add(item.id);
+                newKnownIds.add(item.id);
                 firstUnique.push(item);
             });
 
-            transactionsRef.current = firstUnique;
-            setTransactions(firstUnique);
+            if (isSilent) {
+                // Merge inteligente: substitui transações existentes e adiciona novas
+                setTransactions(prev => {
+                    const map = new Map(prev.map(t => [t.id, t]));
+                    firstBatch.data.forEach(t => map.set(t.id, t));
+                    const next = Array.from(map.values());
+                    transactionsRef.current = next;
+                    knownTransactionIdsRef.current = newKnownIds;
+                    return next;
+                });
+            } else {
+                knownTransactionIdsRef.current = newKnownIds;
+                transactionsRef.current = firstUnique;
+                setTransactions(firstUnique);
+            }
+
             updateHistoryState(firstBatch.nextCursor, firstBatch.hasMore);
-            setCreditCards(cards);
+            if (!isSilent && cards) {
+                setCreditCards(cards);
+            }
 
         } catch (error) {
-            console.error('Error fetching invoice data:', error);
+            console.error('[InvoicesScreen] Error loading data:', error);
         } finally {
-            setLoading(false);
-            setRefreshing(false);
+            if (!isSilent) {
+                setLoading(false);
+                setRefreshing(false);
+            }
         }
     }, [fetchAccounts, fetchCreditTransactionsBatch, updateHistoryState, user?.uid]);
 
     useEffect(() => {
-        void loadInitialData();
+        void loadInitialData(false);
         return () => {
             prefetchSessionRef.current += 1;
             prefetchingRef.current = false;
         };
     }, [loadInitialData]);
 
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        await loadInitialData();
+    const handleRefresh = useCallback(async (isSilent = false) => {
+        if (!isSilent) {
+            setRefreshing(true);
+        }
+        await loadInitialData(isSilent);
     }, [loadInitialData]);
 
     const loadMoreHistory = useCallback(async () => {
@@ -347,7 +402,6 @@ export default function InvoicesScreen() {
                 runBackgroundPrefetch();
             }
         } catch (error) {
-            console.error('Error loading more invoice history:', error);
         } finally {
             setLoadingMoreHistory(false);
         }

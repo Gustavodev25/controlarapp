@@ -268,6 +268,22 @@ export function CreditCardSettingsModal({
                         <View style={styles.header}>
                             <Text style={styles.title}>Configurar Fatura</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                                {account?.closingDateSettings?.lastClosingDate && (
+                                    <TouchableOpacity onPress={() => {
+                                        setClosingDate('');
+                                        setDataSource('default');
+                                        // Auto salva "vazio" para limpar
+                                        databaseService.updateAccount(userId, account.id, {
+                                            closingDateSettings: null
+                                        }).then(() => {
+                                            showSuccess('Configuração limpa. Usando data automática.');
+                                            onSave();
+                                            sheetRef.current?.close();
+                                        });
+                                    }}>
+                                        <Text style={{ color: '#E0E0E0', fontSize: 13, textDecorationLine: 'underline' }}>Limpar Config</Text>
+                                    </TouchableOpacity>
+                                )}
                                 <TouchableOpacity onPress={handleSave} disabled={loading} style={styles.headerSaveButton}>
                                     {loading ? (
                                         <ActivityIndicator size="small" color="#D97757" />
