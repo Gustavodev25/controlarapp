@@ -152,7 +152,7 @@ export function CreditCardFilterModal({
                         onClose={handleBottomSheetClose}
                     >
                         <View style={styles.header}>
-                            <Text style={styles.title}>Filtrar Lançamentos</Text>
+                            <Text style={styles.title}>Pesquisar transação</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
                                 <TouchableOpacity onPress={handleApply} style={styles.headerSaveButton}>
                                     <Save size={18} color="#D97757" />

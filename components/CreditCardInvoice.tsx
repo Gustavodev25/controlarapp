@@ -1,5 +1,6 @@
 ﻿import BankSelector from '@/components/BankSelector';
 import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
+import { ClosingDateItem, ClosingDateModal } from '@/components/ClosingDateModal';
 import { CreditCardSettingsModal } from '@/components/CreditCardSettingsModal';
 import { DeleteConfirmCard } from '@/components/DeleteConfirmCard';
 import { RefundModal } from '@/components/RefundModal';
@@ -141,6 +142,48 @@ const SPRING_CONFIG = {
 const INVOICE_COMPUTE_WINDOW_MONTHS = 24;
 const MAX_INVOICE_COMPUTE_ITEMS = 2000;
 const INVOICE_BUILD_DEBOUNCE_MS = 80;
+
+const toIsoDateValue = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseIsoDateValue = (rawDate?: string | null): Date | null => {
+    const normalized = normalizePluggyDate(rawDate || null);
+    if (!normalized) return null;
+    const [year, month, day] = normalized.split('-').map(Number);
+    const parsed = new Date(year, month - 1, day, 12, 0, 0);
+    return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalizeIsoDateValue = (rawDate?: string | null): string | null => {
+    const parsed = parseIsoDateValue(rawDate);
+    return parsed ? toIsoDateValue(parsed) : null;
+};
+
+const shiftIsoDateByMonths = (isoDate: string, deltaMonths: number, preferredDay?: number): string | null => {
+    const parsed = parseIsoDateValue(isoDate);
+    if (!parsed) return null;
+
+    const target = new Date(parsed.getFullYear(), parsed.getMonth() + deltaMonths, 1, 12, 0, 0);
+    const targetDay = preferredDay ?? parsed.getDate();
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    target.setDate(Math.min(targetDay, lastDay));
+
+    return toIsoDateValue(target);
+};
+
+const formatShortMonthPt = (isoDate: string): string => {
+    const parsed = parseIsoDateValue(isoDate);
+    if (!parsed) return '';
+    const shortMonth = new Intl.DateTimeFormat('pt-BR', { month: 'short' })
+        .format(parsed)
+        .replace('.', '');
+    const capitalized = shortMonth.charAt(0).toUpperCase() + shortMonth.slice(1);
+    return `${capitalized}.`;
+};
 
 // Vertical Stack Animation Hook
 const useVerticalStackCardStyle = (
@@ -896,10 +939,10 @@ const NeedsConfigurationState = ({ onOpenSettings }: NeedsConfigurationStateProp
                 />
             </View>
 
-            <Text style={styles.configNeededTitle}>Fatura n├úo configurada</Text>
+            <Text style={styles.configNeededTitle}>Editar fechamento</Text>
 
             <Text style={styles.configNeededText}>
-                Para visualizar seus gastos organizados por m├¬s, informe a data de fechamento do cart├úo.
+                Ajuste o dia de fechamento do cart├úo para revisar o ciclo da fatura.
             </Text>
 
             <TouchableOpacity
@@ -907,7 +950,7 @@ const NeedsConfigurationState = ({ onOpenSettings }: NeedsConfigurationStateProp
                 onPress={onOpenSettings}
                 activeOpacity={0.8}
             >
-                <Text style={styles.configNeededButtonText}>Configurar agora</Text>
+                <Text style={styles.configNeededButtonText}>Editar fechamento</Text>
             </TouchableOpacity>
         </View>
     );
@@ -1375,6 +1418,113 @@ export function CreditCardInvoice({
         return filteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
     }, [filteredTransactions, selectedCardId]);
 
+    const closingDateModalItems = useMemo<ClosingDateItem[]>(() => {
+        if (!invoiceData) return [];
+
+        const beforeLastClosing = normalizeIsoDateValue(invoiceData.beforeLastInvoice?.closingDate);
+        const lastClosing = normalizeIsoDateValue(invoiceData.closedInvoice?.closingDate);
+        const currentClosing = normalizeIsoDateValue(invoiceData.currentInvoice?.closingDate);
+        const nextClosing =
+            normalizeIsoDateValue(invoiceData.futureInvoices[0]?.closingDate) ||
+            toIsoDateValue(invoiceData.periods.nextClosingDate);
+
+        let followingClosing = normalizeIsoDateValue(invoiceData.futureInvoices[1]?.closingDate);
+        if (!followingClosing && nextClosing) {
+            followingClosing = shiftIsoDateByMonths(nextClosing, 1, invoiceData.periods.closingDay);
+        }
+
+        const candidates: Array<{ label: string; currentDate: string | null }> = [
+            { label: 'Fatura atrasada', currentDate: beforeLastClosing },
+            { label: 'Fatura anterior', currentDate: lastClosing },
+            { label: 'Fatura atual', currentDate: currentClosing },
+            { label: 'Próxima fatura', currentDate: nextClosing },
+            { label: 'Fatura seguinte', currentDate: followingClosing }
+        ];
+
+        const monthKeys = new Set<string>();
+        const items: ClosingDateItem[] = [];
+
+        candidates.forEach(({ label, currentDate }) => {
+            if (!currentDate) return;
+            const monthKey = currentDate.slice(0, 7);
+            if (monthKeys.has(monthKey)) return;
+            monthKeys.add(monthKey);
+
+            const monthLabel = formatShortMonthPt(currentDate);
+            items.push({
+                id: monthKey,
+                label: `${label} (${monthLabel})`,
+                subLabel: `Fechamento (${monthLabel})`,
+                currentDate
+            });
+        });
+
+        return items;
+    }, [invoiceData]);
+
+    const originalCloseDate = useMemo(() => {
+        if (!selectedCard) return null;
+        const rawDate =
+            selectedCard.currentBill?.periodEnd ||
+            selectedCard.currentBill?.closeDate ||
+            selectedCard.balanceCloseDate ||
+            null;
+        const parsed = parseIsoDateValue(rawDate);
+        return parsed ? formatDateFull(parsed) : null;
+    }, [selectedCard]);
+
+    const originalDueDate = useMemo(() => {
+        if (!selectedCard) return null;
+        const rawDate =
+            selectedCard.currentBill?.dueDate ||
+            selectedCard.balanceDueDate ||
+            null;
+        const parsed = parseIsoDateValue(rawDate);
+        return parsed ? formatDateFull(parsed) : null;
+    }, [selectedCard]);
+
+    const handleSaveClosingDates = useCallback(async (updates: { id: string; exactDate: string }[]) => {
+        if (!selectedCard) return;
+
+        const existingSettings = selectedCard.closingDateSettings || {};
+        const mergedOverrides: Record<string, { closingDay?: number; exactDate?: string }> = {
+            ...(existingSettings.monthOverrides || {})
+        };
+
+        updates.forEach((update) => {
+            const normalizedDate = normalizeIsoDateValue(update.exactDate);
+            if (!normalizedDate) return;
+            const closingDay = Number(normalizedDate.split('-')[2]);
+
+            mergedOverrides[update.id] = {
+                ...(mergedOverrides[update.id] || {}),
+                exactDate: normalizedDate,
+                closingDay
+            };
+        });
+
+        const nextSettings = {
+            ...existingSettings,
+            closingDay: existingSettings.closingDay ?? invoiceData?.periods.closingDay,
+            applyToAll: existingSettings.applyToAll ?? false,
+            lastClosingDate: existingSettings.lastClosingDate ?? normalizeIsoDateValue(invoiceData?.closedInvoice?.closingDate),
+            monthOverrides: mergedOverrides,
+            updatedAt: new Date().toISOString()
+        };
+
+        const result = await databaseService.updateAccount(userId, selectedCard.id, {
+            closingDateSettings: nextSettings
+        });
+
+        if (!result?.success) {
+            throw new Error(result?.error || 'Nao foi possivel salvar os fechamentos');
+        }
+
+        if (onRefresh) {
+            await onRefresh();
+        }
+    }, [invoiceData, onRefresh, selectedCard, userId]);
+
     // currentItems computado primeiro para que currentItemsLength esteja dispon├¡vel
     const currentItems = useMemo((): InvoiceItem[] => {
         let items: InvoiceItem[] = [];
@@ -1621,7 +1771,8 @@ export function CreditCardInvoice({
         normalizePluggyDate(selectedCard?.balanceCloseDate || null) ||
         normalizePluggyDate(selectedCard?.balanceDueDate || null)
     );
-    const needsConfiguration = Boolean(selectedCard && !hasManualConfig && !hasAutomaticBillingData);
+    // Mantemos o acesso liberado sem bloquear a tela por ausência de configuração manual.
+    const needsConfiguration = false && Boolean(selectedCard && !hasManualConfig && !hasAutomaticBillingData);
 
     if (creditCards.length === 0) return (
         <View style={styles.emptyState}>

@@ -266,7 +266,7 @@ export function CreditCardSettingsModal({
                         onClose={handleBottomSheetClose}
                     >
                         <View style={styles.header}>
-                            <Text style={styles.title}>Configurar Fatura</Text>
+                            <Text style={styles.title}>Editar fechamento</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
                                 {account?.closingDateSettings?.lastClosingDate && (
                                     <TouchableOpacity onPress={() => {
