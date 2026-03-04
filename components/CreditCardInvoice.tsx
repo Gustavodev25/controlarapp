@@ -1103,6 +1103,8 @@ export function CreditCardInvoice({
     // Transaction Options State
     const [transactionOptionsVisible, setTransactionOptionsVisible] = useState(false);
     const [selectedTransactionForOptions, setSelectedTransactionForOptions] = useState<InvoiceItem | null>(null);
+    const [transactionSearchModalVisible, setTransactionSearchModalVisible] = useState(false);
+    const [transactionSearchQuery, setTransactionSearchQuery] = useState('');
     const [deleteConfirmationVisible, setDeleteConfirmationVisible] = useState(false);
     const [transactionToDelete, setTransactionToDelete] = useState<InvoiceItem | null>(null);
 
@@ -1120,6 +1122,11 @@ export function CreditCardInvoice({
         setSelectedTransactionForOptions(item);
         setTransactionOptionsVisible(true);
     }, []);
+
+    useEffect(() => {
+        if (transactionSearchModalVisible) return;
+        setTransactionSearchQuery('');
+    }, [transactionSearchModalVisible]);
 
     // Handler para abrir o seletor de categoria
     const handleOpenCategorySelector = useCallback((item: InvoiceItem) => {
@@ -1908,6 +1915,34 @@ export function CreditCardInvoice({
         return items;
     }, [allHistoryItems, invoiceData, selectedTab, filters, activeFilterCount]);
 
+    const transactionSearchResults = useMemo(() => {
+        const query = transactionSearchQuery.trim().toLowerCase();
+        const baseItems = currentItems;
+        if (!query) {
+            return baseItems;
+        }
+
+        return baseItems.filter((item) => {
+            const description = (item.description || '').toLowerCase();
+            const category = getCategoryName(item.category).toLowerCase();
+            const amount = String(Math.abs(item.amount || 0));
+            const date = item.date || '';
+            return (
+                description.includes(query) ||
+                category.includes(query) ||
+                amount.includes(query) ||
+                date.includes(query)
+            );
+        });
+    }, [currentItems, getCategoryName, transactionSearchQuery]);
+
+    const handleOpenTransactionOptionsFromSearch = useCallback((item: InvoiceItem) => {
+        setTransactionSearchModalVisible(false);
+        setTransactionSearchQuery('');
+        setSelectedTransactionForOptions(item);
+        setTransactionOptionsVisible(true);
+    }, []);
+
     const refundAmountByOriginalId = useMemo(() => {
         const map = new Map<string, number>();
         currentItems.forEach((item) => {
@@ -2176,7 +2211,83 @@ export function CreditCardInvoice({
                 onConfirm={handleConfirmRefund}
             />
 
+            {/* Search Transaction Modal */}
+            <ModalPadrao
+                visible={transactionSearchModalVisible}
+                onClose={() => {
+                    setTransactionSearchModalVisible(false);
+                    setTransactionSearchQuery('');
+                }}
+                title="Buscar Transação"
+            >
+                <View style={{ maxHeight: 500 }}>
+                    {/* Search Input - Same style as ReminderModal */}
+                    <View style={searchStyles.searchContainer}>
+                        <Search size={16} color="#666" style={{ marginRight: 8 }} />
+                        <TextInput
+                            style={searchStyles.searchInput}
+                            placeholder="Buscar por nome, categoria, valor..."
+                            placeholderTextColor="#666"
+                            value={transactionSearchQuery}
+                            onChangeText={setTransactionSearchQuery}
+                            autoFocus
+                        />
+                    </View>
 
+                    {/* Results */}
+                    <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{ paddingBottom: 20 }}
+                        keyboardShouldPersistTaps="handled"
+                    >
+                        {transactionSearchResults.length === 0 ? (
+                            <View style={searchStyles.emptyContainer}>
+                                <Text style={searchStyles.emptyText}>
+                                    {transactionSearchQuery.trim() ? 'Nenhuma transação encontrada' : 'Digite para buscar'}
+                                </Text>
+                            </View>
+                        ) : (
+                            transactionSearchResults.map((item) => {
+                                const { icon: CatIcon, color: catColor, backgroundColor: catBg } = getCategoryConfig(item.category || item.description);
+                                const isPaymentItem = item.isPayment;
+                                const isRefundItem = item.isRefund;
+                                return (
+                                    <TouchableOpacity
+                                        key={item.id}
+                                        style={searchStyles.resultCard}
+                                        activeOpacity={0.7}
+                                        onPress={() => handleOpenTransactionOptionsFromSearch(item)}
+                                    >
+                                        <View style={[searchStyles.resultIcon, { backgroundColor: catBg, borderColor: catColor + '20' }]}>
+                                            <CatIcon size={18} color={catColor} strokeWidth={2.5} />
+                                        </View>
+                                        <View style={searchStyles.resultDetails}>
+                                            <Text style={searchStyles.resultDescription} numberOfLines={1}>{item.description}</Text>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                <Text style={searchStyles.resultCategory}>{getCategoryName(item.category)}</Text>
+                                                {item.date && <Text style={searchStyles.resultDate}>{formatTransactionDate(item.date)}</Text>}
+                                            </View>
+                                        </View>
+                                        <View style={searchStyles.resultAmountContainer}>
+                                            <Text style={[
+                                                searchStyles.resultAmount,
+                                                { color: isPaymentItem || isRefundItem ? '#4ADE80' : '#FF6B6B' }
+                                            ]}>
+                                                {isPaymentItem || isRefundItem ? '+ ' : '- '}{formatCurrency(item.amount)}
+                                            </Text>
+                                            {item.totalInstallments && item.totalInstallments > 1 && (
+                                                <Text style={searchStyles.resultInstallment}>
+                                                    {item.installmentNumber}/{item.totalInstallments}
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })
+                        )}
+                    </ScrollView>
+                </View>
+            </ModalPadrao>
 
             <SectionList
                 style={styles.container}
@@ -2230,6 +2341,10 @@ export function CreditCardInvoice({
 
                                     <TouchableOpacity style={styles.settingsButton} onPress={() => setClosingDateModalVisible(true)}>
                                         <TimedLottieIcon source={require('@/assets/fatura.json')} style={{ width: 20, height: 20 }} />
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity style={styles.settingsButton} onPress={() => setTransactionSearchModalVisible(true)}>
+                                        <TimedLottieIcon source={require('@/assets/buscar.json')} style={{ width: 20, height: 20 }} />
                                     </TouchableOpacity>
 
                                     <TouchableOpacity style={styles.toggleButton} onPress={toggleInvoiceCards}>
@@ -2890,5 +3005,81 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 14,
         fontWeight: '600',
+    },
+});
+
+// Search Modal Styles
+const searchStyles = StyleSheet.create({
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#252525',
+        marginBottom: 16,
+        paddingHorizontal: 12,
+        height: 40,
+        borderRadius: 10,
+    },
+    searchInput: {
+        flex: 1,
+        color: '#FFF',
+        fontSize: 14,
+        padding: 0,
+    },
+    emptyContainer: {
+        paddingVertical: 40,
+        alignItems: 'center',
+    },
+    emptyText: {
+        color: '#666',
+        fontSize: 14,
+    },
+    resultCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: '#1F1F1F',
+    },
+    resultIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+        borderWidth: 1,
+    },
+    resultDetails: {
+        flex: 1,
+        marginRight: 8,
+    },
+    resultDescription: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '500',
+        marginBottom: 2,
+    },
+    resultCategory: {
+        color: '#888',
+        fontSize: 11,
+        fontWeight: '400',
+    },
+    resultDate: {
+        color: '#555',
+        fontSize: 11,
+    },
+    resultAmountContainer: {
+        alignItems: 'flex-end',
+    },
+    resultAmount: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    resultInstallment: {
+        fontSize: 9,
+        color: '#666',
+        marginTop: 2,
+        fontWeight: '500',
     },
 });

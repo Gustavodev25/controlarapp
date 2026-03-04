@@ -62,7 +62,7 @@ export function TransactionOptionsModal({
             onClose={() => {
                 onClose();
             }}
-            title="OpÃ§Ãµes da TransaÃ§Ã£o"
+            title="Opções da Transação"
         >
             <View style={styles.container}>
                 <View style={styles.headerInfo}>
@@ -70,7 +70,7 @@ export function TransactionOptionsModal({
                         {transaction.description}
                     </Text>
                     <Text style={styles.transactionSubtitle}>
-                        {new Date(transaction.date + 'T12:00:00').toLocaleDateString('pt-BR')} â€¢ {getCategoryName(transaction.category)}
+                        {new Date(transaction.date + 'T12:00:00').toLocaleDateString('pt-BR')} • {getCategoryName(transaction.category)}
                     </Text>
                 </View>
 
@@ -78,7 +78,7 @@ export function TransactionOptionsModal({
                     <View style={styles.sectionWrapper}>
                         <View style={styles.sectionCard}>
                             <Text style={styles.cardTitle}>MOVER FATURA</Text>
-                            {/* Renderiza atÃ© 2 opÃ§Ãµes de movimento relativo (prev/next) com labels customizados */}
+                            {/* Renderiza até 2 opções de movimento relativo (prev/next) com labels customizados */}
                             {moveOptions?.map((opt, index) => (
                                 <React.Fragment key={opt.target}>
                                     <TouchableOpacity
@@ -106,14 +106,14 @@ export function TransactionOptionsModal({
 
                         {!canMoveInvoice && (
                             <Text style={styles.projectedHint}>
-                                TransaÃ§Ãµes projetadas sem parcelas nÃ£o podem ser movidas.
+                                Transações projetadas sem parcelas não podem ser movidas.
                             </Text>
                         )}
                     </View>
                 )}
 
                 <View style={styles.sectionCard}>
-                    <Text style={styles.cardTitle}>AÃ‡Ã•ES</Text>
+                    <Text style={styles.cardTitle}>AÇÕES</Text>
                     {isRefund ? (
                         <TouchableOpacity
                             style={styles.itemContainer}
@@ -126,7 +126,7 @@ export function TransactionOptionsModal({
                                 <Trash2 size={20} color="#FF453A" />
                             </View>
                             <View style={styles.itemContent}>
-                                <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transaÃ§Ã£o</Text>
+                                <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transação</Text>
                             </View>
                         </TouchableOpacity>
                     ) : (
@@ -143,7 +143,7 @@ export function TransactionOptionsModal({
                                             <RotateCcw size={20} color="#4ADE80" />
                                         </View>
                                         <View style={styles.itemContent}>
-                                            <Text style={[styles.itemTitle, { color: '#4ADE80' }]}>Estornar transaÃ§Ã£o</Text>
+                                            <Text style={[styles.itemTitle, { color: '#4ADE80' }]}>Estornar transação</Text>
                                         </View>
                                     </TouchableOpacity>
                                     <View style={styles.separator} />
@@ -176,7 +176,7 @@ export function TransactionOptionsModal({
                                     <Trash2 size={20} color="#FF453A" />
                                 </View>
                                 <View style={styles.itemContent}>
-                                    <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transaÃ§Ã£o</Text>
+                                    <Text style={[styles.itemTitle, { color: '#FF453A' }]}>Excluir transação</Text>
                                 </View>
                             </TouchableOpacity>
                         </>
