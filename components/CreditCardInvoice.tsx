@@ -1,6 +1,7 @@
 ﻿import BankSelector from '@/components/BankSelector';
-import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
+import { CategorySelectorModal } from '@/components/CategorySelectorModal';
 import { ClosingDateItem, ClosingDateModal } from '@/components/ClosingDateModal';
+import { CreditCardFilterModal, FilterState } from '@/components/CreditCardFilterModal';
 import { CreditCardSettingsModal } from '@/components/CreditCardSettingsModal';
 import { DeleteConfirmCard } from '@/components/DeleteConfirmCard';
 import { RefundModal } from '@/components/RefundModal';
@@ -8,6 +9,7 @@ import { SwipeTutorial } from '@/components/SwipeTutorial';
 import { TransactionOptionsModal } from '@/components/TransactionOptionsModal';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { useStackCardStyle } from '@/components/ui/StackCarousel';
+import { DEFAULT_CATEGORIES } from '@/constants/defaultCategories';
 import { useCategories } from '@/hooks/use-categories';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
 import { databaseService, db } from '@/services/firebase';
@@ -1044,10 +1046,45 @@ export function CreditCardInvoice({
     const [selectedTransactionForOptions, setSelectedTransactionForOptions] = useState<InvoiceItem | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+    // Closing Date Modal State
+    const [closingDateModalVisible, setClosingDateModalVisible] = useState(false);
+
+    // Category Selector Modal State
+    const [categorySelectorVisible, setCategorySelectorVisible] = useState(false);
+    const [categoryChangeTarget, setCategoryChangeTarget] = useState<InvoiceItem | null>(null);
+
     const handleOpenTransactionOptions = useCallback((item: InvoiceItem) => {
         setSelectedTransactionForOptions(item);
         setTransactionOptionsVisible(true);
     }, []);
+
+    // Handler para abrir o seletor de categoria
+    const handleOpenCategorySelector = useCallback((item: InvoiceItem) => {
+        setTransactionOptionsVisible(false);
+        setCategoryChangeTarget(item);
+        setCategorySelectorVisible(true);
+    }, []);
+
+    // Handler para salvar a nova categoria
+    const handleCategoryChange = useCallback(async (categoryKey: string) => {
+        if (!categoryChangeTarget) return;
+        try {
+            const result = await databaseService.updateCreditCardTransaction(
+                userId,
+                categoryChangeTarget.id,
+                { category: categoryKey }
+            );
+            if (!result?.success) {
+                throw new Error(result?.error || 'Erro ao alterar categoria');
+            }
+            if (onRefresh) await onRefresh();
+        } catch (error) {
+            console.error('Erro ao alterar categoria:', error);
+        } finally {
+            setCategoryChangeTarget(null);
+        }
+    }, [categoryChangeTarget, userId, onRefresh]);
+
 
     const normalizeIsoDate = useCallback((rawDate: string): string | null => {
         if (!rawDate) return null;
@@ -1130,6 +1167,32 @@ export function CreditCardInvoice({
 
         return null;
     }, [invoiceData, selectedTab]);
+
+    // Move options para o TransactionOptionsModal
+    const transactionMoveOptions = useMemo(() => {
+        if (!selectedTransactionForOptions || !invoiceData) return [];
+        const tabMonthKey = getSelectedTabMonthKey();
+        if (!tabMonthKey) return [];
+
+        const prevMonth = shiftMonthKey(tabMonthKey, -1);
+        const nextMonth = shiftMonthKey(tabMonthKey, 1);
+
+        const formatMonthLabel = (mk: string | null): string => {
+            if (!mk) return '';
+            const [y, m] = mk.split('-');
+            const d = new Date(Number(y), Number(m) - 1, 1);
+            return new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(d);
+        };
+
+        const options: { target: 'prev' | 'next'; label: string; date?: string; icon?: 'prev' | 'next' }[] = [];
+        if (prevMonth) {
+            options.push({ target: 'prev', label: `Fatura de ${formatMonthLabel(prevMonth)}`, icon: 'prev' });
+        }
+        if (nextMonth) {
+            options.push({ target: 'next', label: `Fatura de ${formatMonthLabel(nextMonth)}`, icon: 'next' });
+        }
+        return options;
+    }, [selectedTransactionForOptions, invoiceData, getSelectedTabMonthKey, shiftMonthKey]);
 
     const handleMoveTransaction = useCallback(async (target: 'prev' | 'next' | 'current' | 'custom', customDate?: string) => {
         if (!selectedTransactionForOptions) return;
@@ -1788,7 +1851,7 @@ export function CreditCardInvoice({
             </View>
             <Text style={styles.emptyTitle}>Nenhum cart├úo conectado</Text>
             <Text style={styles.emptyText}>Conecte seu cart├úo de cr├®dito via Open Finance para visualizar suas faturas.</Text>
-            
+
             <TouchableOpacity
                 style={styles.connectButton}
                 onPress={onNavigateToOpenFinance}
@@ -1819,6 +1882,30 @@ export function CreditCardInvoice({
                     setTransactionOptionsVisible(false);
                     handleOpenRefundModal(item);
                 }}
+                onChangeCategory={handleOpenCategorySelector}
+                moveOptions={transactionMoveOptions}
+            />
+
+            <ClosingDateModal
+                visible={closingDateModalVisible}
+                onClose={() => setClosingDateModalVisible(false)}
+                onSave={handleSaveClosingDates}
+                items={closingDateModalItems}
+                hasBankData={Boolean(normalizePluggyDate(selectedCard?.currentBill?.periodEnd || null) || normalizePluggyDate(selectedCard?.currentBill?.closeDate || null))}
+                bankName={selectedCard?.name || undefined}
+                onRefreshBank={onRefresh}
+                originalCloseDate={originalCloseDate}
+                originalDueDate={originalDueDate}
+            />
+
+            <CategorySelectorModal
+                visible={categorySelectorVisible}
+                onClose={() => {
+                    setCategorySelectorVisible(false);
+                    setCategoryChangeTarget(null);
+                }}
+                onSelect={handleCategoryChange}
+                categories={DEFAULT_CATEGORIES}
             />
 
             <RefundModal
@@ -1964,6 +2051,9 @@ export function CreditCardInvoice({
                                         onPress={() => setFilterModalVisible(true)}
                                     >
                                         <TimedLottieIcon source={require('@/assets/previsao.json')} style={{ width: 20, height: 20 }} />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.settingsButton} onPress={() => setClosingDateModalVisible(true)}>
+                                        <TimedLottieIcon source={require('@/assets/fatura.json')} style={{ width: 20, height: 20 }} />
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.settingsButton} onPress={() => setSettingsVisible(true)}>
                                         <TimedLottieIcon source={require('@/assets/engrenagem.json')} style={{ width: 20, height: 20 }} />
@@ -2283,17 +2373,17 @@ const styles = StyleSheet.create({
     emptyIconContainer: { justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     emptyTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 8 },
     emptyText: { fontSize: 14, color: '#909090', textAlign: 'center', maxWidth: 280, lineHeight: 20, marginBottom: 24 },
-    connectButton: { 
-        backgroundColor: '#D97757', 
-        paddingHorizontal: 16, 
-        paddingVertical: 8, 
-        borderRadius: 20, 
-        marginTop: 8 
+    connectButton: {
+        backgroundColor: '#D97757',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 8
     },
-    connectButtonText: { 
-        color: '#FFFFFF', 
-        fontSize: 14, 
-        fontWeight: '600' 
+    connectButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600'
     },
     emptyListState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
     emptyListTitle: { fontSize: 16, fontWeight: '600', color: '#666', marginTop: 12 },
