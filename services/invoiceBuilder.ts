@@ -810,20 +810,22 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
             } else if (override.closingDay) {
                 newDay = override.closingDay;
             }
+        } else if (applyToAll && closingDay) {
+            newDay = closingDay;
         }
 
         // 3. Verificar Overrides do Mês ANTERIOR (para alterar data de INÍCIO desta fatura)
         // Isso é necessário se a fatura anterior não existir na lista 'chronologicalBills' (ex: muito antiga ou não retornada pelo Pluggy),
         // mas o usuário configurou um override para ela.
-        if (monthOverrides) {
+        if (monthOverrides || (applyToAll && closingDay)) {
             // Calcular mês anterior
             const prevMonthDate = new Date(refDate);
             prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
             const prevMonthKey = toMonthKey(prevMonthDate);
+            let prevCloseDate: Date | null = null;
 
-            if (monthOverrides[prevMonthKey]) {
+            if (monthOverrides && monthOverrides[prevMonthKey]) {
                 const prevOverride = monthOverrides[prevMonthKey];
-                let prevCloseDate: Date | null = null;
 
                 if (prevOverride.exactDate && typeof prevOverride.exactDate === 'string') {
                     prevCloseDate = parseDate(prevOverride.exactDate);
@@ -835,17 +837,23 @@ const applyDateOverridesToBills = (bills: any[], card: CreditCardAccount | null 
                     const safeDay = Math.min(prevOverride.closingDay, lastDay);
                     prevCloseDate = new Date(y, m, safeDay, 12, 0, 0);
                 }
+            } else if (applyToAll && closingDay) {
+                const y = prevMonthDate.getFullYear();
+                const m = prevMonthDate.getMonth();
+                const lastDay = new Date(y, m + 1, 0).getDate();
+                const safeDay = Math.min(closingDay, lastDay);
+                prevCloseDate = new Date(y, m, safeDay, 12, 0, 0);
+            }
 
-                if (prevCloseDate) {
-                    const newStartDate = new Date(prevCloseDate);
-                    newStartDate.setDate(newStartDate.getDate() + 1);
-                    const newStartDateStr = toDateStr(newStartDate);
+            if (prevCloseDate) {
+                const newStartDate = new Date(prevCloseDate);
+                newStartDate.setDate(newStartDate.getDate() + 1);
+                const newStartDateStr = toDateStr(newStartDate);
 
-                    // Atualiza start date da fatura atual se diferir
-                    if (bill.periodStart !== newStartDateStr) {
-                        console.log(`[DEBUG-INVOICE] Aplicando Override de Início (devido ao mês anterior ${prevMonthKey}): Fatura ${refMonth} começa em ${newStartDateStr}`);
-                        bill.periodStart = newStartDateStr;
-                    }
+                // Atualiza start date da fatura atual se diferir
+                if (bill.periodStart !== newStartDateStr) {
+                    console.log(`[DEBUG-INVOICE] Aplicando Override de Início (devido ao mês anterior ${prevMonthKey}): Fatura ${refMonth} começa em ${newStartDateStr}`);
+                    bill.periodStart = newStartDateStr;
                 }
             }
         }

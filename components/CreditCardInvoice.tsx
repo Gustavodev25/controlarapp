@@ -2356,23 +2356,21 @@ export function CreditCardInvoice({
                             </View>
                         )}
 
-                        {showInvoiceCards && invoiceData && !needsConfiguration && (
+                        {showInvoiceCards && invoiceData && (
                             <InvoiceCarousel invoiceData={invoiceData} selectedTab={selectedTab} onTabChange={handleTabChange} historyTotal={historyTotal} selectedCard={selectedCard} />
                         )}
 
-                        {!needsConfiguration && (
-                            <View style={styles.listHeader}>
-                                <Text style={styles.listHeaderTitle}>
-                                    {selectedTab === 'all' ? 'Histórico' : selectedTab === 'last' ? 'Última Fatura' : selectedTab === 'current' ? 'Fatura Atual' : selectedTab === 'future_0' ? 'Próxima Fatura' : `Fatura Futura ${parseInt(selectedTab.split('_')[1]) + 1}`}
-                                </Text>
-                                <Text style={styles.listHeaderCount}>{visibleItemsLength} lançamentos</Text>
-                            </View>
-                        )}
+                        <View style={styles.listHeader}>
+                            <Text style={styles.listHeaderTitle}>
+                                {selectedTab === 'all' ? 'Histórico' : selectedTab === 'last' ? 'Última Fatura' : selectedTab === 'current' ? 'Fatura Atual' : selectedTab === 'future_0' ? 'Próxima Fatura' : `Fatura Futura ${parseInt(selectedTab.split('_')[1]) + 1}`}
+                            </Text>
+                            <Text style={styles.listHeaderCount}>{visibleItemsLength} lançamentos</Text>
+                        </View>
                     </>
                 }
                 ListEmptyComponent={
                     needsConfiguration ? (
-                        <NeedsConfigurationState onOpenSettings={() => { }} />
+                        <NeedsConfigurationState onOpenSettings={() => setClosingDateModalVisible(true)} />
                     ) : (
                         <EmptyTransactionsState />
                     )
