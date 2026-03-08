@@ -20,7 +20,8 @@
         "NSFaceIDUsageDescription": "Usamos Face ID para proteger seu acesso ao app",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.gustavodev25.controlarapp"
+      "bundleIdentifier": "com.gustavodev25.controlarapp",
+      "buildNumber": "7"
     },
     "android": {
       "newArchEnabled": true,
