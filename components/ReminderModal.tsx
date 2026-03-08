@@ -79,10 +79,26 @@ export function ReminderModal({ visible, onClose, onSave, title, initialData, mo
                 setType('expense');
                 setCategory('Outros');
             }
+
+            // Set default date for new subscriptions if the field will be hidden
+            if (mode === 'subscriptions' && !initialData) {
+                const today = new Date();
+                const d = String(today.getDate()).padStart(2, '0');
+                const m = String(today.getMonth() + 1).padStart(2, '0');
+                const y = today.getFullYear();
+                setDateStr(`${d}/${m}/${y}`);
+            }
+
             setShowCategoryPicker(false);
             setCategorySearch('');
         }
-    }, [visible, initialData]);
+    }, [visible, initialData, mode]);
+
+    useEffect(() => {
+        if (visible) {
+            console.log('[ReminderModal] Modal showing up, mode:', mode);
+        }
+    }, [visible, mode]);
 
     const handleSave = () => {
         const rawAmount = parseFloat(amountStr.replace(/\./g, '').replace(',', '.') || '0');
@@ -244,28 +260,32 @@ export function ReminderModal({ visible, onClose, onSave, title, initialData, mo
                         </View>
                         <View style={styles.itemSeparator} />
 
-                        {/* Data */}
-                        <View style={styles.itemContainer}>
-                            <View style={styles.itemIconContainer}>
-                                <Calendar size={20} color="#E0E0E0" />
-                            </View>
-                            <View style={styles.itemRightContainer}>
-                                <View style={styles.itemContent}>
-                                    <Text style={styles.itemTitle}>Vencimento</Text>
-                                    <TextInput
-                                        style={styles.inputRight}
-                                        value={dateStr}
-                                        onChangeText={handleChangeDate}
-                                        placeholder="DD/MM/AAAA"
-                                        placeholderTextColor="#555"
-                                        keyboardType="numeric"
-                                        textAlign="right"
-                                        maxLength={10}
-                                    />
+                        {/* Data - Hidden for subscriptions based on user feedback */}
+                        {mode !== 'subscriptions' && (
+                            <>
+                                <View style={styles.itemContainer}>
+                                    <View style={styles.itemIconContainer}>
+                                        <Calendar size={20} color="#E0E0E0" />
+                                    </View>
+                                    <View style={styles.itemRightContainer}>
+                                        <View style={styles.itemContent}>
+                                            <Text style={styles.itemTitle}>Vencimento</Text>
+                                            <TextInput
+                                                style={styles.inputRight}
+                                                value={dateStr}
+                                                onChangeText={handleChangeDate}
+                                                placeholder="DD/MM/AAAA"
+                                                placeholderTextColor="#555"
+                                                keyboardType="numeric"
+                                                textAlign="right"
+                                                maxLength={10}
+                                            />
+                                        </View>
+                                    </View>
                                 </View>
-                            </View>
-                        </View>
-                        <View style={styles.itemSeparator} />
+                                <View style={styles.itemSeparator} />
+                            </>
+                        )}
 
                         {/* Categoria */}
                         <View style={styles.itemContainer}>

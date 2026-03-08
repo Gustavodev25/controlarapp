@@ -1505,24 +1505,23 @@ export function CreditCardInvoice({
         const actionStartedAt = Date.now();
         const refundAmount = customAmount ?? transaction.amount;
         const now = new Date();
-        const refundDate = transaction.date; // Usar mesma data para ficar na mesma fatura
+        const refundDate = transaction.date;
 
         setPendingTransactionAction({ id: transaction.id, label: 'Criando estorno...' });
         setRefundModalVisible(false);
         setRefundTransaction(null);
 
         try {
-            // Criar nova transa├º├úo de estorno
+            // Criar nova transação de estorno
             const refundTransactionData = {
                 description: `Estorno - ${transaction.description}`,
-                amount: refundAmount, // Valor positivo
+                amount: refundAmount,
                 type: 'income' as const,
                 date: refundDate,
                 category: 'Refund',
                 cardId: transaction.cardId || transaction.accountId || selectedCardId,
                 isRefund: true,
                 originalTransactionId: transaction.id,
-                // Campos adicionais para consist├¬ncia
                 installmentNumber: 1,
                 totalInstallments: 1,
                 status: 'completed',
@@ -1530,13 +1529,16 @@ export function CreditCardInvoice({
                 createdAt: now.toISOString()
             };
 
+            // Sanitizar ID para evitar barras que quebram o Firestore
+            const sanitizedId = String(transaction.id).replace(/[\/\s\.]/g, '_');
+            const refundId = `refund-${sanitizedId}-${Date.now()}`;
+
             // Salvar no Firebase
             const result = await databaseService.saveOpenFinanceCreditCardTransaction(
                 userId,
                 {
-                    id: `refund-${transaction.id}-${Date.now()}`,
+                    id: refundId,
                     ...refundTransactionData,
-                    amount: refundAmount, // Manter positivo para estorno
                 },
                 { id: selectedCardId }
             );
@@ -1549,6 +1551,10 @@ export function CreditCardInvoice({
             if (onRefresh) {
                 await onRefresh();
             }
+        } catch (error: any) {
+            console.error('[Refund] Error confirming refund:', error);
+            // Mostrar alerta apenas no ambiente real se houver erro crítico
+            alert('Não foi possível realizar o estorno: ' + (error.message || 'Erro desconhecido'));
         } finally {
             const elapsed = Date.now() - actionStartedAt;
             if (elapsed < 350) {

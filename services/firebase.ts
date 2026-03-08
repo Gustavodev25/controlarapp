@@ -1750,12 +1750,14 @@ export const databaseService = {
     saveOpenFinanceCreditCardTransaction: async (userId: string, transaction: any, accountInfo?: any) => {
         try {
             // Use Pluggy transaction ID as document ID to avoid duplicates
-            const transactionId = transaction.id;
+            // Sanitize ID for Firestore (remove slashes and spaces)
+            const baseId = transaction.id || `manual-${Date.now()}`;
+            const transactionId = String(baseId).replace(/[\/\s\.]/g, '_');
             const docRef = doc(db, 'users', userId, 'creditCardTransactions', transactionId);
 
             // Extract date in YYYY-MM-DD format (same as web)
             const transactionDate = transaction.date
-                ? transaction.date.split('T')[0]
+                ? (typeof transaction.date === 'string' ? transaction.date.split('T')[0] : new Date(transaction.date).toISOString().split('T')[0])
                 : new Date().toISOString().split('T')[0];
 
             const description = transaction.description || transaction.descriptionRaw || 'Transação';
@@ -1768,63 +1770,60 @@ export const databaseService = {
                 : (transaction.creditCardMetadata?.totalInstallments || 1);
 
             // Calculate invoice month key from billId date or transaction date
-            // Web uses format "YYYY-MM"
-            const invoiceMonthKey = (() => {
-                // Try to get from creditCardMetadata.billId date context
-                // Default to transaction month
-                const [year, month] = transactionDate.split('-');
-                return `${year}-${month}`;
-            })();
+            const [year, month] = transactionDate.split('-');
+            const invoiceMonthKey = `${year}-${month}`;
 
             // Map Pluggy transaction to credit card transaction structure
-            // This format is IDENTICAL to what the web app saves
+            // Use ?? null for all optional fields to avoid Firestore "undefined" errors
             const transactionDoc: Record<string, any> = {
-                // Core transaction fields (same as web)
-                amount: Math.abs(transaction.amount || 0),
-                cardId: transaction.accountId || accountInfo?.id || null,
+                amount: Math.abs(Number(transaction.amount) || 0),
+                cardId: transaction.cardId || transaction.accountId || accountInfo?.id || null,
                 category: transaction.category || null,
                 date: transactionDate,
                 description: description,
                 installmentNumber: installmentNumber,
                 invoiceMonthKey: invoiceMonthKey,
-                invoiceMonthKeyManual: false,
-                isRefund: transaction.isRefund || false,
-                originalTransactionId: transaction.originalTransactionId || null,
+                invoiceMonthKeyManual: transaction.invoiceMonthKeyManual === true,
+                isRefund: transaction.isRefund === true,
+                originalTransactionId: transaction.originalTransactionId ?? null,
 
-                // Complete Pluggy raw data (same as web)
-                pluggyRaw: {
-                    accountId: transaction.accountId || null,
+                pluggyRaw: transaction.pluggyRaw ? transaction.pluggyRaw : {
+                    accountId: transaction.accountId ?? null,
                     acquirerData: transaction.acquirerData ?? null,
-                    amount: transaction.amount || 0,
+                    amount: transaction.amount ?? 0,
                     amountInAccountCurrency: transaction.amountInAccountCurrency ?? null,
                     balance: transaction.balance ?? null,
-                    category: transaction.category || null,
-                    categoryId: transaction.categoryId || null,
-                    createdAt: transaction.createdAt || new Date().toISOString(),
+                    category: transaction.category ?? null,
+                    categoryId: transaction.categoryId ?? null,
+                    createdAt: transaction.createdAt ?? new Date().toISOString(),
                     creditCardMetadata: transaction.creditCardMetadata ? {
                         billId: transaction.creditCardMetadata.billId ?? null,
                         cardNumber: transaction.creditCardMetadata.cardNumber ?? null,
                         payeeMCC: transaction.creditCardMetadata.payeeMCC ?? null,
+                        installmentNumber: transaction.creditCardMetadata.installmentNumber ?? null,
+                        totalInstallments: transaction.creditCardMetadata.totalInstallments ?? null,
                     } : null,
-                    currencyCode: transaction.currencyCode || 'BRL',
-                    date: transaction.date || new Date().toISOString(),
-                    description: transaction.description || null,
-                    descriptionRaw: transaction.descriptionRaw || null,
+                    currencyCode: transaction.currencyCode ?? 'BRL',
+                    date: transaction.date ?? new Date().toISOString(),
+                    description: transaction.description ?? null,
+                    descriptionRaw: transaction.descriptionRaw ?? null,
                     id: transactionId,
                     merchant: transaction.merchant ?? null,
                     operationType: transaction.operationType ?? null,
                     order: transaction.order ?? 0,
                     paymentData: transaction.paymentData ?? null,
                     providerCode: transaction.providerCode ?? null,
-                    providerId: transaction.providerId || null,
-                    status: transaction.status || 'POSTED',
-                    type: transaction.type || 'DEBIT',
-                    updatedAt: transaction.updatedAt || new Date().toISOString(),
+                    providerId: transaction.providerId ?? null,
+                    status: transaction.status ?? 'POSTED',
+                    type: transaction.type ?? 'DEBIT',
+                    updatedAt: transaction.updatedAt ?? new Date().toISOString(),
                 },
 
-                status: 'completed',
+                status: transaction.status || 'completed',
                 totalInstallments: totalInstallments,
-                type: (transaction.amount || 0) >= 0 ? 'income' : 'expense',
+                type: transaction.type || ((transaction.amount || 0) >= 0 ? 'income' : 'expense'),
+                source: transaction.source ?? 'pluggy',
+                updatedAt: new Date().toISOString()
             };
 
             // Check if transaction already exists
@@ -1833,55 +1832,25 @@ export const databaseService = {
 
             if (!isNew) {
                 const existingData = existingDoc.data() || {};
-                const existingManualMonthRaw = typeof existingData.manualInvoiceMonth === 'string'
-                    ? existingData.manualInvoiceMonth.trim()
-                    : '';
-                const existingInvoiceMonthRaw = typeof existingData.invoiceMonthKey === 'string'
-                    ? existingData.invoiceMonthKey.trim()
-                    : '';
-                const existingDateRaw = typeof existingData.date === 'string'
-                    ? existingData.date.trim()
-                    : '';
                 const hasManualOverride = existingData.invoiceMonthKeyManual === true
-                    || isValidMonthKeyValue(existingManualMonthRaw);
+                    || isValidMonthKeyValue(existingData.manualInvoiceMonth);
 
                 if (hasManualOverride) {
-                    const resolvedManualMonth = isValidMonthKeyValue(existingManualMonthRaw)
-                        ? existingManualMonthRaw
-                        : (isValidMonthKeyValue(existingInvoiceMonthRaw) ? existingInvoiceMonthRaw : invoiceMonthKey);
-
+                    const resolvedManualMonth = existingData.manualInvoiceMonth || existingData.invoiceMonthKey || invoiceMonthKey;
                     transactionDoc.invoiceMonthKey = resolvedManualMonth;
                     transactionDoc.invoiceMonthKeyManual = true;
                     transactionDoc.manualInvoiceMonth = resolvedManualMonth;
-                    if (existingDateRaw) {
-                        transactionDoc.date = existingDateRaw;
+                    if (existingData.date) {
+                        transactionDoc.date = existingData.date;
                     }
                 }
             }
 
             await setDoc(docRef, transactionDoc, { merge: true });
 
-            // Update Aggregates for Credit Card
-            // Determine invoice month for aggregation
-            // Update Aggregates ONLY if it's a new transaction
             if (isNew) {
-                // Credit card expenses are aggregated by their invoice month usually, 
-                // OR by their purchase date?
-                // For "Spending this month", we usually look at purchase date.
-                // But for "Invoice total", we look at invoice month.
-                // The `MonthlyAnalyticsSummary` has `creditTotal`.
-                // Let's aggregate by Purchase Date for "Spending" and maintain a separate "Invoice" aggregate if needed.
-                // Actually, the requirement says "aggregados mensais... creditTotal, creditByCard".
-                // creditTotal usually means Total Invoice Amount for that month?
-                // If `analytics_monthly` is by Month Key (YYYY-MM), 
-                // `creditTotal` inside `2024-02` should probably be "Invoices Due in Feb" or "Purchases in Feb"?
-                // Visualizing Dashboard: "Expenses" chart.
-                // Usually shows "Spending in February".
-                // So we should aggregate by `transactionDate`.
-
                 const amount = Number(transactionDoc.amount);
-                // Credit card is usually expense
-                await databaseService.updateMonthlyAggregates(userId, transactionDate, {
+                const updateData: any = {
                     creditTotal: increment(amount) as any,
                     creditCount: increment(1) as any,
                     creditByCard: {
@@ -1893,12 +1862,25 @@ export const databaseService = {
                     categoryTotals: {
                         [transactionDoc.category || 'Outros']: increment(amount)
                     } as any
-                });
+                };
+
+                await databaseService.updateMonthlyAggregates(userId, transactionDate, updateData);
             }
 
             return { success: true, id: transactionId };
         } catch (error: any) {
             console.error('[Firebase] Error saving credit card transaction:', error);
+
+            // OFFLINE: Queue for later sync
+            if (!offlineSync.isOnline) {
+                try {
+                    const opId = await offlineSync.queueOperation('add', 'creditCardTransactions', userId, transaction);
+                    return { success: true, id: `pending_${opId}`, offline: true };
+                } catch (queueError) {
+                    console.error('[Firebase] Failed to queue offline operation:', queueError);
+                }
+            }
+
             return { success: false, error: error.message };
         }
     },
@@ -2836,23 +2818,55 @@ export const databaseService = {
             const collectionName = type === 'subscription' ? 'subscriptions' : 'reminders';
             const docRef = doc(db, 'users', userId, collectionName, recurrenceId);
 
-            // Sync status and paid boolean for compatibility with Web App
-            const updateData = { ...data };
+            // Preparar dados para firestore
+            let updateData: any;
+
+            if (type === 'reminder') {
+                updateData = {
+                    ...data,
+                    amount: data.amount ? Number(data.amount) : undefined,
+                    description: data.name || data.description, // Web usa description
+                    type: data.transactionType || data.type || 'expense', // O campo NATUREZA no Web se chama 'type'
+                    isRecurring: data.frequency && data.frequency !== 'once',
+                    updatedAt: Timestamp.now()
+                };
+
+                // Remove campos do App que não devem ir no documento base do lembrete (opcional, mas limpo)
+                if (updateData.name) delete updateData.name;
+                if (updateData.transactionType) delete updateData.transactionType;
+            } else {
+                updateData = {
+                    ...data,
+                    title: data.name || data.title,
+                    description: data.name || data.description,
+                    amount: data.amount ? Number(data.amount) : undefined,
+                    value: data.amount ? Number(data.amount) : undefined,
+                    price: data.amount ? Number(data.amount) : undefined,
+                    dueDate: data.dueDate,
+                    date: data.dueDate,
+                    recurrence: data.frequency, // Web usa recurrence
+                    updatedAt: Timestamp.now()
+                };
+            }
+
+            // Sincronizar status <-> paid para compatibilidade Web
             if (updateData.status) {
                 updateData.paid = updateData.status === 'paid';
             }
-            // If paid is explicitly passed, ensure status matches
             if (updateData.paid !== undefined) {
                 updateData.status = updateData.paid ? 'paid' : 'pending';
             }
 
-            await updateDoc(docRef, {
-                ...updateData,
-                updatedAt: Timestamp.now()
+            // Remove campos nulos/undefined para não poluir o firestore ou sobrescrever com lixo
+            Object.keys(updateData).forEach(key => {
+                if (updateData[key] === undefined) {
+                    delete updateData[key];
+                }
             });
+
+            await updateDoc(docRef, updateData);
             return { success: true };
         } catch (error: any) {
-            // Fallback to 'recurrences' if not found? No, let's stick to the new structure.
             console.error('[Firebase] Error updating recurrence:', error);
             return { success: false, error: error.message };
         }

@@ -241,28 +241,7 @@ export default function SubscriptionSettingsScreen() {
         ? formatCurrency(currentSubscription.price)
         : (isPro ? 'R$ 35,90' : 'R$ 0,00');
 
-    // Determinar a data de renovação/expiração corretamente
-    const getRenewalDate = () => {
-        // Prioridade 1: nextBillingDate (data que deveria renovar)
-        if ((currentSubscription as any)?.nextBillingDate) {
-            return formatDateSimple((currentSubscription as any).nextBillingDate);
-        }
-        // Prioridade 2: expiresAt
-        if (currentSubscription?.expiresAt) {
-            return formatDateSimple(currentSubscription.expiresAt);
-        }
-        // Prioridade 3: startDate (para calcular próxima data)
-        if ((currentSubscription as any)?.startDate) {
-            return formatDateSimple((currentSubscription as any).startDate);
-        }
-        return null;
-    };
-    const renewalDate = getRenewalDate();
-
-    // Data de cancelamento separada
-    const cancelledDate = isCancelled && currentSubscription?.cancelledAt
-        ? formatDateSimple(currentSubscription.cancelledAt)
-        : null;
+    // Datas de renovação/vencimento removidas a pedido do usuário
 
     // Has valid payment method?
     const hasPaymentMethod = currentPaymentMethod && currentPaymentMethod.last4;
@@ -370,15 +349,9 @@ export default function SubscriptionSettingsScreen() {
                                     {statusConfig.label}
                                 </Text>
                             </View>
-                            {renewalDate && (
-                                <Text style={styles.renewalText}>
-                                    {isExpired
-                                        ? `Venceu em ${renewalDate}`
-                                        : isCancelled && cancelledDate
-                                            ? `Cancelado em ${cancelledDate}`
-                                            : `Renova em ${renewalDate}`}
-                                </Text>
-                            )}
+                            <Text style={styles.renewalText}>
+                                {billingCycle === 'yearly' ? 'Anual' : 'Mensal'}
+                            </Text>
                         </View>
 
                         {/* Main Content: Big Plan Name & Price/Expiry */}
@@ -387,21 +360,16 @@ export default function SubscriptionSettingsScreen() {
                                 {planDisplay}
                             </Text>
                             {isTrial ? (
-                                // Trial - mostra vencimento
+                                // Trial - removida data de vencimento a pedido do usuário
                                 <View style={styles.expiryContainer}>
-                                    <Text style={styles.expiryLabel}>Vencimento</Text>
-                                    <Text style={styles.expiryDate}>
-                                        {(currentSubscription as any)?.trialEndsAt
-                                            ? formatDateSimple((currentSubscription as any).trialEndsAt)
-                                            : '—'}
-                                    </Text>
+                                    <Text style={styles.expiryLabel}>{billingCycle === 'yearly' ? 'Anual' : 'Mensal'}</Text>
                                 </View>
                             ) : (
                                 // Pro/Starter - mostra preço
                                 <View style={styles.priceRow}>
                                     <Text style={styles.priceValue}>{priceValue}</Text>
                                     <Text style={styles.period}>
-                                        /{billingCycle === 'yearly' ? 'ano' : 'mês'}
+                                        {billingCycle === 'yearly' ? 'Anual' : 'Mensal'}
                                     </Text>
                                 </View>
                             )}
@@ -416,11 +384,6 @@ export default function SubscriptionSettingsScreen() {
                             <View style={styles.nextBillingRow}>
                                 <Text style={styles.nextBillingLabel}>Próxima cobrança</Text>
                                 <View style={styles.nextBillingValueContainer}>
-                                    <Text style={styles.nextBillingDate}>
-                                        {(currentSubscription as any)?.nextBillingDate
-                                            ? formatDateSimple((currentSubscription as any).nextBillingDate)
-                                            : renewalDate || '—'}
-                                    </Text>
                                     <Text style={styles.nextBillingAmount}>{priceValue}</Text>
                                 </View>
                             </View>

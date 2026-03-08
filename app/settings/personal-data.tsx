@@ -222,11 +222,6 @@ export default function PersonalDataScreen() {
                             />
                             <ListRow
                                 icon={Calendar}
-                                title="Status"
-                                value={profile?.subscription?.status === 'active' ? 'Ativo' : 'Inativo'}
-                            />
-                            <ListRow
-                                icon={Calendar}
                                 title="Ciclo"
                                 value={profile?.subscription?.billingCycle === 'yearly' ? 'Anual' : 'Mensal'}
                                 isLast={true}

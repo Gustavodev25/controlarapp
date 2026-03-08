@@ -6,6 +6,7 @@ import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { databaseService } from '@/services/firebase';
+import { notificationService } from '@/services/notifications';
 import { DetectedSubscription, detectSubscriptions, formatDetectedSubscription } from '@/services/subscriptionDetector';
 import { getCategoryConfig } from '@/utils/categoryUtils';
 import { addMonths } from '@/utils/monthWindow';
@@ -79,14 +80,16 @@ interface RecurrenceItem {
 
 // Componente Lottie que toca em intervalos
 const IntervalLottie = React.memo(({ source, size, interval = 5000 }: { source: any; size: number; interval?: number }) => (
-    <DelayedLoopLottie
-        source={source}
-        style={{ width: size, height: size }}
-        delay={interval}
-        initialDelay={100 + Math.random() * 800}
-        renderMode="HARDWARE"
-        jitterRatio={0.2}
-    />
+    <View pointerEvents="none">
+        <DelayedLoopLottie
+            source={source}
+            style={{ width: size, height: size }}
+            delay={interval}
+            initialDelay={100 + Math.random() * 800}
+            renderMode="HARDWARE"
+            jitterRatio={0.2}
+        />
+    </View>
 ));
 IntervalLottie.displayName = 'RecurrenceIntervalLottie';
 
@@ -284,8 +287,11 @@ const ListItem = ({
                     <View style={{ flex: 1, flexShrink: 1 }}>
                         <Text style={styles.listItemTitle} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
                         <Text style={styles.listItemSubtitle} numberOfLines={1} ellipsizeMode="tail">
-                            {formatDate(item.dueDate)}
-                            {item.frequency && ` • ${item.frequency === 'monthly' ? 'Mensal' : 'Anual'} `}
+                            {item.type === 'subscription' ? (
+                                item.frequency === 'monthly' ? 'Mensal' : 'Anual'
+                            ) : (
+                                `${formatDate(item.dueDate)}${item.frequency ? ` • ${item.frequency === 'monthly' ? 'Mensal' : 'Anual'}` : ''}`
+                            )}
                             {item.transactionType === 'income' && ` • Receita`}
                         </Text>
                     </View>
@@ -870,7 +876,7 @@ const islandStyles = StyleSheet.create({
 });
 
 export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: RecurrenceTab }) {
-    const { user } = useAuthContext();
+    const { user, profile } = useAuthContext();
     const [selectedTab, setSelectedTab] = useState<RecurrenceTab>(initialTab);
     const [items, setItems] = useState<RecurrenceItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -946,6 +952,21 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
 
         return () => unsubscribe();
     }, [user]);
+
+    // Reschedule notifications whenever items or preferences change
+    useEffect(() => {
+        if (!user?.uid || loading || items.length === 0) return;
+
+        const prefs = (profile?.preferences as any);
+        const paymentAlertsEnabled = (prefs?.paymentAlertsEnabled ?? true) as boolean;
+
+        notificationService.reschedulePaymentAlerts({
+            userId: user.uid,
+            enabled: paymentAlertsEnabled,
+            recurrences: items,
+            plan: profile?.subscription || null,
+        });
+    }, [user?.uid, profile?.preferences?.paymentAlertsEnabled, items, profile?.subscription]);
 
     // Detecta assinaturas automaticamente
     useEffect(() => {
@@ -1586,7 +1607,13 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
                         >
                             <IntervalLottie source={require('@/assets/previsao.json')} size={22} interval={5000} />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setReminderModalVisible(true)} style={styles.headerButton}>
+                        <TouchableOpacity
+                            onPress={() => {
+                                console.log('[RecurrenceView] Novo button clicked, tab:', selectedTab);
+                                setReminderModalVisible(true);
+                            }}
+                            style={styles.headerButton}
+                        >
                             <IntervalLottie source={require('@/assets/adicionar.json')} size={18} interval={4000} />
                             <Text style={styles.headerButtonText}>Novo</Text>
                         </TouchableOpacity>

@@ -119,6 +119,7 @@ const getNotifications = () => {
                     shouldSetBadge: true,
                     shouldShowBanner: true,
                     shouldShowList: true,
+                    priority: Notifications.AndroidImportance.MAX,
                 }),
             });
         }
@@ -335,6 +336,8 @@ export const notificationService = {
                         title,
                         body,
                         sound: true,
+                        priority: 'high', // Added for Android background
+                        interruptionLevel: 'active', // Added for iOS background
                         data: options.metadata
                             ? {
                                 category: options.metadata.category,
@@ -369,13 +372,16 @@ export const notificationService = {
         }
     },
 
-    async cancelNotificationsByCategory(categories: NotificationCategory[]) {
+    async cancelNotificationsByCategory(categories: NotificationCategory[], preFetchedScheduled?: any[]) {
         const Notifications = getNotifications();
-        if (!Notifications || categories.length === 0) return;
+        if (!Notifications) return;
 
         try {
-            const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+            const scheduled = preFetchedScheduled || await Notifications.getAllScheduledNotificationsAsync();
+            if (!scheduled || scheduled.length === 0) return;
+
             let cancelledCount = 0;
+            const cancelPromises = [];
 
             for (const item of scheduled) {
                 const categoryFromData = item?.content?.data?.category as NotificationCategory | undefined;
@@ -387,9 +393,13 @@ export const notificationService = {
                 }
 
                 if (typeof Notifications.cancelScheduledNotificationAsync === 'function') {
-                    await Notifications.cancelScheduledNotificationAsync(identifier);
+                    cancelPromises.push(Notifications.cancelScheduledNotificationAsync(identifier));
                     cancelledCount++;
                 }
+            }
+
+            if (cancelPromises.length > 0) {
+                await Promise.all(cancelPromises);
             }
 
             await logActivity('Notifications cancelled by category', { categories, cancelledCount });
@@ -480,11 +490,11 @@ export const notificationService = {
         }
     },
 
-    async scheduleRecurrenceNotifications(items: RecurrenceItem[], userId: string, options: ScheduleCategoryOptions = {}) {
+    async scheduleRecurrenceNotifications(items: RecurrenceItem[], userId: string, options: ScheduleCategoryOptions = {}, preFetchedScheduled?: any[]) {
         if (!getNotifications() || !userId) return;
 
         if (!options.skipCategoryCleanup) {
-            await this.cancelNotificationsByCategory(['recurrence']);
+            await this.cancelNotificationsByCategory(['recurrence'], preFetchedScheduled);
         }
 
         const safeItems = Array.isArray(items) ? items : [];
@@ -496,9 +506,13 @@ export const notificationService = {
         for (const item of safeItems) {
             if (item.status === 'paid') continue;
 
+            // Only schedule notifications for 'reminder' type
+            // Subscriptions are excluded per user request
+            if (item.type !== 'reminder') continue;
+
             try {
                 const name = item.name;
-                const typeLabel = item.type === 'subscription' ? 'Assinatura' : 'Lembrete';
+                const typeLabel = 'Lembrete';
 
                 const parsedDueDate = parseDateOnly(item.dueDate);
                 if (!parsedDueDate) continue;
@@ -601,7 +615,7 @@ export const notificationService = {
 
                     if (triggerDate.getTime() > now.getTime()) {
                         await this.scheduleNotificationWithRetry(
-                            `Vencimento de ${name}`,
+                            name,
                             t.msg,
                             triggerDate,
                             {
@@ -655,7 +669,7 @@ export const notificationService = {
 
                         if (triggerDate.getTime() > now.getTime()) {
                             await this.scheduleNotificationWithRetry(
-                                `Cancelamento de ${name}`,
+                                name,
                                 t.msg,
                                 triggerDate,
                                 {
@@ -682,11 +696,11 @@ export const notificationService = {
     },
 
     // Schedule App Plan Notifications
-    async schedulePlanNotifications(plan: any, userId: string, options: ScheduleCategoryOptions = {}) {
+    async schedulePlanNotifications(plan: any, userId: string, options: ScheduleCategoryOptions = {}, preFetchedScheduled?: any[]) {
         if (!getNotifications() || !userId) return;
 
         if (!options.skipCategoryCleanup) {
-            await this.cancelNotificationsByCategory(['plan']);
+            await this.cancelNotificationsByCategory(['plan'], preFetchedScheduled);
         }
 
         if (!plan) return;
@@ -783,12 +797,13 @@ export const notificationService = {
         accounts: CreditCardAccount[],
         userId: string,
         preferences: InvoiceNotificationPreferences = DEFAULT_INVOICE_NOTIFICATION_PREFERENCES,
-        options: ScheduleCategoryOptions = {}
+        options: ScheduleCategoryOptions = {},
+        preFetchedScheduled?: any[]
     ) {
         if (!getNotifications() || !userId) return;
 
         if (!options.skipCategoryCleanup) {
-            await this.cancelNotificationsByCategory(['invoice']);
+            await this.cancelNotificationsByCategory(['invoice'], preFetchedScheduled);
         }
 
         if (!accounts || accounts.length === 0) return;
@@ -868,7 +883,7 @@ export const notificationService = {
 
                     if (triggerDate.getTime() > Date.now()) {
                         await this.scheduleNotificationWithRetry(
-                            'Fatura do Cartao',
+                            name,
                             t.msg,
                             triggerDate,
                             {
@@ -1066,9 +1081,12 @@ export const notificationService = {
 
             const invoicePreferences = params.invoicePreferences || DEFAULT_INVOICE_NOTIFICATION_PREFERENCES;
 
-            await this.scheduleRecurrenceNotifications(recurrences || [], userId);
-            await this.scheduleInvoiceNotifications(accounts || [], userId, invoicePreferences);
-            await this.schedulePlanNotifications(plan, userId);
+            // Pre-fetch scheduled notifications once for all operations to avoid redundant work
+            const preFetchedScheduled = await (getNotifications() as any).getAllScheduledNotificationsAsync();
+
+            await this.scheduleRecurrenceNotifications(recurrences || [], userId, {}, preFetchedScheduled);
+            await this.scheduleInvoiceNotifications(accounts || [], userId, invoicePreferences, {}, preFetchedScheduled);
+            await this.schedulePlanNotifications(plan, userId, {}, preFetchedScheduled);
 
             await logActivity('Payment alerts rescheduled successfully');
         } catch (error) {
