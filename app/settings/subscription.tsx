@@ -12,9 +12,9 @@ import {
     RefreshCw,
     Rocket
 } from 'lucide-react-native';
+
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Linking,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -388,57 +388,32 @@ export default function SubscriptionSettingsScreen() {
                                 </View>
                             </View>
                         ) : isPro && (isCancelled || isExpired) ? (
-                            // Plano cancelado ou expirado - mostra botão para reativar
+                            // Plano cancelado ou expirado - mostra mensagem informativa
                             <View style={styles.upgradeRow}>
                                 <View style={styles.upgradeTextContainer}>
                                     <Text style={styles.upgradeTitle}>
                                         {isCancelled ? 'Plano cancelado' : 'Plano vencido'}
                                     </Text>
                                     <Text style={styles.upgradeSubtitle}>
-                                        {isCancelled
-                                            ? 'Reative para continuar usando.'
-                                            : 'Renove para continuar usando.'}
+                                        Gerencie sua assinatura pelo site controlarmais.com.br
                                     </Text>
                                 </View>
-                                <TouchableOpacity
-                                    style={styles.upgradeButton}
-                                    activeOpacity={0.8}
-                                    onPress={() => Linking.openURL('https://www.controlarmais.com.br/')}
-                                >
-                                    <Text style={styles.upgradeButtonText}>
-                                        {isCancelled ? 'Reativar' : 'Renovar'}
-                                    </Text>
-                                </TouchableOpacity>
                             </View>
                         ) : isTrial ? (
-                            // Trial - mostra botão para assinar
+                            // Trial - mostra info
                             <View style={styles.upgradeRow}>
                                 <View style={styles.upgradeTextContainer}>
-                                    <Text style={styles.upgradeTitle}>Gostando do teste?</Text>
-                                    <Text style={styles.upgradeSubtitle}>Assine para continuar usando.</Text>
+                                    <Text style={styles.upgradeTitle}>Período de teste</Text>
+                                    <Text style={styles.upgradeSubtitle}>Aproveite para conhecer todos os recursos.</Text>
                                 </View>
-                                <TouchableOpacity
-                                    style={styles.upgradeButton}
-                                    activeOpacity={0.8}
-                                    onPress={() => router.push('/settings/plans')}
-                                >
-                                    <Text style={styles.upgradeButtonText}>Assinar Plano</Text>
-                                </TouchableOpacity>
                             </View>
                         ) : (
-                            // Starter - mostra botão de upgrade
+                            // Starter - mostra info sobre o plano
                             <View style={styles.upgradeRow}>
                                 <View style={styles.upgradeTextContainer}>
-                                    <Text style={styles.upgradeTitle}>Evolua seu plano</Text>
-                                    <Text style={styles.upgradeSubtitle}>Tenha acesso ilimitado.</Text>
+                                    <Text style={styles.upgradeTitle}>Plano Starter</Text>
+                                    <Text style={styles.upgradeSubtitle}>Você está usando o plano gratuito.</Text>
                                 </View>
-                                <TouchableOpacity
-                                    style={styles.upgradeButton}
-                                    activeOpacity={0.8}
-                                    onPress={() => router.push('/settings/plans')}
-                                >
-                                    <Text style={styles.upgradeButtonText}>Fazer Upgrade</Text>
-                                </TouchableOpacity>
                             </View>
                         )}
                     </View>

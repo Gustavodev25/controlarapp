@@ -1,9 +1,8 @@
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { useRouter } from 'expo-router';
-import { Check, CreditCard, Lock, Shield, X } from 'lucide-react-native';
+import { Check, Shield, X } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import {
-    Linking,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -45,7 +44,7 @@ const proPlan: Plan = {
         'Módulo FIRE',
         'Relatórios avançados'
     ],
-    buttonText: 'Assinar Pro',
+    buttonText: '',
     popular: true
 };
 
@@ -106,15 +105,7 @@ export default function PlansScreen() {
         opacity: heroOpacity.value,
     }));
 
-    const handleSelectPlan = async () => {
-        // Redirecionar para o site externo
-        const canOpen = await Linking.canOpenURL('https://www.controlarmais.com.br/');
-        if (canOpen) {
-            await Linking.openURL('https://www.controlarmais.com.br/');
-        } else {
-            console.error('Cannot open URL');
-        }
-    };
+
 
     return (
         <View style={[styles.container, { paddingTop: insets.top + 12 }]}>
@@ -150,23 +141,19 @@ export default function PlansScreen() {
             >
                 {/* Hero Section */}
                 <Animated.View style={[styles.heroSection, heroStyle]}>
-                    <Text style={styles.heroTitle}>Escolha o Plano{"\n"}Ideal Para Você</Text>
+                    <Text style={styles.heroTitle}>Conheça o Plano{"\n"}Pro</Text>
                     <Text style={styles.heroDescription}>
-                        Potencialize suas finanças com IA para cada etapa da sua jornada.
+                        Veja todos os recursos disponíveis no plano Pro.
                     </Text>
                 </Animated.View>
 
                 {/* Main Card - Plan Info */}
                 <Animated.View style={[styles.mainCard, mainCardStyle]}>
-                    {/* Plan Name & Price */}
+                    {/* Plan Name */}
                     <View style={styles.planInfoRow}>
                         <View>
                             <Text style={styles.bigPlanName}>{proPlan.name}</Text>
                             <Text style={styles.planSubtitle}>Recursos ilimitados</Text>
-                        </View>
-                        <View style={styles.priceContainer}>
-                            <Text style={styles.priceAmount}>R$ {proPlan.price.toFixed(2).replace('.', ',')}</Text>
-                            <Text style={styles.pricePeriod}>/mês</Text>
                         </View>
                     </View>
                 </Animated.View>
@@ -183,14 +170,11 @@ export default function PlansScreen() {
                         ))}
                     </View>
 
-                    {/* Button */}
-                    <TouchableOpacity
-                        style={styles.selectButton}
-                        onPress={handleSelectPlan}
-                        activeOpacity={0.8}
-                    >
-                        <Text style={styles.selectButtonText}>{proPlan.buttonText}</Text>
-                    </TouchableOpacity>
+                    <View style={styles.infoNote}>
+                        <Text style={styles.infoNoteText}>
+                            Gerencie sua assinatura pelo site controlarmais.com.br
+                        </Text>
+                    </View>
                 </Animated.View>
 
                 {/* Guarantee Card */}
@@ -206,22 +190,7 @@ export default function PlansScreen() {
                     </View>
                 </Animated.View>
 
-                {/* Security & Payment Section */}
-                <Animated.View style={[styles.securitySection, securityStyle]}>
-                    {/* Security Badge */}
-                    <View style={styles.securityBadge}>
-                        <Lock size={14} color="#8E8E93" />
-                        <Text style={styles.securityText}>Pagamento 100% seguro</Text>
-                    </View>
 
-                    {/* Payment Methods */}
-                    <View style={styles.paymentMethods}>
-                        <View style={styles.paymentIcon}>
-                            <CreditCard size={16} color="#8E8E93" />
-                        </View>
-                        <Text style={styles.paymentText}>Visa, Mastercard, Pix</Text>
-                    </View>
-                </Animated.View>
 
                 <View style={{ height: 40 }} />
             </ScrollView>
@@ -420,20 +389,16 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#CCC',
     },
-    selectButton: {
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 14,
-        borderRadius: 20,
+    infoNote: {
+        backgroundColor: 'rgba(142, 142, 147, 0.1)',
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
         alignItems: 'center',
     },
-    selectButtonText: {
-        fontSize: 15,
-        fontWeight: '700',
-        color: '#000000',
-    },
-    footerNote: {
-        fontSize: 12,
-        color: '#555',
+    infoNoteText: {
+        fontSize: 13,
+        color: '#8E8E93',
         textAlign: 'center',
         lineHeight: 18,
     },

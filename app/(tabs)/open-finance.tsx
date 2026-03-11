@@ -18,6 +18,7 @@ import { openFinanceConnectionState } from '@/services/openFinanceConnectionStat
 import { getConnectorLogoUrl, normalizeHexColor } from '@/utils/connectorLogo';
 import { BlurView } from 'expo-blur';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import LottieView from 'lottie-react-native';
 import { CheckCircle, ChevronRight, RefreshCw, Search, X, XCircle } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -357,7 +358,7 @@ export default function OpenFinanceScreen() {
         if (!canOpen && !isWebUrl) {
             throw new Error('Não foi possível abrir o link de autorização do banco.');
         }
-        await Linking.openURL(url);
+        await WebBrowser.openBrowserAsync(url);
     }, []);
 
     const extractItemIdFromDeepLink = useCallback((url: string): string | null => {

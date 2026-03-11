@@ -193,6 +193,12 @@ export function useAuth() {
         return result;
     };
 
+    // Delete account
+    const deleteAccount = async () => {
+        const result = await authService.deleteAccount();
+        return result;
+    };
+
     // Refresh profile
     const refreshProfile = async () => {
         if (state.user) {
@@ -205,6 +211,7 @@ export function useAuth() {
         signIn,
         signUp,
         signOut,
+        deleteAccount,
         resetPassword,
         refreshProfile
     };

@@ -13,7 +13,8 @@ import {
     onAuthStateChanged,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
-    User
+    User,
+    deleteUser
 } from 'firebase/auth';
 import {
     arrayRemove,
@@ -752,6 +753,21 @@ export const authService = {
     // Subscribe to auth state changes
     onAuthStateChange: (callback: (user: User | null) => void) => {
         return onAuthStateChanged(auth, callback);
+    },
+    
+    // Delete account
+    deleteAccount: async () => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return { success: false, error: 'Usuário não autenticado.' };
+            await deleteUser(user);
+            return { success: true };
+        } catch (error: any) {
+            if (error.code === 'auth/requires-recent-login') {
+                return { success: false, error: 'REAUTH_REQUIRED' };
+            }
+            return { success: false, error: getAuthErrorMessage(error.code) };
+        }
     }
 };
 

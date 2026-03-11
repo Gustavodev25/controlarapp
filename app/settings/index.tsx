@@ -397,31 +397,13 @@ export default function SettingsScreen() {
                             <SettingsItem
                                 icon={User}
                                 title="Dados Pessoais"
+                                isLast={true}
                                 onPress={() => router.push('/settings/personal-data')}
                             />
-                            <SettingsItem
-                                icon={Crown}
-                                title="Meu plano"
-                                isLast={true}
-                                onPress={() => router.push('/settings/subscription')}
-                            />
+
                         </View>
 
-                        {/* EXPIRED PLAN WARNING */}
-                        {(profile?.subscription?.status === 'expired' || profile?.subscription?.status === 'past_due') && (
-                            <TouchableOpacity
-                                style={styles.expiredWarning}
-                                activeOpacity={0.8}
-                                onPress={() => router.push('/settings/subscription')}
-                            >
-                                <AlertTriangle size={16} color="#FF453A" />
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.expiredWarningText}>Seu plano está vencido</Text>
-                                    <Text style={styles.expiredWarningSubtext}>Regularize para evitar o cancelamento.</Text>
-                                </View>
-                                <ChevronRight size={16} color="#FF453A" />
-                            </TouchableOpacity>
-                        )}
+
 
                         {/* FINANÇAS SECTION */}
                         <SectionHeader title="FINANÇAS" />

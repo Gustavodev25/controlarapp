@@ -3,9 +3,9 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { databaseService } from '@/services/firebase';
 import { Stack, useRouter } from 'expo-router';
-import { Calendar, ChevronRight, Crown, Mail, Phone, User } from 'lucide-react-native';
+import { Calendar, ChevronRight, Crown, Mail, Phone, Trash2, User } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- Components mimicking financial.tsx ---
@@ -98,7 +98,7 @@ const ListRow = ({
 export default function PersonalDataScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { user, profile, refreshProfile } = useAuthContext();
+    const { user, profile, refreshProfile, deleteAccount, signOut } = useAuthContext();
     const { showToast } = useToast();
 
     const [name, setName] = useState('');
@@ -140,6 +140,40 @@ export default function PersonalDataScreen() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleDeleteAccount = async () => {
+        Alert.alert(
+            'Excluir Conta',
+            'Tem certeza que deseja excluir sua conta permanentemente? Todos os seus dados financeiros serão perdidos e esta ação não pode ser desfeita.',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Excluir',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setLoading(true);
+                        try {
+                            const result = await deleteAccount();
+                            if (result.success) {
+                                showToast('Sua conta foi excluída.', 'info');
+                                router.replace('/(public)/welcome');
+                            } else {
+                                if (result.error === 'REAUTH_REQUIRED') {
+                                    showToast('Para excluir sua conta, você precisa ter feito login recentemente. Por favor, saia e entre novamente.', 'error');
+                                } else {
+                                    showToast(result.error || 'Erro ao excluir conta.', 'error');
+                                }
+                            }
+                        } catch (error) {
+                            showToast('Erro ao excluir conta.', 'error');
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     return (
@@ -231,6 +265,17 @@ export default function PersonalDataScreen() {
                         <Text style={styles.sectionFooterText}>
                             Para alterar seu plano, acesse Configurações {'>'} Meu Plano.
                         </Text>
+
+                        <SectionHeader title="ZONA DE PERIGO" />
+                        <View style={styles.sectionCard}>
+                            <ListRow
+                                icon={Trash2}
+                                title="Excluir minha conta"
+                                color="#FF453A"
+                                isLast={true}
+                                onPress={handleDeleteAccount}
+                            />
+                        </View>
                     </ScrollView>
                 </View>
             </View>

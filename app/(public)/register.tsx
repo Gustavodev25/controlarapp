@@ -1,392 +1,173 @@
-import { Link, useRouter } from 'expo-router';
-import { ArrowLeft, Calendar, FileText, Home, Lock, Mail, MapPin, Phone, User } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { ArrowLeft, Lock, Mail, Phone, User as UserIcon, Eye, EyeOff } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { UniversalBackground } from '@/components/UniversalBackground';
 import { AuthButton } from '@/components/ui/AuthButton';
 import { AuthInput } from '@/components/ui/AuthInput';
+import { ShiningText } from '@/components/ui/ShiningText';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { BlurView } from 'expo-blur';
 
-const TOTAL_STEPS = 2;
+const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 
 export default function RegisterScreen() {
     const router = useRouter();
     const { signUp } = useAuthContext();
-    const { showError } = useToast();
-    const [currentStep, setCurrentStep] = useState(1);
+    const { showError, showToast } = useToast();
 
-    // Step 1 fields
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-
-    // Step 2 fields
-    const [cpf, setCpf] = useState('');
-    const [birthDate, setBirthDate] = useState('');
     const [phone, setPhone] = useState('');
-    const [cep, setCep] = useState('');
-    const [address, setAddress] = useState('');
-    const [city, setCity] = useState('');
-
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleNext = useCallback(() => {
-        if (currentStep < TOTAL_STEPS) {
-            setCurrentStep(currentStep + 1);
+    const handleRegister = useCallback(async () => {
+        if (!name || !email || !password || !confirmPassword) {
+            showError('Por favor, preencha todos os campos obrigatórios.');
+            return;
         }
-    }, [currentStep]);
 
-    const handleBack = useCallback(() => {
-        if (currentStep > 1) {
-            setCurrentStep(currentStep - 1);
-        } else {
-            router.back();
+        if (password !== confirmPassword) {
+            showError('As senhas não coincidem.');
+            return;
         }
-    }, [currentStep, router]);
 
-    const handleRegister = async () => {
+        if (password.length < 6) {
+            showError('A senha deve ter pelo menos 6 caracteres.');
+            return;
+        }
+
         setIsLoading(true);
+        try {
+            const result = await signUp(email, password, name, phone);
 
-        const result = await signUp(email, password, name, phone);
-
-        if (result.success) {
-            router.replace('/(tabs)/dashboard');
-        } else {
-            showError(result.error || 'Erro ao criar conta.');
+            if (result.success) {
+                showToast('Conta criada com sucesso!', 'success');
+                router.replace('/(tabs)/dashboard');
+            } else {
+                showError(result.error || 'Erro ao criar conta.');
+                setIsLoading(false);
+            }
+        } catch (error) {
+            showError('Ocorreu um erro inesperado.');
             setIsLoading(false);
         }
-    };
+    }, [name, email, phone, password, confirmPassword, signUp, showError, showToast, router]);
 
-    const isStep1Valid = name.length > 0 && email.length > 0 && password.length >= 6;
-    const isStep2Valid = cpf.length > 0 && birthDate.length > 0 && phone.length > 0;
-
-    const renderStepIndicator = () => (
-        <View style={styles.stepIndicator}>
-            {[1, 2].map((step) => (
-                <View key={step} style={styles.stepRow}>
-                    <View style={[
-                        styles.stepDot,
-                        currentStep >= step ? styles.stepDotActive : styles.stepDotInactive
-                    ]}>
-                        <Text style={[
-                            styles.stepNumber,
-                            currentStep >= step ? styles.stepNumberActive : styles.stepNumberInactive
-                        ]}>
-                            {step}
-                        </Text>
-                    </View>
-                    {step < TOTAL_STEPS && (
-                        <View style={[
-                            styles.stepLine,
-                            currentStep > step ? styles.stepLineActive : styles.stepLineInactive
-                        ]} />
-                    )}
-                </View>
-            ))}
-        </View>
-    );
-
-    const renderStep1 = () => (
-        <>
-            <Text style={styles.stepTitle}>Dados de Acesso</Text>
-            <Text style={styles.stepSubtitle}>Informe seus dados básicos para criar sua conta</Text>
-
-            <View style={styles.formContainer}>
-                <AuthInput
-                    label="Nome Completo"
-                    placeholder="Seu nome"
-                    icon={User}
-                    value={name}
-                    onChangeText={setName}
-                    autoCapitalize="words"
-                />
-
-                <AuthInput
-                    label="E-mail"
-                    placeholder="seu@email.com"
-                    icon={Mail}
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
-
-                <AuthInput
-                    label="Senha"
-                    placeholder="••••••••"
-                    icon={Lock}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry
-                />
-            </View>
-
-            <AuthButton
-                title="Continuar"
-                onPress={handleNext}
-                disabled={!isStep1Valid}
-                style={styles.button}
-            />
-        </>
-    );
-
-    const renderStep2 = () => (
-        <>
-            <Text style={styles.stepTitle}>Dados Pessoais</Text>
-            <Text style={styles.stepSubtitle}>Complete seu perfil com informações adicionais</Text>
-
-            <View style={styles.formContainer}>
-                <View style={styles.row}>
-                    <View style={styles.col}>
-                        <AuthInput
-                            label="CPF"
-                            placeholder="000.000.000-00"
-                            icon={FileText}
-                            value={cpf}
-                            onChangeText={setCpf}
-                            keyboardType="numeric"
-                        />
-                    </View>
-                    <View style={[styles.col, { marginLeft: 12 }]}>
-                        <AuthInput
-                            label="Data Nasc."
-                            placeholder="dd/mm/aaaa"
-                            icon={Calendar}
-                            value={birthDate}
-                            onChangeText={setBirthDate}
-                            keyboardType="numeric"
-                        />
-                    </View>
-                </View>
-
-                <AuthInput
-                    label="Telefone / WhatsApp"
-                    placeholder="(00) 90000-0000"
-                    icon={Phone}
-                    value={phone}
-                    onChangeText={setPhone}
-                    keyboardType="phone-pad"
-                />
-
-                <View style={styles.row}>
-                    <View style={{ width: '35%' }}>
-                        <AuthInput
-                            label="CEP"
-                            placeholder="00000-000"
-                            icon={MapPin}
-                            value={cep}
-                            onChangeText={setCep}
-                            keyboardType="numeric"
-                        />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                        <AuthInput
-                            label="Cidade"
-                            placeholder="Sua cidade"
-                            icon={Home}
-                            value={city}
-                            onChangeText={setCity}
-                        />
-                    </View>
-                </View>
-
-                <AuthInput
-                    label="Endereço"
-                    placeholder="Rua, número, bairro"
-                    icon={Home}
-                    value={address}
-                    onChangeText={setAddress}
-                />
-            </View>
-
-            <AuthButton
-                title="Criar Conta"
-                onPress={handleRegister}
-                isLoading={isLoading}
-                disabled={!isStep2Valid}
-                style={styles.button}
-            />
-        </>
-    );
+    const goBack = () => router.back();
+    const togglePasswordVisibility = () => setShowPassword(prev => !prev);
 
     return (
-        <View style={styles.container}>
+        <UniversalBackground>
+            <KeyboardAvoidingView behavior={KEYBOARD_BEHAVIOR} style={styles.keyboardView}>
+                <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.keyboardView}
-            >
-                <ScrollView
-                    contentContainerStyle={{ flexGrow: 1 }}
-                    keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator={false}
-                >
-                    {/* Header with back button */}
+                    {/* Header */}
                     <View style={styles.header}>
-                        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                            <ArrowLeft size={24} color="#faf9f5" />
+                        <TouchableOpacity onPress={goBack} style={styles.backButton}>
+                            <ArrowLeft size={20} color="#faf9f5" />
                         </TouchableOpacity>
+                        <View style={styles.headerRight}>
+                            <Text style={styles.headerText}>Cadastro seguro</Text>
+                        </View>
                     </View>
 
-                    {/* Spacer */}
                     <View style={styles.spacer} />
 
-                    {/* Glassmorphism Card */}
-                    <BlurView intensity={60} tint="dark" style={styles.card}>
-                        <View style={styles.cardContent}>
-                            <Text style={styles.title}>Crie sua conta</Text>
-                            {currentStep > 1 && renderStepIndicator()}
-
-                            {currentStep === 1 ? renderStep1() : renderStep2()}
-
-                            <View style={styles.footer}>
-                                <Text style={styles.footerText}>Já tem uma conta?</Text>
-                                <Link href="/(public)/login" asChild>
-                                    <TouchableOpacity>
-                                        <Text style={styles.linkText}>Fazer login</Text>
+                    {/* Card Container Principal */}
+                    <View style={styles.cardContainer}>
+                        <View style={styles.card}>
+                            <View style={styles.cardContent}>
+                                <View style={styles.titleContainer}>
+                                    <Text style={styles.title}>Crie sua conta no </Text>
+                                    <ShiningText text="Controlar+" textStyle={styles.shiningText} />
+                                </View>
+                                <Text style={styles.subtitle}>Comece a organizar sua vida financeira hoje.</Text>
+                                
+                                <View style={styles.form}>
+                                    <AuthInput 
+                                        label="Nome Completo" 
+                                        placeholder="Seu nome" 
+                                        icon={UserIcon} 
+                                        value={name} 
+                                        onChangeText={setName} 
+                                    />
+                                    <AuthInput 
+                                        label="E-mail" 
+                                        placeholder="seu@email.com" 
+                                        icon={Mail} 
+                                        value={email} 
+                                        onChangeText={setEmail} 
+                                        autoCapitalize="none" 
+                                        keyboardType="email-address" 
+                                    />
+                                    <AuthInput 
+                                        label="Telefone (Opcional)" 
+                                        placeholder="(00) 00000-0000" 
+                                        icon={Phone} 
+                                        value={phone} 
+                                        onChangeText={setPhone} 
+                                        keyboardType="phone-pad" 
+                                    />
+                                    <AuthInput 
+                                        label="Senha" 
+                                        placeholder="••••••••" 
+                                        icon={Lock} 
+                                        value={password} 
+                                        onChangeText={setPassword} 
+                                        secureTextEntry={!showPassword} 
+                                        rightIcon={
+                                            <TouchableOpacity onPress={togglePasswordVisibility}>
+                                                {showPassword ? <EyeOff size={20} color="#9ca3af" /> : <Eye size={20} color="#9ca3af" />}
+                                            </TouchableOpacity>
+                                        } 
+                                    />
+                                    <AuthInput 
+                                        label="Confirmar Senha" 
+                                        placeholder="••••••••" 
+                                        icon={Lock} 
+                                        value={confirmPassword} 
+                                        onChangeText={setConfirmPassword} 
+                                        secureTextEntry={!showPassword} 
+                                    />
+                                    
+                                    <AuthButton title="Criar Conta" onPress={handleRegister} isLoading={isLoading} style={styles.button} />
+                                    
+                                    <TouchableOpacity onPress={goBack} style={styles.loginLink}>
+                                        <Text style={styles.loginLinkText}>Já tem uma conta? <Text style={styles.loginLinkHighlight}>Entrar</Text></Text>
                                     </TouchableOpacity>
-                                </Link>
+                                </View>
                             </View>
                         </View>
-                    </BlurView>
+                    </View>
                 </ScrollView>
             </KeyboardAvoidingView>
-        </View>
+        </UniversalBackground>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#1D100B',
-    },
-    keyboardView: {
-        flex: 1,
-    },
-    header: {
-        paddingTop: 50,
-        paddingHorizontal: 24,
-        zIndex: 10,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-
-    spacer: {
-        flex: 1,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#faf9f5',
-        marginBottom: 16,
-    },
-    stepIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    stepRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    stepDot: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    stepDotActive: {
-        backgroundColor: '#d97757',
-    },
-    stepDotInactive: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
-    },
-    stepNumber: {
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    stepNumberActive: {
-        color: '#fff',
-    },
-    stepNumberInactive: {
-        color: '#6b7280',
-    },
-    stepLine: {
-        width: 40,
-        height: 2,
-        marginHorizontal: 8,
-    },
-    stepLineActive: {
-        backgroundColor: '#d97757',
-    },
-    stepLineInactive: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
-    },
-    card: {
-        backgroundColor: 'rgba(38, 38, 36, 0.41)',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        overflow: 'hidden',
-    },
-
-    cardContent: {
-        padding: 20,
-        paddingBottom: 24,
-    },
-    stepTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#faf9f5',
-        marginBottom: 4,
-    },
-    stepSubtitle: {
-        fontSize: 13,
-        color: '#9ca3af',
-        marginBottom: 20,
-    },
-    formContainer: {
-        gap: 4,
-    },
-    row: {
-        flexDirection: 'row',
-    },
-    col: {
-        flex: 1,
-    },
-    button: {
-        marginTop: 16,
-    },
-    footer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        gap: 6,
-        marginTop: 24,
-    },
-    footerText: {
-        color: '#9ca3af',
-        fontSize: 14,
-    },
-    linkText: {
-        color: '#faf9f5',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    errorText: {
-        color: '#ef4444',
-        fontSize: 13,
-        textAlign: 'center',
-        marginTop: 8,
-    }
+    keyboardView: { flex: 1 },
+    scrollContent: { flexGrow: 1 },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 50, paddingHorizontal: 24, zIndex: 10 },
+    headerRight: { flexDirection: 'row', alignItems: 'center' },
+    headerText: { fontSize: 13, color: '#9ca3af' },
+    backButton: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+    spacer: { height: 40 },
+    cardContainer: { position: 'relative' },
+    card: { backgroundColor: '#141414', borderTopLeftRadius: 32, borderTopRightRadius: 32, minHeight: '100%' },
+    cardContent: { padding: 24, paddingBottom: 100 },
+    titleContainer: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 },
+    title: { fontSize: 26, fontWeight: 'bold', color: '#faf9f5' },
+    shiningText: { fontSize: 26, fontWeight: 'bold', color: '#d97757' },
+    subtitle: { fontSize: 16, color: '#9ca3af', marginBottom: 24 },
+    form: { gap: 8 },
+    button: { marginTop: 16 },
+    loginLink: { marginTop: 24, alignItems: 'center' },
+    loginLinkText: { color: '#9ca3af', fontSize: 14 },
+    loginLinkHighlight: { color: '#d97757', fontWeight: 'bold' },
 });

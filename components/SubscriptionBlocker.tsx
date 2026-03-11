@@ -1,13 +1,12 @@
 import { useAuthContext } from '@/contexts/AuthContext';
 import { BlurView } from 'expo-blur';
 import LottieView from 'lottie-react-native';
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Linking,
     Modal,
     StyleSheet,
     Text,
-    TouchableOpacity,
     View
 } from 'react-native';
 
@@ -57,9 +56,7 @@ export function SubscriptionBlocker({ children }: { children: React.ReactNode })
         return () => clearInterval(interval);
     }, [isBlocked]);
 
-    const handleRenew = () => {
-        Linking.openURL('https://www.controlarmais.com.br/');
-    };
+
 
     if (!isBlocked) {
         return <>{children}</>;
@@ -92,13 +89,11 @@ export function SubscriptionBlocker({ children }: { children: React.ReactNode })
                                 Sua assinatura finalizou. Renove para continuar com acesso total.
                             </Text>
 
-                            <TouchableOpacity
-                                style={styles.renewButton}
-                                onPress={handleRenew}
-                                activeOpacity={0.8}
-                            >
-                                <Text style={styles.renewButtonText}>Renovar Assinatura</Text>
-                            </TouchableOpacity>
+                            <View style={styles.infoBox}>
+                                <Text style={styles.infoBoxText}>
+                                    Gerencie sua assinatura pelo site controlarmais.com.br
+                                </Text>
+                            </View>
                         </View>
                     </View>
                 </BlurView>
@@ -157,19 +152,18 @@ const styles = StyleSheet.create({
         marginBottom: 32,
         paddingHorizontal: 8,
     },
-    renewButton: {
+    infoBox: {
         width: '100%',
-        backgroundColor: '#d97757',
-        borderRadius: 100,
+        backgroundColor: 'rgba(142, 142, 147, 0.1)',
+        borderRadius: 16,
         paddingVertical: 14,
-        flexDirection: 'row',
+        paddingHorizontal: 16,
         alignItems: 'center',
-        justifyContent: 'center',
     },
-    renewButtonText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#FFFFFF',
-        letterSpacing: 0.2,
+    infoBoxText: {
+        fontSize: 14,
+        color: '#A1A1AA',
+        textAlign: 'center',
+        lineHeight: 20,
     },
 });

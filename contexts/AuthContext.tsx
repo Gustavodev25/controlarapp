@@ -63,6 +63,7 @@ interface AuthContextType {
     signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
     signUp: (email: string, password: string, name: string, phone?: string) => Promise<{ success: boolean; error?: string }>;
     signOut: () => Promise<{ success: boolean; error?: string }>;
+    deleteAccount: () => Promise<{ success: boolean; error?: string }>;
     resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
     refreshProfile: () => Promise<void>;
 }
