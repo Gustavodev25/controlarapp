@@ -15,6 +15,7 @@ import {
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Platform,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -394,9 +395,11 @@ export default function SubscriptionSettingsScreen() {
                                     <Text style={styles.upgradeTitle}>
                                         {isCancelled ? 'Plano cancelado' : 'Plano vencido'}
                                     </Text>
-                                    <Text style={styles.upgradeSubtitle}>
-                                        Gerencie sua assinatura pelo site controlarmais.com.br
-                                    </Text>
+                                    {Platform.OS !== 'ios' && (
+                                        <Text style={styles.upgradeSubtitle}>
+                                            Gerencie sua assinatura pelo site controlarmais.com.br
+                                        </Text>
+                                    )}
                                 </View>
                             </View>
                         ) : isTrial ? (

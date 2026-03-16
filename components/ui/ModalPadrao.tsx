@@ -116,9 +116,9 @@ export function ModalPadrao({
                             { transform: [{ translateY: slideAnim }] },
                         ]}
                     >
-                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                            <View style={styles.innerContent}>
-                                {/* Header */}
+                        <View style={styles.innerContent}>
+                            {/* Header */}
+                            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                                 <View style={styles.modalHeader}>
                                     <View style={{ flex: 1, paddingRight: 12 }}>
                                         {typeof title === 'string' ? (
@@ -144,10 +144,10 @@ export function ModalPadrao({
                                         </TouchableOpacity>
                                     </View>
                                 </View>
+                            </TouchableWithoutFeedback>
 
-                                {children}
-                            </View>
-                        </TouchableWithoutFeedback>
+                            {children}
+                        </View>
                     </Animated.View>
                 </KeyboardAvoidingView>
             </View>

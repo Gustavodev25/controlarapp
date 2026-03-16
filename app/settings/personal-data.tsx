@@ -5,7 +5,7 @@ import { databaseService } from '@/services/firebase';
 import { Stack, useRouter } from 'expo-router';
 import { Calendar, ChevronRight, Crown, Mail, Phone, Trash2, User } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- Components mimicking financial.tsx ---
@@ -246,25 +246,29 @@ export default function PersonalDataScreen() {
                             />
                         </View>
 
-                        <SectionHeader title="MEU PLANO" />
-                        <View style={styles.sectionCard}>
-                            <ListRow
-                                icon={Crown}
-                                title="Plano Atual"
-                                value={profile?.subscription?.plan === 'pro' ? 'Pro' : 'Starter'}
-                                color="#d97757"
-                            />
-                            <ListRow
-                                icon={Calendar}
-                                title="Ciclo"
-                                value={profile?.subscription?.billingCycle === 'yearly' ? 'Anual' : 'Mensal'}
-                                isLast={true}
-                            />
-                        </View>
+                        {Platform.OS !== 'ios' && (
+                            <>
+                                <SectionHeader title="MEU PLANO" />
+                                <View style={styles.sectionCard}>
+                                    <ListRow
+                                        icon={Crown}
+                                        title="Plano Atual"
+                                        value={profile?.subscription?.plan === 'pro' ? 'Pro' : 'Starter'}
+                                        color="#d97757"
+                                    />
+                                    <ListRow
+                                        icon={Calendar}
+                                        title="Ciclo"
+                                        value={profile?.subscription?.billingCycle === 'yearly' ? 'Anual' : 'Mensal'}
+                                        isLast={true}
+                                    />
+                                </View>
 
-                        <Text style={styles.sectionFooterText}>
-                            Para alterar seu plano, acesse Configurações {'>'} Meu Plano.
-                        </Text>
+                                <Text style={styles.sectionFooterText}>
+                                    Para alterar seu plano, acesse Configurações {'>'} Meu Plano.
+                                </Text>
+                            </>
+                        )}
 
                         <SectionHeader title="ZONA DE PERIGO" />
                         <View style={styles.sectionCard}>

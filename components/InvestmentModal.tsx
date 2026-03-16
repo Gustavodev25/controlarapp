@@ -1,7 +1,7 @@
 import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { Calendar, DollarSign, FileText } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface InvestmentModalProps {
     visible: boolean;
@@ -13,9 +13,10 @@ interface InvestmentModalProps {
         targetAmount: number;
         deadline?: string;
     } | null;
+    loading?: boolean;
 }
 
-export function InvestmentModal({ visible, onClose, onSave, title, initialData }: InvestmentModalProps) {
+export function InvestmentModal({ visible, onClose, onSave, title, initialData, loading }: InvestmentModalProps) {
     const [nameInput, setName] = useState('');
     const [amountStr, setAmountStr] = useState('');
     const [dateStr, setDateStr] = useState('');
@@ -98,89 +99,98 @@ export function InvestmentModal({ visible, onClose, onSave, title, initialData }
             headerRight={
                 <TouchableOpacity
                     onPress={handleSave}
-                    disabled={!nameInput || !amountStr}
-                    style={{ opacity: (!nameInput || !amountStr) ? 0.5 : 1 }}
+                    disabled={!nameInput || !amountStr || loading}
+                    style={{ opacity: (!nameInput || !amountStr || loading) ? 0.5 : 1 }}
                 >
-                    <Text style={styles.headerSaveText}>Salvar</Text>
+                    <Text style={styles.headerSaveText}>{loading ? 'Salvando...' : 'Salvar'}</Text>
                 </TouchableOpacity>
             }
         >
-            <View style={styles.container}>
-                <View style={styles.sectionCard}>
-                    {/* Nome */}
-                    <View style={styles.itemContainer}>
-                        <View style={styles.itemIconContainer}>
-                            <FileText size={20} color="#E0E0E0" />
-                        </View>
-                        <View style={styles.itemRightContainer}>
-                            <View style={styles.itemContent}>
-                                <Text style={styles.itemTitle}>Nome</Text>
-                                <TextInput
-                                    style={styles.inputRight}
-                                    value={nameInput}
-                                    onChangeText={setName}
-                                    placeholder="Ex: Reserva de Emergência"
-                                    placeholderTextColor="#555"
-                                    textAlign="right"
-                                />
+            <ScrollView 
+                contentContainerStyle={styles.scrollContainer}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={styles.container}>
+                    <View style={styles.sectionCard}>
+                        {/* Nome */}
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                <FileText size={20} color="#E0E0E0" />
                             </View>
-                        </View>
-                        <View style={styles.itemSeparator} />
-                    </View>
-
-                    {/* Valor Alvo */}
-                    <View style={styles.itemContainer}>
-                        <View style={styles.itemIconContainer}>
-                            <DollarSign size={20} color="#E0E0E0" />
-                        </View>
-                        <View style={styles.itemRightContainer}>
-                            <View style={styles.itemContent}>
-                                <Text style={styles.itemTitle}>Meta</Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <Text style={{ color: amountStr ? '#FFFFFF' : '#555', fontSize: 16, marginRight: 4 }}>R$</Text>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <Text style={styles.itemTitle}>Nome</Text>
                                     <TextInput
                                         style={styles.inputRight}
-                                        value={amountStr}
-                                        onChangeText={handleChangeAmount}
-                                        placeholder="0,00"
+                                        value={nameInput}
+                                        onChangeText={setName}
+                                        placeholder="Ex: Reserva de Emergência"
                                         placeholderTextColor="#555"
-                                        keyboardType="numeric"
                                         textAlign="right"
                                     />
                                 </View>
                             </View>
+                            <View style={styles.itemSeparator} />
                         </View>
-                        <View style={styles.itemSeparator} />
-                    </View>
 
-                    {/* Data Limite */}
-                    <View style={styles.itemContainer}>
-                        <View style={styles.itemIconContainer}>
-                            <Calendar size={20} color="#E0E0E0" />
+                        {/* Valor Alvo */}
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                <DollarSign size={20} color="#E0E0E0" />
+                            </View>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <Text style={styles.itemTitle}>Meta</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={{ color: amountStr ? '#FFFFFF' : '#555', fontSize: 16, marginRight: 4 }}>R$</Text>
+                                        <TextInput
+                                            style={styles.inputRight}
+                                            value={amountStr}
+                                            onChangeText={handleChangeAmount}
+                                            placeholder="0,00"
+                                            placeholderTextColor="#555"
+                                            keyboardType="numeric"
+                                            textAlign="right"
+                                        />
+                                    </View>
+                                </View>
+                            </View>
+                            <View style={styles.itemSeparator} />
                         </View>
-                        <View style={styles.itemRightContainer}>
-                            <View style={styles.itemContent}>
-                                <Text style={styles.itemTitle}>Prazo (Opcional)</Text>
-                                <TextInput
-                                    style={styles.inputRight}
-                                    value={dateStr}
-                                    onChangeText={handleChangeDate}
-                                    placeholder="DD/MM/AAAA"
-                                    placeholderTextColor="#555"
-                                    keyboardType="numeric"
-                                    textAlign="right"
-                                    maxLength={10}
-                                />
+
+                        {/* Data Limite */}
+                        <View style={styles.itemContainer}>
+                            <View style={styles.itemIconContainer}>
+                                <Calendar size={20} color="#E0E0E0" />
+                            </View>
+                            <View style={styles.itemRightContainer}>
+                                <View style={styles.itemContent}>
+                                    <Text style={styles.itemTitle}>Prazo (Opcional)</Text>
+                                    <TextInput
+                                        style={styles.inputRight}
+                                        value={dateStr}
+                                        onChangeText={handleChangeDate}
+                                        placeholder="DD/MM/AAAA"
+                                        placeholderTextColor="#555"
+                                        keyboardType="numeric"
+                                        textAlign="right"
+                                        maxLength={10}
+                                    />
+                                </View>
                             </View>
                         </View>
                     </View>
                 </View>
-            </View>
+            </ScrollView>
         </ModalPadrao>
     );
 }
 
 const styles = StyleSheet.create({
+    scrollContainer: {
+        paddingBottom: 20,
+    },
     container: {
         gap: 20,
     },

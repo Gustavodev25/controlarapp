@@ -14,7 +14,7 @@ import {
 export interface RecurrenceFilterState {
     search: string;
     status: string[];
-    frequency: string[];
+    transactionType: string[];
 }
 
 interface RecurrenceFilterModalProps {
@@ -47,7 +47,7 @@ export function RecurrenceFilterModal({
         setFilters({
             search: '',
             status: [],
-            frequency: []
+            transactionType: []
         });
     };
 
@@ -63,27 +63,27 @@ export function RecurrenceFilterModal({
         });
     };
 
-    const toggleFrequency = (freq: string) => {
+    const toggleTransactionType = (type: string) => {
         setFilters(prev => {
-            const exists = prev.frequency.includes(freq);
+            const exists = prev.transactionType.includes(type);
             return {
                 ...prev,
-                frequency: exists
-                    ? prev.frequency.filter(f => f !== freq)
-                    : [...prev.frequency, freq]
+                transactionType: exists
+                    ? prev.transactionType.filter(t => t !== type)
+                    : [...prev.transactionType, type]
             };
         });
     };
 
     const statusOptions = [
         { label: 'Pendente', value: 'pending' },
-        { label: 'Pago', value: 'paid' },
+        { label: 'Feito', value: 'paid' },
         { label: 'Atrasado', value: 'overdue' }
     ];
 
-    const frequencyOptions = [
-        { label: 'Mensal', value: 'monthly' },
-        { label: 'Anual', value: 'yearly' }
+    const transactionTypeOptions = [
+        { label: 'A pagar', value: 'expense' },
+        { label: 'A receber', value: 'income' }
     ];
 
     return (
@@ -140,17 +140,17 @@ export function RecurrenceFilterModal({
                     </ScrollView>
                 </View>
 
-                {/* Frequency */}
-                <Text style={styles.sectionHeader}>FREQUÊNCIA</Text>
+                {/* Transaction Type */}
+                <Text style={styles.sectionHeader}>TIPO</Text>
                 <View style={styles.sectionCard}>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollContainer}>
-                        {frequencyOptions.map((opt) => {
-                            const isSelected = filters.frequency.includes(opt.value);
+                        {transactionTypeOptions.map((opt) => {
+                            const isSelected = filters.transactionType.includes(opt.value);
                             return (
                                 <Pressable
                                     key={opt.value}
                                     style={[styles.chip, isSelected && styles.chipSelected]}
-                                    onPress={() => toggleFrequency(opt.value)}
+                                    onPress={() => toggleTransactionType(opt.value)}
                                 >
                                     <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
                                         {opt.label}

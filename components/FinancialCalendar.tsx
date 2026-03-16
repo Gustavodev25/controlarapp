@@ -13,6 +13,7 @@ import {
 } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import {
+    Dimensions,
     ScrollView,
     StyleSheet,
     Text,
@@ -21,6 +22,8 @@ import {
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { AnimatedCurrency } from './AnimatedCurrency';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Types (reused/adapted)
 export interface Transaction {
@@ -345,8 +348,13 @@ export function FinancialCalendar({
                 }
             >
                 <ScrollView
+                    style={{ maxHeight: SCREEN_HEIGHT * 0.6 }}
                     contentContainerStyle={{ gap: 12, paddingBottom: 40 }}
                     showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    scrollEventThrottle={16}
+                    bounces={true}
                 >
                     {selectedEvents.length > 0 ? (
                         <View style={styles.sectionCard}>

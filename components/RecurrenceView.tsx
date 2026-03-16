@@ -374,14 +374,18 @@ const ListItem = ({
                                 <View style={[styles.statusBadge, {
                                     backgroundColor: item.status === 'paid'
                                         ? 'rgba(4, 211, 97, 0.1)'
-                                        : (dueStatus ? dueStatus.color + '26' : 'rgba(234, 179, 8, 0.1)')
+                                        : item.type === 'subscription'
+                                            ? 'rgba(234, 179, 8, 0.1)'
+                                            : (dueStatus ? dueStatus.color + '26' : 'rgba(234, 179, 8, 0.1)')
                                 }]}>
                                     <Text style={[styles.statusText, {
                                         color: item.status === 'paid'
                                             ? '#04D361'
-                                            : (dueStatus ? dueStatus.color : '#EAB308')
+                                            : item.type === 'subscription'
+                                                ? '#EAB308'
+                                                : (dueStatus ? dueStatus.color : '#EAB308')
                                     }]}>
-                                        {item.status === 'paid' ? 'PAGO' : (dueStatus?.label || 'PENDENTE')}
+                                        {item.status === 'paid' ? (item.type === 'reminder' ? 'FEITO' : 'PAGO') : (item.type === 'subscription' ? 'PENDENTE' : (dueStatus?.label || 'PENDENTE'))}
                                     </Text>
                                 </View>
                             </>
@@ -906,10 +910,10 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
     const [filters, setFilters] = useState<RecurrenceFilterState>({
         search: '',
         status: [],
-        frequency: []
+        transactionType: []
     });
 
-    const activeFilterCount = (filters.search ? 1 : 0) + filters.status.length + filters.frequency.length;
+    const activeFilterCount = (filters.search ? 1 : 0) + filters.status.length + filters.transactionType.length;
 
     // Estados de seleção múltipla
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1346,9 +1350,9 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
                     matches = matches && filters.status.includes(item.status);
                 }
 
-                // Frequency
-                if (filters.frequency.length > 0) {
-                    matches = matches && !!item.frequency && filters.frequency.includes(item.frequency);
+                // Transaction Type (income/expense)
+                if (filters.transactionType.length > 0) {
+                    matches = matches && !!item.transactionType && filters.transactionType.includes(item.transactionType);
                 }
 
                 return matches;

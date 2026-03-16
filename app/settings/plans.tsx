@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Check, Shield, X } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import {
+    Platform,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -170,11 +171,13 @@ export default function PlansScreen() {
                         ))}
                     </View>
 
-                    <View style={styles.infoNote}>
-                        <Text style={styles.infoNoteText}>
-                            Gerencie sua assinatura pelo site controlarmais.com.br
-                        </Text>
-                    </View>
+                    {Platform.OS !== 'ios' && (
+                        <View style={styles.infoNote}>
+                            <Text style={styles.infoNoteText}>
+                                Gerencie sua assinatura pelo site controlarmais.com.br
+                            </Text>
+                        </View>
+                    )}
                 </Animated.View>
 
                 {/* Guarantee Card */}

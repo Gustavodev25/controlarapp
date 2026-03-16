@@ -108,63 +108,68 @@ export function InvestmentDetailsModal({
                 onClose={onClose}
                 title={titleComponent}
             >
-                <View style={styles.container}>
-                    <View style={styles.sectionCard}>
-                        {/* Extrato */}
-                        <TouchableOpacity style={styles.itemContainer} onPress={onExtractRequest}>
-                            <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(10, 132, 255, 0.15)' }]}>
-                                <List size={20} color="#0A84FF" />
-                            </View>
-                            <View style={styles.itemRightContainer}>
-                                <View style={styles.itemContent}>
-                                    <Text style={styles.itemTitle}>Extrato</Text>
+                <ScrollView 
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    <View style={styles.container}>
+                        <View style={styles.sectionCard}>
+                            {/* Extrato */}
+                            <TouchableOpacity style={styles.itemContainer} onPress={onExtractRequest}>
+                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(10, 132, 255, 0.15)' }]}>
+                                    <List size={20} color="#0A84FF" />
                                 </View>
-                            </View>
-                            <View style={styles.itemSeparator} />
-                        </TouchableOpacity>
-
-                        {/* Movimentar */}
-                        <TouchableOpacity style={styles.itemContainer} onPress={() => setView('movement')}>
-                            <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(4, 211, 97, 0.15)' }]}>
-                                <ArrowLeftRight size={20} color="#04D361" />
-                            </View>
-                            <View style={styles.itemRightContainer}>
-                                <View style={styles.itemContent}>
-                                    <Text style={styles.itemTitle}>Movimentar</Text>
+                                <View style={styles.itemRightContainer}>
+                                    <View style={styles.itemContent}>
+                                        <Text style={styles.itemTitle}>Extrato</Text>
+                                    </View>
                                 </View>
-                            </View>
-                            <View style={styles.itemSeparator} />
-                        </TouchableOpacity>
+                                <View style={styles.itemSeparator} />
+                            </TouchableOpacity>
 
-                        {/* Editar */}
-                        <TouchableOpacity style={styles.itemContainer} onPress={onEditRequest}>
-                            <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 159, 10, 0.15)' }]}>
-                                <Pencil size={20} color="#FF9F0A" />
-                            </View>
-                            <View style={styles.itemRightContainer}>
-                                <View style={styles.itemContent}>
-                                    <Text style={styles.itemTitle}>Editar</Text>
+                            {/* Movimentar */}
+                            <TouchableOpacity style={styles.itemContainer} onPress={() => setView('movement')}>
+                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(4, 211, 97, 0.15)' }]}>
+                                    <ArrowLeftRight size={20} color="#04D361" />
                                 </View>
-                            </View>
-                            <View style={styles.itemSeparator} />
-                        </TouchableOpacity>
+                                <View style={styles.itemRightContainer}>
+                                    <View style={styles.itemContent}>
+                                        <Text style={styles.itemTitle}>Movimentar</Text>
+                                    </View>
+                                </View>
+                                <View style={styles.itemSeparator} />
+                            </TouchableOpacity>
 
-                        {/* Excluir */}
-                        {/* Delete Tutorial (Static) */}
-                        <View style={styles.itemContainer}>
-                            <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 255, 255, 0.05)' }]}>
-                                <Trash2 size={20} color="#808080" />
-                            </View>
-                            <View style={styles.itemRightContainer}>
-                                <View style={styles.itemContent}>
-                                    <Text style={[styles.itemTitle, { color: '#808080', fontSize: 13 }]}>
-                                        Segure o card por 5 segundos para excluir
-                                    </Text>
+                            {/* Editar */}
+                            <TouchableOpacity style={styles.itemContainer} onPress={onEditRequest}>
+                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 159, 10, 0.15)' }]}>
+                                    <Pencil size={20} color="#FF9F0A" />
+                                </View>
+                                <View style={styles.itemRightContainer}>
+                                    <View style={styles.itemContent}>
+                                        <Text style={styles.itemTitle}>Editar</Text>
+                                    </View>
+                                </View>
+                                <View style={styles.itemSeparator} />
+                            </TouchableOpacity>
+
+                            {/* Excluir */}
+                            {/* Delete Tutorial (Static) */}
+                            <View style={styles.itemContainer}>
+                                <View style={[styles.itemIconContainer, { backgroundColor: 'rgba(255, 255, 255, 0.05)' }]}>
+                                    <Trash2 size={20} color="#808080" />
+                                </View>
+                                <View style={styles.itemRightContainer}>
+                                    <View style={styles.itemContent}>
+                                        <Text style={[styles.itemTitle, { color: '#808080', fontSize: 13 }]}>
+                                            Segure o card por 5 segundos para excluir
+                                        </Text>
+                                    </View>
                                 </View>
                             </View>
                         </View>
                     </View>
-                </View>
+                </ScrollView>
             </ModalPadrao>
         );
     }

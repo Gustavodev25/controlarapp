@@ -5,6 +5,7 @@ import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Modal,
+    Platform,
     StyleSheet,
     Text,
     View
@@ -89,11 +90,13 @@ export function SubscriptionBlocker({ children }: { children: React.ReactNode })
                                 Sua assinatura finalizou. Renove para continuar com acesso total.
                             </Text>
 
-                            <View style={styles.infoBox}>
-                                <Text style={styles.infoBoxText}>
-                                    Gerencie sua assinatura pelo site controlarmais.com.br
-                                </Text>
-                            </View>
+                            {Platform.OS !== 'ios' && (
+                                <View style={styles.infoBox}>
+                                    <Text style={styles.infoBoxText}>
+                                        Gerencie sua assinatura pelo site controlarmais.com.br
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                     </View>
                 </BlurView>

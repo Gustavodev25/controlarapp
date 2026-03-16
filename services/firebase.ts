@@ -6,6 +6,7 @@ import * as FirebaseAuth from 'firebase/auth';
 import {
     Auth,
     createUserWithEmailAndPassword,
+    deleteUser,
     signOut as firebaseSignOut,
     getAuth,
     initializeAuth,
@@ -13,8 +14,7 @@ import {
     onAuthStateChanged,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
-    User,
-    deleteUser
+    User
 } from 'firebase/auth';
 import {
     arrayRemove,
@@ -3572,7 +3572,7 @@ export const databaseService = {
             // IDs de investimentos que já foram criados a partir de contas poupança
             const existingSavingsIds = new Set(
                 manualInvestments
-                    .filter(i => i.source === 'pluggy' && i.pluggyAccountId)
+                    .filter(i => i.pluggyAccountId)
                     .map(i => i.pluggyAccountId)
             );
 
@@ -3606,9 +3606,62 @@ export const databaseService = {
                 });
 
             // Combinar: investments manuais/existentes + poupanças novas
-            const allItems = [...manualInvestments, ...newSavingsAsInvestments];
+            // Deduplicate by pluggyAccountId AND by Name (to fix legacy manual duplicates)
+            const seenPluggyIds = new Set<string>();
+            const seenNames = new Set<string>();
+            const itemsMap = new Map<string, any>();
+            
+            // 1. Process manual/stored investments first (they take priority)
+            // Sort by currentAmount desc then createdAt desc so we keep the most "relevant" duplicate
+            const sortedManual = [...manualInvestments].sort((a, b) => {
+                if ((b.currentAmount || 0) !== (a.currentAmount || 0)) {
+                    return (b.currentAmount || 0) - (a.currentAmount || 0);
+                }
+                const dateA = new Date(a.createdAt || 0).getTime();
+                const dateB = new Date(b.createdAt || 0).getTime();
+                return dateB - dateA;
+            });
 
-            // Ordenar por createdAt
+            for (const item of sortedManual) {
+                // Filtro rigoroso: Se não tem saldo, não mostra (conforme pedido pelo usuário)
+                if (Number(item.currentAmount || 0) <= 0) continue;
+
+                // Deduplicate by Pluggy ID
+                if (item.pluggyAccountId) {
+                    if (seenPluggyIds.has(item.pluggyAccountId)) continue;
+                    seenPluggyIds.add(item.pluggyAccountId);
+                }
+
+                // Deduplicate by Name (Case Insensitive)
+                const normalizedName = (item.name || '').toLowerCase().trim();
+                if (normalizedName && seenNames.has(normalizedName)) continue;
+                if (normalizedName) seenNames.add(normalizedName);
+
+                itemsMap.set(item.id, item);
+            }
+            
+            // 2. Add new detected savings only if not already seen and balance > 0
+            for (const item of newSavingsAsInvestments) {
+                // If it's a new detected device, only show if it has money
+                if (Number(item.currentAmount || 0) <= 0) continue;
+
+                if (item.pluggyAccountId) {
+                    if (seenPluggyIds.has(item.pluggyAccountId)) continue;
+                    seenPluggyIds.add(item.pluggyAccountId);
+                }
+
+                const normalizedName = (item.name || '').toLowerCase().trim();
+                if (normalizedName && seenNames.has(normalizedName)) continue;
+                if (normalizedName) seenNames.add(normalizedName);
+
+                if (!itemsMap.has(item.id)) {
+                    itemsMap.set(item.id, item);
+                }
+            }
+            
+            const allItems = Array.from(itemsMap.values());
+
+            // Ordenar por createdAt para a lista final
             allItems.sort((a, b) => {
                 const dateA = new Date(a.createdAt || 0).getTime();
                 const dateB = new Date(b.createdAt || 0).getTime();
@@ -3640,10 +3693,20 @@ export const databaseService = {
         // Listener para accounts (buscar contas poupança)
         const qSavings = query(accountsRef, where('subtype', '==', 'SAVINGS_ACCOUNT'));
         const unsubSavings = onSnapshot(qSavings, (snapshot) => {
-            savingsAccounts = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            // Deduplicate by document id - keep only one per id
+            const accountsMap = new Map<string, any>();
+            
+            snapshot.docs.forEach(doc => {
+                const accId = doc.id;
+                // Only keep the first occurrence
+                if (!accountsMap.has(accId)) {
+                    accountsMap.set(accId, {
+                        id: accId,
+                        ...doc.data()
+                    });
+                }
+            });
+            savingsAccounts = Array.from(accountsMap.values());
             notify();
         });
 

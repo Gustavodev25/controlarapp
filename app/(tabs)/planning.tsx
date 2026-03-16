@@ -316,27 +316,44 @@ export default function PlanningScreen() {
         if (!user) return;
 
         const unsubscribe = databaseService.onInvestmentsChange(user.uid, (data) => {
-            const filteredData = (data as Investment[]).filter(inv => inv.currentAmount > 0);
-            setInvestments(filteredData);
+            setInvestments(data as Investment[]);
             setLoading(false);
         });
 
         return () => unsubscribe();
     }, [user]);
 
+    const [isSaving, setIsSaving] = useState(false);
+
     const handleCreateInvestment = async (data: { name: string; targetAmount: number; deadline?: string }) => {
-        if (!user) return;
+        if (!user || isSaving) return;
 
-        await databaseService.addInvestment(user.uid, {
-            name: data.name,
-            targetAmount: data.targetAmount,
-            currentAmount: 0,
-            deadline: data.deadline,
-            color: '#D97757', // Default color
-            icon: 'caixinhasamarelo.json' // Default icon ref
-        });
+        setIsSaving(true);
+        try {
+            const result = await databaseService.addInvestment(user.uid, {
+                name: data.name,
+                targetAmount: data.targetAmount,
+                currentAmount: 0.01, // Começa com 0.01 para ser visível no filtro de "apenas com movimentação"
+                deadline: data.deadline,
+                color: '#D97757', // Default color
+                icon: 'caixinhasamarelo.json' // Default icon ref
+            });
 
-        setCreateModalVisible(false);
+            if (result.success && result.id) {
+                // Registrar essa pequena movimentação inicial
+                await databaseService.addInvestmentTransaction(user.uid, result.id, {
+                    amount: 0.01,
+                    type: 'deposit',
+                    date: new Date().toISOString(),
+                });
+            }
+
+            setCreateModalVisible(false);
+        } catch (error) {
+            console.error('[Planning] Error creating investment:', error);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleUpdateBalance = async (amount: number, type: 'deposit' | 'withdraw') => {
@@ -386,16 +403,23 @@ export default function PlanningScreen() {
     };
 
     const handleEditInvestment = async (data: { name: string; targetAmount: number; deadline?: string }) => {
-        if (!user || !selectedInvestment) return;
+        if (!user || !selectedInvestment || isSaving) return;
 
-        await databaseService.updateInvestment(user.uid, selectedInvestment.id, {
-            name: data.name,
-            targetAmount: data.targetAmount,
-            deadline: data.deadline || null
-        });
+        setIsSaving(true);
+        try {
+            await databaseService.updateInvestment(user.uid, selectedInvestment.id, {
+                name: data.name,
+                targetAmount: data.targetAmount,
+                deadline: data.deadline || null
+            });
 
-        setEditModalVisible(false);
-        setSelectedInvestment(null);
+            setEditModalVisible(false);
+            setSelectedInvestment(null);
+        } catch (error) {
+            console.error('[Planning] Error updating investment:', error);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const openDetails = (investment: Investment) => {
@@ -528,6 +552,7 @@ export default function PlanningScreen() {
                 visible={createModalVisible}
                 onClose={() => setCreateModalVisible(false)}
                 onSave={handleCreateInvestment}
+                loading={isSaving}
             />
 
             {selectedInvestment && (
@@ -584,6 +609,7 @@ export default function PlanningScreen() {
                     }}
                     onSave={handleEditInvestment}
                     title="Editar Caixinha"
+                    loading={isSaving}
                     initialData={{
                         name: selectedInvestment.name,
                         targetAmount: selectedInvestment.targetAmount,

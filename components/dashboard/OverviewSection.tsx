@@ -28,7 +28,6 @@ interface OverviewSectionProps {
   valePreview: number;
   recurrences: any[];
   includeOpenFinance: boolean;
-  onConfigPress: () => void;
   onProjectionsPress: () => void;
   onNewExtraPress: () => void;
 }
@@ -43,7 +42,6 @@ const OverviewSection = React.memo(({
   selectedCreditExpenseTotal,
   projectionSettings,
   onNewExtraPress,
-  onConfigPress,
   onProjectionsPress,
   salaryPreview,
   valePreview,
@@ -188,18 +186,6 @@ const OverviewSection = React.memo(({
           <Text style={styles.sectionSubtitle}>Resumo financeiro do mês</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={onConfigPress}
-          >
-            <DelayedLoopLottie
-              source={require('../../assets/engrenagem.json')}
-              style={{ width: 20, height: 20 }}
-              delay={5000}
-              throttleMultiplier={1.15}
-            />
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={onProjectionsPress}

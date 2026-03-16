@@ -2,7 +2,9 @@ import { ModalPadrao } from '@/components/ui/ModalPadrao';
 import { ModernSwitch } from '@/components/ui/ModernSwitch';
 import { Banknote, Bell, Calendar, DollarSign, Wallet } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export interface ProjectionSettings {
     includeSalary: boolean;
@@ -69,7 +71,15 @@ export function ProjectionsModal({
             onClose={onClose}
             title="Configurar Previsões"
         >
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+                style={{ maxHeight: SCREEN_HEIGHT * 0.65 }} 
+                contentContainerStyle={styles.container} 
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                scrollEventThrottle={16}
+                bounces={true}
+            >
                 <Text style={styles.description}>
                     Simule seu saldo futuro incluindo previsões de renda e gastos recorrentes.
                 </Text>

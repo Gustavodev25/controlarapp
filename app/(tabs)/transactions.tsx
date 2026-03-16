@@ -5,8 +5,8 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { useCategories } from '@/hooks/use-categories';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
 import { db } from '@/services/firebase';
-import { normalizePluggyDate } from '@/services/invoiceBuilder';
 import { isNonInstallmentMerchant } from '@/services/installmentRules';
+import { normalizePluggyDate } from '@/services/invoiceBuilder';
 import {
     dedupeTransactionsBySourceId,
     mergeSortedTransactions
@@ -386,17 +386,17 @@ export default function TransactionsScreen() {
 
             // Start Date
             if (startIso) {
-                matches = matches && item.date >= startIso;
+                matches = matches && !!item.date && item.date >= startIso;
             }
 
             // End Date
             if (endIso) {
-                matches = matches && item.date <= endIso;
+                matches = matches && !!item.date && item.date <= endIso;
             }
 
             // Year
             if (filters.year) {
-                matches = matches && item.date.startsWith(filters.year);
+                matches = matches && !!item.date && item.date.startsWith(filters.year);
             }
 
             return matches;

@@ -1239,7 +1239,6 @@ export default function DashboardScreen() {
             valePreview={valePreview}
             recurrences={recurrences}
             includeOpenFinance={includeOpenFinance}
-            onConfigPress={() => setShowConfigModal(true)}
             onProjectionsPress={() => setShowProjectionsModal(true)}
             onNewExtraPress={() => setExtraModalVisible(true)}
           />
