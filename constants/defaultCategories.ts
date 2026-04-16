@@ -2,6 +2,7 @@ export interface CategoryItem {
     key: string;
     label: string;
     isCustom?: boolean;
+    id?: string;
 }
 
 export interface CategoryGroup {

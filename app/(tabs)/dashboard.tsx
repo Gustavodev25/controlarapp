@@ -684,14 +684,18 @@ export default function DashboardScreen() {
     const accounts = accountsResult.data;
     const prefs = profile?.preferences as any;
     const hiddenAccountIds = ((prefs?.hiddenAccountIds as string[]) || []);
-    const bankAccounts = accounts.filter((acc: any) =>
-      acc.subtype === 'CHECKING_ACCOUNT' &&
-      acc.type !== 'credit' &&
-      acc.type !== 'CREDIT' &&
-      acc.type !== 'CREDIT_CARD' &&
-      acc.subtype !== 'CREDIT_CARD' &&
-      !hiddenAccountIds.includes(acc.id)
-    );
+    const bankAccounts = accounts.filter((acc: any) => {
+      const isCheckingType = acc.type === 'BANK' || acc.type === 'checking' || acc.subtype === 'CHECKING_ACCOUNT';
+      const isCreditType = acc.type === 'credit' || acc.type === 'CREDIT' || acc.type === 'CREDIT_CARD' || acc.subtype === 'CREDIT_CARD';
+      const isSavingsType = acc.type === 'SAVINGS' || acc.subtype === 'SAVINGS_ACCOUNT' || acc.subtype === 'SAVINGS';
+      const isInvestmentType = acc.type === 'INVESTMENT';
+      
+      const nameLower = (acc.name || '').toLowerCase();
+      const isSavingsByName = nameLower.includes('poupança') || nameLower.includes('poupanca') || nameLower.includes('savings');
+      const isCaixinhaByName = nameLower.includes('caixinha') || nameLower.includes('invest');
+
+      return isCheckingType && !isCreditType && !isSavingsType && !isInvestmentType && !isSavingsByName && !isCaixinhaByName && !hiddenAccountIds.includes(acc.id);
+    });
     setAllBankAccounts(bankAccounts);
 
     if (bankAccounts.length === 0) {
@@ -807,7 +811,12 @@ export default function DashboardScreen() {
               invoiceMonthKey: data.invoiceMonthKey || null,
               invoiceMonthKeyManual: data.invoiceMonthKeyManual === true,
               isRefund: data.isRefund || false,
-              originalTransactionId: data.originalTransactionId || null
+              originalTransactionId: data.originalTransactionId || null,
+              creditCardMetadata: data.creditCardMetadata ? {
+                billId: data.creditCardMetadata.billId ?? null,
+                installmentNumber: data.creditCardMetadata.installmentNumber ?? null,
+                totalInstallments: data.creditCardMetadata.totalInstallments ?? null,
+              } : undefined
             } as Transaction);
           });
 
@@ -958,6 +967,8 @@ export default function DashboardScreen() {
         if (typeof console !== 'undefined') {
           console.log('[Perf Dashboard] initial load started', { t0Initial });
         }
+        // Invalida o cache de contas no carregamento inicial para garantir dados frescos do Firestore
+        await queryCache.invalidate(`accounts_${user.uid}`);
         const requests: Array<Promise<any>> = [];
         if (plan.fetchMonthScopedData) {
           requests.push(fetchMonthScopedData(initialMonth));
@@ -1247,72 +1258,73 @@ export default function DashboardScreen() {
 
 
           {/* Main Balance Container */}
-          {bankAccountData.hasAccounts && (
-            <View style={{ marginBottom: 16 }}>
-              <View style={[styles.sectionHeader, { marginTop: 16, marginBottom: 12, alignItems: 'center' }]}>
-                <Text style={[styles.sectionTitle, { fontSize: 16, color: '#909090' }]}>Minhas Contas</Text>
+          <View style={{ marginBottom: 16 }}>
+            <View style={[styles.sectionHeader, { marginTop: 16, marginBottom: 12, alignItems: 'center' }]}>
+              <Text style={[styles.sectionTitle, { fontSize: 16, color: '#909090' }]}>Minhas Contas</Text>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.95}
+              style={[styles.incomeCard, { marginTop: 0, width: '100%', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 70 }]}
+              onPress={() => setBalanceModalVisible(true)}
+            >
+              {/* Left side */}
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <DelayedLoopLottie
+                  source={require('../../assets/carteira.json')}
+                  style={{ width: 36, height: 36 }}
+                  delay={1000}
+                  throttleMultiplier={1.15}
+                />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 12, fontFamily: 'AROneSans_500Medium', color: '#909090', letterSpacing: 0.5 }}>
+                      SALDO PRINCIPAL
+                    </Text>
+                    <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: bankAccountData.hasAccounts ? '#04D361' : '#505050' }} />
+                    <Text style={{ fontSize: 11, color: '#909090', fontFamily: 'AROneSans_500Medium' }}>
+                      {bankAccountData.hasAccounts
+                        ? `${bankAccountData.count} ${bankAccountData.count === 1 ? 'conta' : 'contas'}`
+                        : 'Nenhuma conta'}
+                    </Text>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#E0E0E0', marginRight: 4, letterSpacing: -0.5 }}>
+                      {bankAccountData.totalBalance < 0 ? '-R$' : 'R$'}
+                    </Text>
+                    {isValuesVisible ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                        <RollingCounter
+                          value={Math.abs(bankAccountData.totalBalance)}
+                          height={28}
+                          width={14}
+                          fontSize={24}
+                          letterSpacing={-0.5}
+                          color="#FFFFFF"
+                        />
+                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5 }}>
+                          ,{Math.abs(bankAccountData.totalBalance).toFixed(2).slice(-2)}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5, paddingTop: 6 }}>
+                        ••••
+                      </Text>
+                    )}
+                  </View>
+                </View>
               </View>
 
-              <TouchableOpacity
-                activeOpacity={0.95}
-                style={[styles.incomeCard, { marginTop: 0, width: '100%', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 70 }]}
-                onPress={() => setBalanceModalVisible(true)}
-              >
-                {/* Left side */}
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <DelayedLoopLottie
-                    source={require('../../assets/carteira.json')}
-                    style={{ width: 36, height: 36 }}
-                    delay={1000}
-                    throttleMultiplier={1.15}
-                  />
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: 12, fontFamily: 'AROneSans_500Medium', color: '#909090', letterSpacing: 0.5 }}>
-                        SALDO PRINCIPAL
-                      </Text>
-                      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#04D361' }} />
-                      <Text style={{ fontSize: 11, color: '#909090', fontFamily: 'AROneSans_500Medium' }}>
-                        {bankAccountData.count} {bankAccountData.count === 1 ? 'conta' : 'contas'}
-                      </Text>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#E0E0E0', marginRight: 4, letterSpacing: -0.5 }}>
-                        {bankAccountData.totalBalance < 0 ? '-R$' : 'R$'}
-                      </Text>
-                      {isValuesVisible ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                          <RollingCounter
-                            value={Math.abs(bankAccountData.totalBalance)}
-                            height={28}
-                            width={14}
-                            fontSize={24}
-                            letterSpacing={-0.5}
-                            color="#FFFFFF"
-                          />
-                          <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5 }}>
-                            ,{Math.abs(bankAccountData.totalBalance).toFixed(2).slice(-2)}
-                          </Text>
-                        </View>
-                      ) : (
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: -0.5, paddingTop: 6 }}>
-                          ••••
-                        </Text>
-                      )}
-                    </View>
-                  </View>
+              {/* Right side: Chevron */}
+              <View style={{ paddingLeft: 8 }}>
+                <View style={styles.chevronContainer}>
+                  <ChevronRight size={18} color="#505050" />
                 </View>
+              </View>
+            </TouchableOpacity>
+          </View>
 
-                {/* Right side: Chevron */}
-                <View style={{ paddingLeft: 8 }}>
-                  <View style={styles.chevronContainer}>
-                    <ChevronRight size={18} color="#505050" />
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Unified Stack Carousel for Credit Cards */}
           {

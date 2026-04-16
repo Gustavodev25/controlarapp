@@ -1,4 +1,4 @@
-﻿import BankSelector from '@/components/BankSelector';
+import BankSelector from '@/components/BankSelector';
 import { CategorySelectorModal } from '@/components/CategorySelectorModal';
 import { ClosingDateItem, ClosingDateModal } from '@/components/ClosingDateModal';
 import { FilterState } from '@/components/CreditCardFilterModal';
@@ -1352,13 +1352,19 @@ export function CreditCardInvoice({
                 updateData.manualInvoiceMonth = null as any;
             }
 
-            const cleanUpdateData = { ...updateData };
+            const cleanUpdateData: Record<string, any> = { ...updateData };
             // Certifique-se de que nada é literalmente 'undefined'
             Object.keys(cleanUpdateData).forEach((key) => {
                 if ((cleanUpdateData as any)[key] === undefined) {
                     (cleanUpdateData as any)[key] = null;
                 }
             });
+
+            // Limpa billId do Pluggy para que a override manual tenha prioridade total
+            // Sincronizado com a web (CreditCards.ts updateTransactionInvoice)
+            if (target !== 'current') {
+                cleanUpdateData['creditCardMetadata.billId'] = null;
+            }
 
             setTransactionOptionsVisible(false);
             setSelectedTransactionForOptions(null);
@@ -1389,6 +1395,15 @@ export function CreditCardInvoice({
                 patch.manualInvoiceMonth = cleanUpdateData.manualInvoiceMonth;
             } else if ('manualInvoiceMonth' in cleanUpdateData && cleanUpdateData.manualInvoiceMonth == null) {
                 patch.manualInvoiceMonth = undefined;
+            }
+
+            // Limpa billId local para refletir a mudança imediatamente
+            const txMeta = (transactionToMove as any).creditCardMetadata;
+            if (target !== 'current' && txMeta) {
+                (patch as any).creditCardMetadata = {
+                    ...txMeta,
+                    billId: null
+                };
             }
 
             setLocalTransactionOverrides((prev) => ({
@@ -1998,10 +2013,12 @@ export function CreditCardInvoice({
         yest.setDate(yest.getDate() - 1);
         const yesterdayYMD = getYMD(yest);
         const getHeader = (dateIso: string) => {
-            const date = new Date(`${dateIso}T12:00:00`);
+            const normalized = normalizePluggyDate(dateIso) || dateIso;
+            const date = new Date(`${normalized}T12:00:00`);
+            if (isNaN(date.getTime())) return normalized || 'Data inválida';
             const day = date.getDate();
-            if (dateIso === todayYMD) return `HOJE, ${day} ${getMonthShortUpper(date)}`;
-            if (dateIso === yesterdayYMD) return `ONTEM, ${day} ${getMonthShortUpper(date)}`;
+            if (normalized === todayYMD) return `HOJE, ${day} ${getMonthShortUpper(date)}`;
+            if (normalized === yesterdayYMD) return `ONTEM, ${day} ${getMonthShortUpper(date)}`;
             return `${day} ${getMonthLongUpper(date)}`;
         };
 

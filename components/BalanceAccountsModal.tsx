@@ -11,7 +11,6 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { ModernSwitch } from './ui/ModernSwitch';
 
 const { height: windowHeight } = Dimensions.get('window');
 
@@ -22,6 +21,7 @@ interface BankAccount {
     balance: number;
     type: string;
     subtype?: string;
+    number?: string;
     connector?: {
         name?: string;
         primaryColor?: string;
@@ -56,10 +56,27 @@ export function BalanceAccountsModal({
         }
     }, [visible, selectedAccountIds]);
 
-    // Show all non-savings accounts. The toggle controls which ones are included in saldo.
-    const displayedAccounts = accounts.filter(account =>
-        account.subtype !== 'SAVINGS_ACCOUNT'
-    );
+    const displayedAccounts = accounts.filter(account => {
+        const isCheckingType = account.type === 'BANK' || account.type === 'checking' || account.subtype === 'CHECKING_ACCOUNT';
+        const isCreditType = account.type === 'credit' || account.type === 'CREDIT' || account.type === 'CREDIT_CARD' || account.subtype === 'CREDIT_CARD';
+        const isSavingsType = account.type === 'SAVINGS' || account.subtype === 'SAVINGS_ACCOUNT' || account.subtype === 'SAVINGS';
+        const isInvestmentType = account.type === 'INVESTMENT';
+        
+        const nameLower = (account.name || '').toLowerCase();
+        const isSavingsByName = nameLower.includes('poupança') || nameLower.includes('poupanca') || nameLower.includes('savings');
+        const isCaixinhaByName = nameLower.includes('caixinha') || nameLower.includes('invest');
+
+        return isCheckingType && !isCreditType && !isSavingsType && !isInvestmentType && !isSavingsByName && !isCaixinhaByName;
+    });
+
+    // Count occurrences of each name to add indexes if necessary
+    const nameTotals = displayedAccounts.reduce((acc, account) => {
+        const name = account.name || account.connector?.name || 'Conta';
+        acc[name] = (acc[name] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    const nameCurrentCounts: Record<string, number> = {};
 
     const toggleAccount = (accountId: string) => {
         setSelected(prev => {
@@ -120,12 +137,35 @@ export function BalanceAccountsModal({
                         const isSelected = selected.includes(account.id);
                         const isLast = index === displayedAccounts.length - 1;
 
+                        const baseName = account.name || account.connector?.name || 'Conta';
+                        nameCurrentCounts[baseName] = (nameCurrentCounts[baseName] || 0) + 1;
+                        
+                        const hasDuplicates = nameTotals[baseName] > 1;
+                        const accountNumberSuffix = account.number ? account.number.replace(/\D/g, '').slice(-4) : null;
+                        
+                        let displayName = baseName;
+                        if (hasDuplicates) {
+                            if (accountNumberSuffix) {
+                                displayName = `${baseName} • ${accountNumberSuffix}`;
+                            } else {
+                                displayName = `${baseName} #${nameCurrentCounts[baseName]}`;
+                            }
+                        }
+
+                        let subtitle = 'Conta Corrente';
+                        if (!hasDuplicates && accountNumberSuffix) {
+                            subtitle = `Conta Corrente • Final ${accountNumberSuffix}`;
+                        }
+
                         return (
-                            <View
+                            <TouchableOpacity
                                 key={account.id}
+                                activeOpacity={0.7}
+                                onPress={() => toggleAccount(account.id)}
                                 style={[
                                     styles.itemContainer,
-                                    !isLast && styles.itemBorder
+                                    !isLast && styles.itemBorder,
+                                    !isSelected && { opacity: 0.35 }
                                 ]}
                             >
                                 <View style={[
@@ -138,11 +178,10 @@ export function BalanceAccountsModal({
                                 <View style={styles.itemContent}>
                                     <View style={styles.itemInfo}>
                                         <Text style={styles.itemTitle} numberOfLines={1}>
-                                            {account.name || account.connector?.name || 'Conta'}
+                                            {displayName}
                                         </Text>
                                         <Text style={styles.itemSubtitle}>
-                                            {account.subtype === 'CHECKING_ACCOUNT' ? 'Conta Corrente' :
-                                                account.subtype === 'SAVINGS_ACCOUNT' ? 'Poupança' : 'Conta'}
+                                            {subtitle}
                                         </Text>
                                     </View>
 
@@ -153,17 +192,9 @@ export function BalanceAccountsModal({
                                         ]}>
                                             {formatCurrency(account.balance || 0)}
                                         </Text>
-
-                                        <ModernSwitch
-                                            value={isSelected}
-                                            onValueChange={() => toggleAccount(account.id)}
-                                            activeColor="#d97757"
-                                            width={44}
-                                            height={24}
-                                        />
                                     </View>
                                 </View>
-                            </View>
+                            </TouchableOpacity>
                         );
                     })}
                 </View>
@@ -246,7 +277,6 @@ const styles = StyleSheet.create({
     itemBalance: {
         fontSize: 14,
         fontWeight: '600',
-        marginRight: 12
     },
     headerSaveButton: {
         flexDirection: 'row',

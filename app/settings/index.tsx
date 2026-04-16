@@ -391,6 +391,18 @@ export default function SettingsScreen() {
                     </Animated.View>
 
                     <Animated.View style={sectionsCollapseStyle}>
+                        {/* ASSINATURA SECTION */}
+                        <SectionHeader title="ASSINATURA" />
+                        <View style={styles.sectionCard}>
+                            <SettingsItem
+                                icon={Crown}
+                                title="Meu Plano"
+                                color="#d97757"
+                                isLast={true}
+                                onPress={() => router.push('/settings/subscription')}
+                            />
+                        </View>
+
                         {/* PERFIL SECTION */}
                         <SectionHeader title="PERFIL" />
                         <View style={styles.sectionCard}>

@@ -1,4 +1,4 @@
-import { FileText, Info, RefreshCw } from 'lucide-react-native';
+import { FileText, Info } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ModalPadrao } from './ui/ModalPadrao';
@@ -15,9 +15,7 @@ interface ClosingDateModalProps {
     onClose: () => void;
     onSave: (updates: { id: string, exactDate: string }[]) => Promise<void>;
     items: ClosingDateItem[];
-    hasBankData?: boolean;
     bankName?: string;
-    onRefreshBank?: () => Promise<void>;
     originalCloseDate?: string | null;
     originalDueDate?: string | null;
 }
@@ -27,14 +25,12 @@ export function ClosingDateModal({
     onClose,
     onSave,
     items,
-    hasBankData,
     bankName,
-    onRefreshBank,
     originalCloseDate,
     originalDueDate
 }: ClosingDateModalProps) {
     const [days, setDays] = useState<Record<string, string>>({});
-    const [isRefreshing, setIsRefreshing] = useState(false);
+
 
     useEffect(() => {
         if (visible) {
@@ -81,25 +77,7 @@ export function ClosingDateModal({
             visible={visible}
             onClose={onClose}
             title="Editar fechamento"
-            headerRight={
-                !!onRefreshBank && (
-                    <TouchableOpacity
-                        onPress={async () => {
-                            setIsRefreshing(true);
-                            if (onRefreshBank) await onRefreshBank();
-                            setIsRefreshing(false);
-                        }}
-                        style={{ flexDirection: 'row', alignItems: 'center' }}
-                        disabled={isRefreshing}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <RefreshCw size={14} color="#0A84FF" style={{ marginRight: 4 }} />
-                        <Text style={{ color: '#0A84FF', fontSize: 13, fontWeight: '500' }}>
-                            {isRefreshing ? 'Buscando...' : 'Buscar'}
-                        </Text>
-                    </TouchableOpacity>
-                )
-            }
+
         >
             <View style={styles.container}>
                 <Text style={styles.closingModalSubtitle}>

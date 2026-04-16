@@ -10,7 +10,7 @@ import {
     ChevronRight,
     CreditCard,
     RefreshCw,
-    Rocket
+    Zap
 } from 'lucide-react-native';
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -411,12 +411,19 @@ export default function SubscriptionSettingsScreen() {
                                 </View>
                             </View>
                         ) : (
-                            // Starter - mostra info sobre o plano
+                            // Starter - botão de upgrade
                             <View style={styles.upgradeRow}>
                                 <View style={styles.upgradeTextContainer}>
                                     <Text style={styles.upgradeTitle}>Plano Starter</Text>
                                     <Text style={styles.upgradeSubtitle}>Você está usando o plano gratuito.</Text>
                                 </View>
+                                <TouchableOpacity
+                                    style={styles.upgradeButton}
+                                    onPress={() => router.push('/settings/plans')}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text style={styles.upgradeButtonText}>Upgrade</Text>
+                                </TouchableOpacity>
                             </View>
                         )}
                     </View>
@@ -458,23 +465,27 @@ export default function SubscriptionSettingsScreen() {
                     </View>
 
 
-                    {/* COMING SOON SECTION */}
-                    <SectionHeader title="NOVIDADES" />
-                    <View style={styles.sectionCard}>
-                        <View style={styles.comingSoonContainer}>
-                            <Rocket size={24} color="#666" style={{ marginBottom: 16 }} />
-                            <Text style={styles.comingSoonTitle}>Em breve</Text>
-                            <Text style={styles.comingSoonText}>
-                                Novas funcionalidades a caminho.
-                            </Text>
-                            <LinearGradient
-                                colors={['transparent', '#151515']}
-                                style={styles.fadeOverlay}
-                            />
-                        </View>
-                    </View>
-
-
+                    {/* CTA UPGRADE — só aparece para usuários no plano gratuito no iOS */}
+                    {!isPro && Platform.OS === 'ios' && (
+                        <>
+                            <SectionHeader title="ASSINAR" />
+                            <TouchableOpacity
+                                style={styles.ctaCard}
+                                onPress={() => router.push('/settings/plans')}
+                                activeOpacity={0.85}
+                            >
+                                <View style={styles.ctaContent}>
+                                    <View style={styles.ctaTextContainer}>
+                                        <Text style={styles.ctaTitle}>Assinar Pro</Text>
+                                        <Text style={styles.ctaSubtitle}>R$ 35,90/mês • Apple Pay disponível</Text>
+                                    </View>
+                                    <View style={styles.ctaIconContainer}>
+                                        <Zap size={18} color="#000" />
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+                        </>
+                    )}
 
                     <View style={{ height: 100 }} />
 
@@ -696,13 +707,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
         textTransform: 'uppercase',
     },
-    sectionCard: {
-        backgroundColor: '#151515',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#252525',
-    },
+
     itemSeparatorInset: {
         height: 1,
         backgroundColor: '#2A2A2A',
@@ -898,36 +903,40 @@ const styles = StyleSheet.create({
         position: 'relative',
         zIndex: 0,
     },
-    // Coming Soon
-    comingSoonContainer: {
-        paddingVertical: 32,
-        paddingHorizontal: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    comingSoonIconContainer: {
-        // Not used in minimal version
-    },
-    comingSoonTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#8E8E93',
+    // CTA Upgrade Card
+    ctaCard: {
+        backgroundColor: '#d97757',
+        borderRadius: 16,
+        padding: 20,
         marginBottom: 4,
-        letterSpacing: 0.2,
     },
-    comingSoonText: {
+    ctaContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    ctaTextContainer: {
+        flex: 1,
+    },
+    ctaTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#000',
+        marginBottom: 2,
+    },
+    ctaSubtitle: {
         fontSize: 13,
-        color: '#555',
-        textAlign: 'center',
+        color: 'rgba(0,0,0,0.65)',
+        fontWeight: '500',
     },
-    // Fade Overlay
-    fadeOverlay: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 48,
-        borderBottomLeftRadius: 16,
-        borderBottomRightRadius: 16,
+    ctaIconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 12,
     },
+
 });

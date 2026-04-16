@@ -320,6 +320,9 @@ export default function PlanningScreen() {
             setLoading(false);
         });
 
+        // Trigger the migration logic inside getInvestments to sweep for missing connected accounts
+        databaseService.getInvestments(user.uid).catch(console.error);
+
         return () => unsubscribe();
     }, [user]);
 

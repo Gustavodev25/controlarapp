@@ -138,6 +138,9 @@ export const moveTransactionToInvoice = async (options: MoveTransactionOptions):
                 invoiceMonthKey: targetMonthKey,
                 invoiceMonthKeyManual: true,
                 manualInvoiceMonth: targetMonthKey,
+                // Limpa billId do Pluggy para que a override manual tenha prioridade total
+                // Sincronizado com a web (CreditCards.ts updateTransactionInvoice)
+                'creditCardMetadata.billId': null,
                 updatedAt: new Date().toISOString()
             };
 

@@ -296,7 +296,7 @@ const DynamicText = memo<IDynamicText>(
                         style={styles.content}
                     >
                         {dotConfig.visible && <Animated.View style={dotStyle} />}
-                        <Text style={textStyle}>{currentItem.text}</Text>
+                        <Text style={textStyle} numberOfLines={1}>{currentItem.text}</Text>
                         {Platform.OS === "ios" && (
                             <AnimatedBlurView
                                 animatedProps={animatedBlurViewPropz}

@@ -52,6 +52,7 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
                     const mapping = mappingMap.get(item.key);
                     if (mapping) {
                         item.label = mapping.displayName;
+                        (item as any).id = mapping.id;
                     }
                     processedKeys.add(item.key);
                 });
@@ -77,6 +78,7 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
                             group.items.push({
                                 key: m.originalKey,
                                 label: m.displayName,
+                                id: m.id,
                                 isCustom: true
                             });
                         }
@@ -87,6 +89,7 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
                             items: [{
                                 key: m.originalKey,
                                 label: m.displayName,
+                                id: m.id,
                                 isCustom: true
                             }]
                         });
@@ -111,7 +114,10 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
 
         // 1. Search in current loaded categories (includes user customizations)
         for (const group of categories) {
-            const item = group.items.find(i => i.key.toLowerCase() === keyLower);
+            const item = group.items.find(i => 
+                i.key.toLowerCase() === keyLower || 
+                (i.id && i.id.toLowerCase() === keyLower)
+            );
             if (item) return item.label;
         }
 

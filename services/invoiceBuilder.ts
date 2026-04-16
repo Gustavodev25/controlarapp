@@ -148,8 +148,23 @@ const isValidDateParts = (y: number, m: number, d: number): boolean => {
     return parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d;
 };
 
-export const normalizePluggyDate = (dateStr?: string | null): string | null => {
-    if (!dateStr || typeof dateStr !== 'string') return null;
+export const normalizePluggyDate = (dateStr?: any): string | null => {
+    if (!dateStr) return null;
+
+    // Handle Firestore Timestamp objects (have .toDate() method)
+    if (typeof dateStr?.toDate === 'function') {
+        const d: Date = dateStr.toDate();
+        if (isNaN(d.getTime())) return null;
+        return toDateStr(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0));
+    }
+
+    // Handle native Date objects
+    if (dateStr instanceof Date) {
+        if (isNaN(dateStr.getTime())) return null;
+        return toDateStr(new Date(dateStr.getFullYear(), dateStr.getMonth(), dateStr.getDate(), 12, 0, 0));
+    }
+
+    if (typeof dateStr !== 'string') return null;
     const raw = dateStr.trim();
     if (!raw) return null;
 
@@ -1206,6 +1221,32 @@ export const buildInvoicesPluggyFirst = (
     // APLICA OVERRIDES DE DATA (Antes de gerar invoices e distribuir transações)
     applyDateOverridesToBills(allBills, card);
 
+    // Re-verificar meses obrigatórios APÓS overrides.
+    // Overrides podem mover o mês efetivo de um bill (ex: currentBill.dueDate em março
+    // → closeDate inferida em fevereiro após override), deixando o mês atual sem cobertura.
+    requiredMonths.forEach(req => {
+        const existing = allBills.find(b => {
+            // Após overrides, preferir closeDate/periodEnd (campo definitivo do mês)
+            const bClose = pickNormalizedBillDate(b, ['closeDate', 'periodEnd', 'dueDate']);
+            return bClose && toMonthKey(parseDate(bClose)) === req.key;
+        });
+        if (!existing) {
+            allBills.push({
+                id: `synth_${req.key}`,
+                periodStart: toDateStr(req.start),
+                periodEnd: toDateStr(req.close),
+                closeDate: toDateStr(req.close),
+                dueDate: toDateStr(req.due),
+                totalAmount: 0,
+                isCurrent: req.key === periods.currentMonthKey,
+                isSynthesized: true
+            });
+        }
+    });
+
+    // Re-ordenar após adicionar sintéticas tardias
+    allBills.sort((a, b) => safeDateTime(b.dueDate) - safeDateTime(a.dueDate));
+
     console.log('[DEBUG] --- CICLO DO CARTÃO ---');
     console.log(`[DEBUG] Card: ${card?.name} (${cardId})`);
     allBills.forEach((b, i) => {
@@ -1228,9 +1269,18 @@ export const buildInvoicesPluggyFirst = (
         return pluggyBillToInvoice(bill, 'OPEN'); // Status será refinado depois
     });
 
-    // Encontra a fatura marcada como atual pelo Pluggy
-    const currentBillIdx = allBills.findIndex(b => b.isCurrent);
-    const effectiveCurrentIdx = currentBillIdx !== -1 ? currentBillIdx : 0;
+    // Encontra a fatura atual usando a mesma lógica da web (BillConstructor.findAnchorBill):
+    // Procura o bill com o menor dueDate >= hoje. Isso evita depender do flag `isCurrent`
+    // do Pluggy, que pode estar desatualizado (ex: bank ainda reporta fatura do mês anterior).
+    const todayTime = today.getTime();
+    let effectiveCurrentIdx = 0;
+    for (let i = 0; i < allBills.length; i++) {
+        const billDateStr = pickNormalizedBillDate(allBills[i], ['dueDate', 'periodEnd', 'closeDate']);
+        const billDate = billDateStr ? parseDate(billDateStr) : null;
+        if (billDate && !isNaN(billDate.getTime()) && billDate.getTime() >= todayTime) {
+            effectiveCurrentIdx = i; // Mantém atualizando para pegar o último (mais antigo) >= hoje
+        }
+    }
 
     // Refina status
     invoices.forEach((inv, idx) => {
@@ -1346,6 +1396,48 @@ export const buildInvoicesPluggyFirst = (
             }
         }
     });
+
+    // 4.5. FALLBACK: Transações órfãs que não foram alocadas por período
+    // Isso acontece quando a data da transação cai fora de todos os periodStart/periodEnd
+    // (ex: transação feita após o fechamento mas antes do início do próximo período documentado)
+    // Aloca na fatura cujo referenceMonth é mais próximo do mês da transação
+    if (unassignedTxs.length > 0) {
+        console.log(`[DEBUG-INVOICE] ${unassignedTxs.length} transações órfãs restantes após alocação por período. Alocando por mês mais próximo.`);
+        
+        unassignedTxs.forEach(tx => {
+            const txDate = parseDate(tx.date);
+            const txMonthKey = toMonthKey(txDate);
+            
+            // Procura a fatura exata pelo mês
+            let targetIdx = invoices.findIndex(inv => inv.referenceMonth === txMonthKey);
+            
+            // Se não achou exata, encontra a mais próxima
+            if (targetIdx === -1) {
+                const txTime = txDate.getTime();
+                let minDiff = Infinity;
+                invoices.forEach((inv, idx) => {
+                    const invDate = parseDate(inv.closingDate || inv.dueDate || inv.startDate);
+                    if (!isNaN(invDate.getTime())) {
+                        const diff = Math.abs(invDate.getTime() - txTime);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            targetIdx = idx;
+                        }
+                    }
+                });
+            }
+            
+            // Fallback final: fatura atual
+            if (targetIdx === -1) {
+                targetIdx = effectiveCurrentIdx;
+            }
+            
+            if (targetIdx >= 0 && targetIdx < invoices.length) {
+                invoices[targetIdx].items.push(transactionToInvoiceItem(tx));
+            }
+        });
+        unassignedTxs.length = 0; // Limpa
+    }
 
     // 5. Estruturação do Result Final (Sem Projeções)
     const emptyInvoice = (status: 'OPEN' | 'CLOSED' | 'PAID', fallbackMonthOffset = 0): Invoice => {

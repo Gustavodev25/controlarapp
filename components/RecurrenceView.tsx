@@ -2,6 +2,7 @@ import MonthSelector from '@/components/MonthSelector';
 import { RecurrenceDeleteModal } from '@/components/RecurrenceDeleteModal';
 import { RecurrenceFilterModal, RecurrenceFilterState } from '@/components/RecurrenceFilterModal';
 import { ReminderModal } from '@/components/ReminderModal';
+import { useCategories } from '@/hooks/use-categories';
 import { DelayedLoopLottie } from '@/components/ui/DelayedLoopLottie';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -162,7 +163,9 @@ const formatDate = (dateStr: string) => {
 };
 
 const RecurrenceGroup = ({ title, children }: { title: string, children: React.ReactNode }) => {
-    const { icon: Icon, color, backgroundColor } = getCategoryConfig(title);
+    const { getCategoryName } = useCategories();
+    const displayName = getCategoryName(title);
+    const { icon: Icon, color, backgroundColor } = getCategoryConfig(displayName);
 
     return (
         <View style={styles.groupContainer}>
@@ -170,7 +173,7 @@ const RecurrenceGroup = ({ title, children }: { title: string, children: React.R
                 <View style={[styles.groupIcon, { backgroundColor }]}>
                     <Icon size={14} color={color} />
                 </View>
-                <Text style={styles.groupTitle}>{title}</Text>
+                <Text style={styles.groupTitle}>{displayName}</Text>
             </View>
             <View style={styles.groupList}>
                 {children}
@@ -881,6 +884,7 @@ const islandStyles = StyleSheet.create({
 
 export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: RecurrenceTab }) {
     const { user, profile } = useAuthContext();
+    const { getCategoryName } = useCategories();
     const [selectedTab, setSelectedTab] = useState<RecurrenceTab>(initialTab);
     const [items, setItems] = useState<RecurrenceItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1375,20 +1379,24 @@ export function RecurrenceView({ initialTab = 'subscriptions' }: { initialTab?: 
         const groups: { title: string; items: RecurrenceItem[] }[] = [];
 
         filteredItems.forEach(item => {
-            const category = item.category || 'Outros';
-            let group = groups.find(g => g.title === category);
+            const categoryKey = item.category || '';
+            let group = groups.find(g => g.title === categoryKey);
             if (!group) {
-                group = { title: category, items: [] };
+                group = { title: categoryKey, items: [] };
                 groups.push(group);
             }
             group.items.push(item);
         });
 
-        // Sort groups alphabetically
-        groups.sort((a, b) => a.title.localeCompare(b.title));
+        // Sort groups alphabetically by display name
+        groups.sort((a, b) => {
+            const nameA = getCategoryName(a.title);
+            const nameB = getCategoryName(b.title);
+            return nameA.localeCompare(nameB);
+        });
 
         return groups;
-    }, [filteredItems]);
+    }, [filteredItems, getCategoryName]);
 
     const subscriptionTotal = useMemo(() => {
         return items

@@ -942,9 +942,18 @@ export const databaseService = {
             const accountsResult = await databaseService.getAccounts(userId);
             let accountBalance = 0;
             if (accountsResult.success && accountsResult.data) {
-                const bankAccounts = accountsResult.data.filter((acc: any) =>
-                    acc.subtype === 'CHECKING_ACCOUNT'
-                );
+                const bankAccounts = accountsResult.data.filter((acc: any) => {
+                    const isCheckingType = acc.type === 'BANK' || acc.type === 'checking' || acc.subtype === 'CHECKING_ACCOUNT';
+                    const isCreditType = acc.type === 'credit' || acc.type === 'CREDIT' || acc.type === 'CREDIT_CARD' || acc.subtype === 'CREDIT_CARD';
+                    const isSavingsType = acc.type === 'SAVINGS' || acc.subtype === 'SAVINGS_ACCOUNT' || acc.subtype === 'SAVINGS';
+                    const isInvestmentType = acc.type === 'INVESTMENT';
+                    
+                    const nameLower = (acc.name || '').toLowerCase();
+                    const isSavingsByName = nameLower.includes('poupança') || nameLower.includes('poupanca') || nameLower.includes('savings');
+                    const isCaixinhaByName = nameLower.includes('caixinha') || nameLower.includes('invest');
+
+                    return isCheckingType && !isCreditType && !isSavingsType && !isInvestmentType && !isSavingsByName && !isCaixinhaByName;
+                });
                 accountBalance = bankAccounts.reduce((sum: number, acc: any) => sum + (acc.balance || 0), 0);
             }
 
@@ -1967,7 +1976,7 @@ export const databaseService = {
             for (const account of accounts) {
                 const transactions = Array.isArray(account?.transactions) ? account.transactions : [];
                 const isCreditCard = account?.type === 'CREDIT';
-                const isSavingsAccount = account?.subtype === 'SAVINGS_ACCOUNT';
+                const isSavingsAccount = account?.subtype === 'SAVINGS_ACCOUNT' || account?.subtype === 'SAVINGS' || account?.type === 'SAVINGS';
                 const effectiveConnector = account?.connector ?? connector ?? null;
                 const normalizedConnector = normalizeConnectorForStorage(effectiveConnector);
 
@@ -2608,7 +2617,14 @@ export const databaseService = {
                     id: doc.id,
                     name: data.name || data.title || data.description || data.serviceName || 'Assinatura',
                     amount: Number(data.amount || data.value || data.price || 0),
-                    dueDate: data.dueDate || data.date || data.nextPaymentDate || new Date().toISOString(),
+                    dueDate: (() => {
+                        const v = data.dueDate || data.date || data.nextPaymentDate || new Date().toISOString();
+                        if (typeof v === 'string') return v;
+                        if (typeof v?.toDate === 'function') return v.toDate().toISOString();
+                        if (v instanceof Date) return v.toISOString();
+                        if (typeof v === 'object' && v?.seconds != null) return new Date(v.seconds * 1000).toISOString();
+                        return new Date().toISOString();
+                    })(),
                     type: 'subscription',
                     status: isPaid ? 'paid' : 'pending',
                     frequency: data.frequency || data.cycle || 'monthly',
@@ -2622,7 +2638,12 @@ export const databaseService = {
             const remSnap = await getDocs(remindersRef);
             const existingReminders = remSnap.docs.map(doc => {
                 const data = doc.data();
-                const rawDate = data.dueDate || data.date || new Date().toISOString();
+                const rawDateVal = data.dueDate || data.date || new Date().toISOString();
+                const rawDate = typeof rawDateVal === 'string' ? rawDateVal
+                    : typeof rawDateVal?.toDate === 'function' ? rawDateVal.toDate().toISOString()
+                    : rawDateVal instanceof Date ? rawDateVal.toISOString()
+                    : (typeof rawDateVal === 'object' && rawDateVal?.seconds != null) ? new Date(rawDateVal.seconds * 1000).toISOString()
+                    : new Date().toISOString();
 
                 // Logic updated to trust DB date (Simplified Flow)
                 // No more smart projection to current month for reminders
@@ -2700,14 +2721,16 @@ export const databaseService = {
             });
 
             // 4. Reminders from Future Transactions (Checking Account)
-            const today = new Date().toISOString().split('T')[0];
+            const tomorrowDate = new Date();
+            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+            const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
             const txRef = collection(db, 'users', userId, 'transactions');
-            const qTx = query(txRef, where('date', '>', today), orderBy('date', 'asc'));
+            const qTx = query(txRef, where('date', '>=', tomorrowStr), orderBy('date', 'asc'));
             const txSnap = await getDocs(qTx);
 
             const reminders = txSnap.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter((data: any) => data.type !== 'income') // Exclude income (refunds/deposits)
+                .filter((data: any) => data.type !== 'income' && !(data.description || '').toLowerCase().includes('pix')) // Exclude income and PIX
                 .map((data: any) => ({
                     id: `tx_${data.id}`,
                     name: data.description,
@@ -2780,25 +2803,28 @@ export const databaseService = {
             // Prepare data compatible with Web App (which likely expects title, date, value, type='expense')
             let dataToSave: any;
 
-            // LÃ³gica EspecÃ­fica para Lembretes (Estrutura Web)
+            // Lógica Específica para Lembretes (Estrutura Web)
             if (recurrence.type === 'reminder') {
                 dataToSave = {
+                    name: recurrence.name, // Novo campo para compatibilidade 100% Web
+                    title: recurrence.name, // Novo campo para compatibilidade 100% Web
+                    description: recurrence.name, // O App manda 'name', o Web usa 'description'
                     amount: Number(recurrence.amount),
                     category: recurrence.category || 'Outros',
-                    description: recurrence.name, // O App manda 'name', o Web usa 'description'
                     dueDate: recurrence.dueDate,
                     frequency: recurrence.frequency,
                     isRecurring: recurrence.frequency && recurrence.frequency !== 'once',
                     memberId: userId, // Web usa memberId
-                    type: recurrence.transactionType || 'expense', // Respect selected type, default to expense
+                    type: recurrence.transactionType || 'expense', // Respect selected type, default to expense (Natureza no Web)
                     status: 'pending',
                     createdAt: Timestamp.now(),
                     updatedAt: Timestamp.now()
                 };
             } else {
-                // MantÃ©m lÃ³gica antiga para Assinaturas (com campos de compatibilidade)
+                // Mantém lógica antiga para Assinaturas (com campos de compatibilidade)
                 dataToSave = {
                     ...recurrence,
+                    name: recurrence.name, // Novo campo para compatibilidade 100% Web
                     title: recurrence.name,
                     description: recurrence.name,
                     amount: Number(recurrence.amount),
@@ -2840,21 +2866,24 @@ export const databaseService = {
             if (type === 'reminder') {
                 updateData = {
                     ...data,
+                    name: data.name || data.title || data.description, // Compatibilidade Web
+                    title: data.name || data.title || data.description, // Compatibilidade Web
+                    description: data.name || data.description || data.title, // Web usa description
                     amount: data.amount ? Number(data.amount) : undefined,
-                    description: data.name || data.description, // Web usa description
                     type: data.transactionType || data.type || 'expense', // O campo NATUREZA no Web se chama 'type'
                     isRecurring: data.frequency && data.frequency !== 'once',
                     updatedAt: Timestamp.now()
                 };
 
                 // Remove campos do App que não devem ir no documento base do lembrete (opcional, mas limpo)
-                if (updateData.name) delete updateData.name;
+                // Não deletamos 'name' pois ele é usado para compatibilidade com o Web
                 if (updateData.transactionType) delete updateData.transactionType;
             } else {
                 updateData = {
                     ...data,
-                    title: data.name || data.title,
-                    description: data.name || data.description,
+                    name: data.name || data.title || data.description, // Compatibilidade Web
+                    title: data.name || data.title || data.description,
+                    description: data.name || data.description || data.title,
                     amount: data.amount ? Number(data.amount) : undefined,
                     value: data.amount ? Number(data.amount) : undefined,
                     price: data.amount ? Number(data.amount) : undefined,
@@ -2880,7 +2909,20 @@ export const databaseService = {
                 }
             });
 
-            await updateDoc(docRef, updateData);
+            try {
+                await updateDoc(docRef, updateData);
+            } catch (err: any) {
+                if (err.code === 'not-found' || err.message?.includes('No document to update')) {
+                    // Pode ser uma assinatura legada salva na collection antiga "recurrences"
+                    const legacyDocRef = doc(db, 'users', userId, 'recurrences', recurrenceId);
+                    await deleteDoc(legacyDocRef);
+                    // Migrar para a estrutura nova
+                    await setDoc(docRef, updateData);
+                } else {
+                    throw err;
+                }
+            }
+
             return { success: true };
         } catch (error: any) {
             console.error('[Firebase] Error updating recurrence:', error);
@@ -2903,6 +2945,8 @@ export const databaseService = {
 
                 const newData = {
                     name: item.name,
+                    title: item.name, // Novo campo para compatibilidade
+                    description: item.name, // Novo campo para compatibilidade
                     amount: Number(item.amount),
                     dueDate: item.dueDate,
                     category: item.category || (item.type === 'subscription' ? 'Assinaturas' : 'Lembretes'),
@@ -2952,9 +2996,11 @@ export const databaseService = {
                     const newDocRef = doc(remindersRef);
 
                     await setDoc(newDocRef, {
+                        name: item.name, // Compatibilidade 100% Web
+                        title: item.name, // Compatibilidade 100% Web
+                        description: item.name,
                         amount: Number(item.amount),
                         category: item.category || 'Lembretes',
-                        description: item.name,
                         dueDate: nextDateStr,
                         frequency: item.frequency,
                         isRecurring: true,
@@ -3099,6 +3145,11 @@ export const databaseService = {
             const collectionName = type === 'subscription' ? 'subscriptions' : 'reminders';
             const docRef = doc(db, 'users', userId, collectionName, recurrenceId);
             await deleteDoc(docRef);
+
+            // Tenta deletar também da collection legada "recurrences" caso o item seja muito antigo
+            const legacyDocRef = doc(db, 'users', userId, 'recurrences', recurrenceId);
+            await deleteDoc(legacyDocRef);
+
             return { success: true };
         } catch (error: any) {
             console.error('[Firebase] Error deleting recurrence:', error);
@@ -3136,6 +3187,21 @@ export const databaseService = {
     // Get investments
     getInvestments: async (userId: string) => {
         try {
+            // AUTO-MIGRATION: Check existing accounts for SAVINGS not yet in investments
+            try {
+                const accountsRef = collection(db, 'users', userId, 'accounts');
+                const accountsSnap = await getDocs(accountsRef);
+                const savingsAccounts = accountsSnap.docs
+                    .map(d => ({id: d.id, ...d.data()}))
+                    .filter((a: any) => a.subtype === 'SAVINGS' || a.subtype === 'SAVINGS_ACCOUNT' || a.type === 'SAVINGS');
+                
+                for (const acc of savingsAccounts) {
+                    await databaseService.syncSavingsAccountAsInvestment(userId, acc);
+                }
+            } catch (migrationError) {
+                console.warn('[Firebase] Migration check failed, ignoring:', migrationError);
+            }
+
             const investmentsRef = collection(db, 'users', userId, 'investments');
             const q = query(investmentsRef, orderBy('createdAt', 'desc'));
             const snapshot = await getDocs(q);
@@ -3691,7 +3757,7 @@ export const databaseService = {
         });
 
         // Listener para accounts (buscar contas poupança)
-        const qSavings = query(accountsRef, where('subtype', '==', 'SAVINGS_ACCOUNT'));
+        const qSavings = query(accountsRef, where('subtype', 'in', ['SAVINGS', 'SAVINGS_ACCOUNT']));
         const unsubSavings = onSnapshot(qSavings, (snapshot) => {
             // Deduplicate by document id - keep only one per id
             const accountsMap = new Map<string, any>();
@@ -3727,24 +3793,12 @@ export const databaseService = {
         let manualItems: any[] = [];
         let subItems: any[] = [];
         let remItems: any[] = [];
-        let autoItems: any[] = [];
-        let isAutoLoaded = false;
 
         const notify = () => {
-            // Combine unique items
-            const allItems = [...manualItems, ...subItems, ...remItems, ...autoItems];
+            // Combine all real-time items (no stale autoItems that would prevent deletions from reflecting)
+            const allItems = [...manualItems, ...subItems, ...remItems];
             callback(allItems);
         };
-
-        // Fetch auto-detected items once
-        databaseService.getRecurrences(userId).then(result => {
-            if (result.success && result.data) {
-                // Filter items that are Auto or Bill
-                autoItems = (result.data as any[]).filter(i => i.isAuto || i.isBill);
-                isAutoLoaded = true;
-                notify();
-            }
-        });
 
         const unsubRec = onSnapshot(recurrencesRef, (snapshot) => {
             manualItems = snapshot.docs.map(doc => {
@@ -3761,7 +3815,12 @@ export const databaseService = {
         const unsubSub = onSnapshot(subscriptionsRef, (snapshot) => {
             subItems = snapshot.docs.map(doc => {
                 const data = doc.data();
-                const rawDate = data.dueDate || data.date || data.nextPaymentDate || new Date().toISOString();
+                const rawDateVal = data.dueDate || data.date || data.nextPaymentDate || new Date().toISOString();
+                const rawDate = typeof rawDateVal === 'string' ? rawDateVal
+                    : typeof rawDateVal?.toDate === 'function' ? rawDateVal.toDate().toISOString()
+                    : rawDateVal instanceof Date ? rawDateVal.toISOString()
+                    : (typeof rawDateVal === 'object' && rawDateVal?.seconds != null) ? new Date(rawDateVal.seconds * 1000).toISOString()
+                    : new Date().toISOString();
 
                 // Allow RecurrenceView to handle projection logic based on frequency
                 // We just pass the raw source of truth from DB
@@ -3786,7 +3845,12 @@ export const databaseService = {
         const unsubRem = onSnapshot(remindersRef, (snapshot) => {
             remItems = snapshot.docs.map(doc => {
                 const data = doc.data();
-                const rawDate = data.dueDate || data.date || new Date().toISOString();
+                const rawDateVal2 = data.dueDate || data.date || new Date().toISOString();
+                const rawDate = typeof rawDateVal2 === 'string' ? rawDateVal2
+                    : typeof rawDateVal2?.toDate === 'function' ? rawDateVal2.toDate().toISOString()
+                    : rawDateVal2 instanceof Date ? rawDateVal2.toISOString()
+                    : (typeof rawDateVal2 === 'object' && rawDateVal2?.seconds != null) ? new Date(rawDateVal2.seconds * 1000).toISOString()
+                    : new Date().toISOString();
 
                 // Logic updated to trust DB date (Simplified Flow)
                 // No more smart projection to current month for reminders

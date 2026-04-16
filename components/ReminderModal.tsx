@@ -23,13 +23,13 @@ interface ReminderModalProps {
 }
 
 export function ReminderModal({ visible, onClose, onSave, title, initialData, mode = 'reminders' }: ReminderModalProps) {
-    const { categories: categoryGroups } = useCategories();
+    const { categories: categoryGroups, getCategoryName } = useCategories();
     const [titleInput, setTitle] = useState('');
     const [amountStr, setAmountStr] = useState('');
     const [dateStr, setDateStr] = useState('');
     const [isYearly, setIsYearly] = useState(false);
     const [type, setType] = useState<'income' | 'expense'>('expense');
-    const [category, setCategory] = useState('Outros');
+    const [category, setCategory] = useState('');
     const [showCategoryPicker, setShowCategoryPicker] = useState(false);
     const [categorySearch, setCategorySearch] = useState('');
 
@@ -70,14 +70,14 @@ export function ReminderModal({ visible, onClose, onSave, title, initialData, mo
                 setIsYearly(initialData.frequency === 'yearly');
                 // Assume default expense if not provided in initialData
                 setType(initialData.transactionType || 'expense');
-                setCategory(initialData.category || 'Outros');
+                setCategory(initialData.category || '');
             } else {
                 setTitle('');
                 setAmountStr('');
                 setDateStr('');
                 setIsYearly(false);
                 setType('expense');
-                setCategory('Outros');
+                setCategory('');
             }
 
             // Set default date for new subscriptions if the field will be hidden
@@ -297,7 +297,7 @@ export function ReminderModal({ visible, onClose, onSave, title, initialData, mo
                                     <Text style={styles.itemTitle}>Categoria</Text>
                                     <TouchableOpacity onPress={() => setShowCategoryPicker(!showCategoryPicker)}>
                                         <Text style={[styles.inputRight, { color: '#D97757', fontWeight: '600' }]}>
-                                            {category}
+                                            {getCategoryName(category)}
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
@@ -330,16 +330,16 @@ export function ReminderModal({ visible, onClose, onSave, title, initialData, mo
                                             key={cat.key}
                                             style={[
                                                 styles.categoryChip,
-                                                category === cat.label && styles.categoryChipSelected
+                                                category === cat.key && styles.categoryChipSelected
                                             ]}
                                             onPress={() => {
-                                                setCategory(cat.label);
+                                                setCategory(cat.key);
                                                 setShowCategoryPicker(false);
                                             }}
                                         >
                                             <Text style={[
                                                 styles.categoryChipText,
-                                                category === cat.label && styles.categoryChipTextSelected
+                                                category === cat.key && styles.categoryChipTextSelected
                                             ]}>
                                                 {cat.label}
                                             </Text>

@@ -1187,23 +1187,23 @@ export default function OpenFinanceScreen() {
         accounts.forEach(acc => {
             // Verifica se é Conta Corrente
             const isChecking = acc.type === 'BANK' || acc.subtype === 'CHECKING_ACCOUNT';
-            
-            if (isChecking && acc.number) {
-                 const connectorId = acc.connector?.id || acc.connectorId || 'unknown';
-                 // Usa os últimos 4 dígitos pois o usuário mencionou "mesmo final"
-                 const cleanNumber = String(acc.number).replace(/\D/g, '');
-                 const last4 = cleanNumber.slice(-4);
-                 
-                 // Se não tiver número válido, trata como único
-                 if (!last4) {
-                     otherAccounts.push(acc);
-                     return;
-                 }
 
-                 const key = `${connectorId}-${last4}`;
-                 
-                 if (!checkingGroups[key]) checkingGroups[key] = [];
-                 checkingGroups[key].push(acc);
+            if (isChecking && acc.number) {
+                const connectorId = acc.connector?.id || acc.connectorId || 'unknown';
+                // Usa os últimos 4 dígitos pois o usuário mencionou "mesmo final"
+                const cleanNumber = String(acc.number).replace(/\D/g, '');
+                const last4 = cleanNumber.slice(-4);
+
+                // Se não tiver número válido, trata como único
+                if (!last4) {
+                    otherAccounts.push(acc);
+                    return;
+                }
+
+                const key = `${connectorId}-${last4}`;
+
+                if (!checkingGroups[key]) checkingGroups[key] = [];
+                checkingGroups[key].push(acc);
             } else {
                 otherAccounts.push(acc);
             }
@@ -1211,11 +1211,11 @@ export default function OpenFinanceScreen() {
 
         const bestCheckingAccounts = Object.values(checkingGroups).map(group => {
             if (group.length === 1) return group[0];
-            
+
             // Ordena por magnitude do saldo decrescente para manter a conta com valor
             // Isso resolve o caso "uma zerada e outra com valor"
             group.sort((a, b) => Math.abs(b.balance || 0) - Math.abs(a.balance || 0));
-            
+
             // Retorna a primeira (maior magnitude de saldo)
             return group[0];
         });

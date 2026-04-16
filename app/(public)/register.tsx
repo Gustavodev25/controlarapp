@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Lock, Mail, Phone, User as UserIcon, Eye, EyeOff } from 'lucide-react-native';
+import { ArrowLeft, Lock, Mail, User as UserIcon, Eye, EyeOff } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -19,20 +19,14 @@ export default function RegisterScreen() {
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
-    const [phone, setPhone] = useState('');
     const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [termsAccepted, setTermsAccepted] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     const handleRegister = useCallback(async () => {
-        if (!name || !email || !password || !confirmPassword) {
-            showError('Por favor, preencha todos os campos obrigatórios.');
-            return;
-        }
-
-        if (password !== confirmPassword) {
-            showError('As senhas não coincidem.');
+        if (!name || !email || !password) {
+            showError('Por favor, preencha todos os campos.');
             return;
         }
 
@@ -41,13 +35,22 @@ export default function RegisterScreen() {
             return;
         }
 
+        if (!termsAccepted) {
+            showError('Você precisa aceitar os Termos de Uso para continuar.');
+            return;
+        }
+
         setIsLoading(true);
         try {
-            const result = await signUp(email, password, name, phone);
+            const result = await signUp(email, password, name);
 
             if (result.success) {
                 showToast('Conta criada com sucesso!', 'success');
-                router.replace('/(tabs)/dashboard');
+                if (Platform.OS === 'ios') {
+                    router.replace('/settings/plans');
+                } else {
+                    router.replace('/(tabs)/dashboard');
+                }
             } else {
                 showError(result.error || 'Erro ao criar conta.');
                 setIsLoading(false);
@@ -56,7 +59,7 @@ export default function RegisterScreen() {
             showError('Ocorreu um erro inesperado.');
             setIsLoading(false);
         }
-    }, [name, email, phone, password, confirmPassword, signUp, showError, showToast, router]);
+    }, [name, email, password, termsAccepted, signUp, showError, showToast, router]);
 
     const goBack = () => router.back();
     const togglePasswordVisibility = () => setShowPassword(prev => !prev);
@@ -87,56 +90,70 @@ export default function RegisterScreen() {
                                     <ShiningText text="Controlar+" textStyle={styles.shiningText} />
                                 </View>
                                 <Text style={styles.subtitle}>Comece a organizar sua vida financeira hoje.</Text>
-                                
+
                                 <View style={styles.form}>
-                                    <AuthInput 
-                                        label="Nome Completo" 
-                                        placeholder="Seu nome" 
-                                        icon={UserIcon} 
-                                        value={name} 
-                                        onChangeText={setName} 
+                                    <AuthInput
+                                        label="Nome Completo"
+                                        placeholder="Seu nome"
+                                        icon={UserIcon}
+                                        value={name}
+                                        onChangeText={setName}
                                     />
-                                    <AuthInput 
-                                        label="E-mail" 
-                                        placeholder="seu@email.com" 
-                                        icon={Mail} 
-                                        value={email} 
-                                        onChangeText={setEmail} 
-                                        autoCapitalize="none" 
-                                        keyboardType="email-address" 
+                                    <AuthInput
+                                        label="E-mail"
+                                        placeholder="seu@email.com"
+                                        icon={Mail}
+                                        value={email}
+                                        onChangeText={setEmail}
+                                        autoCapitalize="none"
+                                        keyboardType="email-address"
                                     />
-                                    <AuthInput 
-                                        label="Telefone (Opcional)" 
-                                        placeholder="(00) 00000-0000" 
-                                        icon={Phone} 
-                                        value={phone} 
-                                        onChangeText={setPhone} 
-                                        keyboardType="phone-pad" 
-                                    />
-                                    <AuthInput 
-                                        label="Senha" 
-                                        placeholder="••••••••" 
-                                        icon={Lock} 
-                                        value={password} 
-                                        onChangeText={setPassword} 
-                                        secureTextEntry={!showPassword} 
+                                    <AuthInput
+                                        label="Senha"
+                                        placeholder="Mínimo 6 caracteres"
+                                        icon={Lock}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry={!showPassword}
                                         rightIcon={
                                             <TouchableOpacity onPress={togglePasswordVisibility}>
                                                 {showPassword ? <EyeOff size={20} color="#9ca3af" /> : <Eye size={20} color="#9ca3af" />}
                                             </TouchableOpacity>
-                                        } 
+                                        }
                                     />
-                                    <AuthInput 
-                                        label="Confirmar Senha" 
-                                        placeholder="••••••••" 
-                                        icon={Lock} 
-                                        value={confirmPassword} 
-                                        onChangeText={setConfirmPassword} 
-                                        secureTextEntry={!showPassword} 
+
+                                    {/* Terms of Use */}
+                                    <TouchableOpacity
+                                        style={styles.termsRow}
+                                        onPress={() => setTermsAccepted(prev => !prev)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+                                            {termsAccepted && <Text style={styles.checkmark}>✓</Text>}
+                                        </View>
+                                        <Text style={styles.termsText}>
+                                            Eu li e concordo com os{' '}
+                                            <Text style={styles.termsLink}>Termos de Uso</Text>
+                                            {' '}e a{' '}
+                                            <Text style={styles.termsLink}>Política de Privacidade</Text>
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    {Platform.OS === 'ios' && (
+                                        <View style={styles.iosNote}>
+                                            <Text style={styles.iosNoteText}>
+                                                Após o cadastro, você será direcionado para escolher seu plano via Apple Pay.
+                                            </Text>
+                                        </View>
+                                    )}
+
+                                    <AuthButton
+                                        title={Platform.OS === 'ios' ? 'Continuar para o Plano' : 'Criar Conta'}
+                                        onPress={handleRegister}
+                                        isLoading={isLoading}
+                                        style={styles.button}
                                     />
-                                    
-                                    <AuthButton title="Criar Conta" onPress={handleRegister} isLoading={isLoading} style={styles.button} />
-                                    
+
                                     <TouchableOpacity onPress={goBack} style={styles.loginLink}>
                                         <Text style={styles.loginLinkText}>Já tem uma conta? <Text style={styles.loginLinkHighlight}>Entrar</Text></Text>
                                     </TouchableOpacity>
@@ -170,4 +187,37 @@ const styles = StyleSheet.create({
     loginLink: { marginTop: 24, alignItems: 'center' },
     loginLinkText: { color: '#9ca3af', fontSize: 14 },
     loginLinkHighlight: { color: '#d97757', fontWeight: 'bold' },
+
+    // Terms
+    termsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 8 },
+    checkbox: {
+        width: 20,
+        height: 20,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: '#4b5563',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        marginTop: 1,
+    },
+    checkboxChecked: {
+        backgroundColor: '#d97757',
+        borderColor: '#d97757',
+    },
+    checkmark: { fontSize: 12, color: '#fff', fontWeight: 'bold' },
+    termsText: { flex: 1, fontSize: 13, color: '#9ca3af', lineHeight: 20 },
+    termsLink: { color: '#d97757', fontWeight: '600' },
+
+    // iOS note
+    iosNote: {
+        backgroundColor: 'rgba(217, 119, 87, 0.1)',
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginTop: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(217, 119, 87, 0.2)',
+    },
+    iosNoteText: { fontSize: 13, color: '#d97757', textAlign: 'center', lineHeight: 18 },
 });

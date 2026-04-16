@@ -7,7 +7,7 @@ import { CreditCardInvoice } from '@/components/CreditCardInvoice';
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { db } from '@/services/firebase';
-import { CreditCardAccount, Transaction } from '@/services/invoiceBuilder';
+import { CreditCardAccount, normalizePluggyDate, Transaction } from '@/services/invoiceBuilder';
 import { queryCache } from '@/services/queryCache';
 import { useRouter } from 'expo-router';
 import {
@@ -65,7 +65,7 @@ function mapCreditTransaction(doc: QueryDocumentSnapshot<DocumentData>): Transac
         id: doc.id,
         description: data.description || '',
         amount: Math.abs(data.amount || 0),
-        date: data.date || '',
+        date: normalizePluggyDate(data.date) || '',
         type: normalizeCreditTransactionType(data),
         category: data.category || null,
         cardId: txCardId,
@@ -77,7 +77,12 @@ function mapCreditTransaction(doc: QueryDocumentSnapshot<DocumentData>): Transac
         pluggyRaw: data.pluggyRaw ?? undefined,
         invoiceMonthKey: data.invoiceMonthKey || null,
         invoiceMonthKeyManual: data.invoiceMonthKeyManual === true,
-        manualInvoiceMonth: typeof data.manualInvoiceMonth === 'string' ? data.manualInvoiceMonth : undefined
+        manualInvoiceMonth: typeof data.manualInvoiceMonth === 'string' ? data.manualInvoiceMonth : undefined,
+        creditCardMetadata: data.creditCardMetadata ? {
+            billId: data.creditCardMetadata.billId ?? null,
+            installmentNumber: data.creditCardMetadata.installmentNumber ?? null,
+            totalInstallments: data.creditCardMetadata.totalInstallments ?? null,
+        } : undefined
     } as Transaction;
 }
 
@@ -261,8 +266,8 @@ export default function InvoicesScreen() {
                     availableCreditLimit: data.availableCreditLimit || data.creditData?.availableCreditLimit || null,
                     balance: data.balance || null,
                     connector: data.connector || null,
-                    balanceCloseDate: data.balanceCloseDate || data.creditData?.balanceCloseDate || null,
-                    balanceDueDate: data.balanceDueDate || data.creditData?.balanceDueDate || null,
+                    balanceCloseDate: normalizePluggyDate(data.balanceCloseDate || data.creditData?.balanceCloseDate) || null,
+                    balanceDueDate: normalizePluggyDate(data.balanceDueDate || data.creditData?.balanceDueDate) || null,
                     currentBill: data.currentBill || null,
                     bills: data.bills || null,
                     closingDateSettings: data.closingDateSettings || null
