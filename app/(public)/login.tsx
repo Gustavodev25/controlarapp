@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { UniversalBackground } from '@/components/UniversalBackground';
 import { AuthButton } from '@/components/ui/AuthButton';
@@ -10,7 +10,7 @@ import { ShiningText } from '@/components/ui/ShiningText';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 
-const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
+const KEYBOARD_BEHAVIOR = Platform.select({ ios: 'padding', android: 'height' });
 
 export default function LoginScreen() {
     const router = useRouter();
@@ -21,6 +21,14 @@ export default function LoginScreen() {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
+    const handleNewAccount = useCallback(() => {
+        if (Platform.OS === 'android') {
+            Linking.openURL('https://www.controlarmais.com.br/');
+        } else {
+            router.push('/(public)/register');
+        }
+    }, [router]);
 
 
 
@@ -50,8 +58,17 @@ export default function LoginScreen() {
 
     return (
         <UniversalBackground>
-            <KeyboardAvoidingView behavior={KEYBOARD_BEHAVIOR} style={styles.keyboardView}>
-                <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <KeyboardAvoidingView
+                behavior={KEYBOARD_BEHAVIOR}
+                style={styles.keyboardView}
+                keyboardVerticalOffset={0}
+            >
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    bounces={false}
+                >
 
                     {/* Header */}
                     <View style={styles.header}>
@@ -59,6 +76,11 @@ export default function LoginScreen() {
                             <ArrowLeft size={20} color="#faf9f5" />
                         </TouchableOpacity>
 
+                        <TouchableOpacity onPress={handleNewAccount} style={styles.registerLink}>
+                            <Text style={styles.registerLinkText}>
+                                {Platform.OS === 'android' ? 'Assinar no site' : 'Novo no Controlar?'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
 
                     <View style={styles.spacer} />
@@ -81,32 +103,7 @@ export default function LoginScreen() {
                                     <View>
                                         <AuthInput label="Senha" placeholder="••••••••" icon={Lock} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} rightIcon={<TouchableOpacity onPress={togglePasswordVisibility}>{showPassword ? <EyeOff size={20} color="#9ca3af" /> : <Eye size={20} color="#9ca3af" />}</TouchableOpacity>} />
                                     </View>
-                                    <AuthButton title="Entrar" onPress={handleLogin} isLoading={isLoading} style={styles.button} />
-                                </View>
-
-                                {/* Divider */}
-                                <View style={styles.divider}>
-                                    <View style={styles.dividerLine} />
-                                    <Text style={styles.dividerText}>ou</Text>
-                                    <View style={styles.dividerLine} />
-                                </View>
-
-                                {/* Create account section */}
-                                <View style={styles.createAccountCard}>
-                                    <View style={styles.createAccountHeader}>
-                                        <Sparkles size={16} color="#d97757" />
-                                        <Text style={styles.createAccountTitle}>Novo no Controlar+?</Text>
-                                    </View>
-                                    <Text style={styles.createAccountNote}>
-                                        Para criar sua conta é necessário assinar um plano.{Platform.OS === 'ios' ? ' O pagamento é feito via Apple Pay.' : ''}
-                                    </Text>
-                                    <TouchableOpacity
-                                        style={styles.createAccountButton}
-                                        onPress={() => router.push('/(public)/register')}
-                                        activeOpacity={0.8}
-                                    >
-                                        <Text style={styles.createAccountButtonText}>Criar conta e assinar</Text>
-                                    </TouchableOpacity>
+                                     <AuthButton title="Entrar" onPress={handleLogin} isLoading={isLoading} style={styles.button} />
                                 </View>
                             </View>
                         </View>
@@ -121,16 +118,29 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#0C0C0C' },
     keyboardView: { flex: 1 },
     scrollContent: { flexGrow: 1 },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 50, paddingHorizontal: 24, zIndex: 10 },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingTop: Platform.OS === 'ios' ? 60 : 50,
+        paddingHorizontal: 24,
+        zIndex: 10
+    },
+    backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'flex-start' },
+    registerLink: { paddingVertical: 8, paddingHorizontal: 4 },
+    registerLinkText: { fontSize: 13, color: '#9ca3af', fontWeight: '500' },
+    spacer: { flex: 1, minHeight: 20 },
 
-    backButton: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
-    spacer: { flex: 1 },
 
 
-
-    cardContainer: { position: 'relative', marginBottom: -100, paddingBottom: 100 },
-    card: { backgroundColor: '#141414', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
-    cardContent: { padding: 24, paddingBottom: 32 },
+    cardContainer: { width: '100%' },
+    card: {
+        backgroundColor: '#141414',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        paddingBottom: 40,
+    },
+    cardContent: { padding: 24 },
     titleContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
     title: { fontSize: 26, fontWeight: 'bold', color: '#faf9f5' },
     shiningText: { fontSize: 26, fontWeight: 'bold', color: '#d97757' },
@@ -138,32 +148,4 @@ const styles = StyleSheet.create({
 
     form: { gap: 8 },
     button: { marginTop: 6 },
-
-    // Divider
-    divider: { flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 16, gap: 12 },
-    dividerLine: { flex: 1, height: 1, backgroundColor: '#2a2a2a' },
-    dividerText: { fontSize: 13, color: '#4b5563' },
-
-    // Create account
-    createAccountCard: {
-        backgroundColor: '#1a1a1a',
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: '#2a2a2a',
-        marginBottom: 8,
-    },
-    createAccountHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-    createAccountTitle: { fontSize: 15, fontWeight: '700', color: '#faf9f5' },
-    createAccountNote: { fontSize: 13, color: '#9ca3af', lineHeight: 18, marginBottom: 14 },
-    createAccountButton: {
-        backgroundColor: 'transparent',
-        borderRadius: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        alignItems: 'center',
-        borderWidth: 1.5,
-        borderColor: '#d97757',
-    },
-    createAccountButtonText: { fontSize: 15, fontWeight: '700', color: '#d97757' },
 });
