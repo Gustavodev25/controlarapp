@@ -1,18 +1,26 @@
 import { useAuthContext } from '@/contexts/AuthContext';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
-import { Alert, Linking, Platform } from 'react-native';
 
 const ACTIVE_PRO_STATUSES = new Set(['active', 'trialing']);
 
+/**
+ * SubscriptionBlocker — Redirects non-Pro users to the subscription screen
+ * instead of signing them out. Users can switch accounts from there.
+ */
 export function SubscriptionBlocker({ children }: { children: React.ReactNode }) {
-    const { profile, isLoading, isAuthenticated, signOut } = useAuthContext();
+    const { profile, isLoading, isAuthenticated } = useAuthContext();
     const router = useRouter();
     const pathname = usePathname();
-    const blockingRef = useRef(false);
+    const hasRedirectedRef = useRef(false);
 
     useEffect(() => {
-        if (isLoading || !isAuthenticated) return;
+        if (isLoading || !isAuthenticated) {
+            hasRedirectedRef.current = false;
+            return;
+        }
+
+        // Admins always have access
         if (profile?.isAdmin) return;
 
         const plan = String(profile?.subscription?.plan || '').trim().toLowerCase();
@@ -20,30 +28,21 @@ export function SubscriptionBlocker({ children }: { children: React.ReactNode })
         const isPro = (plan === 'pro' || plan === 'premium') && ACTIVE_PRO_STATUSES.has(status);
 
         if (isPro) {
-            blockingRef.current = false;
+            hasRedirectedRef.current = false;
             return;
         }
 
-        if (blockingRef.current) return;
-        blockingRef.current = true;
-
-        if (Platform.OS === 'android') {
-            signOut();
-            Alert.alert(
-                'Assinatura necessária',
-                'Para acessar o Controlar+, assine em nosso site.',
-                [
-                    {
-                        text: 'Assinar agora',
-                        onPress: () => Linking.openURL('https://www.controlarmais.com.br/'),
-                    },
-                    { text: 'OK', style: 'cancel' },
-                ]
-            );
-        } else {
-            if (pathname.includes('plans')) return;
-            router.replace('/settings/plans?forced=true');
+        // Already on subscription/plans pages — don't redirect
+        if (pathname.includes('subscription') || pathname.includes('plans') || pathname.includes('login') || pathname.includes('register') || pathname.includes('welcome')) {
+            return;
         }
+
+        // Prevent multiple redirects
+        if (hasRedirectedRef.current) return;
+        hasRedirectedRef.current = true;
+
+        // Redirect to subscription page (user stays logged in)
+        router.replace('/settings/subscription');
     }, [profile, isLoading, isAuthenticated, pathname]);
 
     return <>{children}</>;

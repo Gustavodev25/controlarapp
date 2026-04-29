@@ -194,7 +194,7 @@ async function main() {
         // 3. Iniciar o Expo com a URL do tunnel
         log('expo', colors.green, 'Iniciando Expo Metro Bundler...');
 
-        const expoProc = spawnProcess('npx', ['expo', 'start', '--lan', '--port', String(METRO_PORT)], {
+        const expoProc = spawnProcess('npx', ['expo', 'start', '--localhost', '--port', String(METRO_PORT)], {
             cwd: process.cwd(),
             env: {
                 ...process.env,

@@ -2,18 +2,26 @@ import { UniversalBackground } from '@/components/UniversalBackground';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
     checkProStatus,
-    createSubscription,
+    finishTransaction,
     getProOffering,
+    initializePurchases,
+    PRO_PRODUCT_ID,
+    PRO_PRICE_STRING,
+    purchaseErrorListener,
+    purchaseProSubscription,
+    purchaseUpdatedListener,
     restorePurchases,
-    setupStripePayment,
+    validateReceiptWithBackend,
+    type PurchaseError,
+    type SubscriptionPurchase,
 } from '@/services/iapService';
-import { useRouter } from 'expo-router';
-import { Check, RefreshCw, Shield, X } from 'lucide-react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Check, LogOut, RefreshCw, Shield, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Linking,
+    BackHandler,
     Platform,
     ScrollView,
     StatusBar,
@@ -22,7 +30,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { useStripe } from '@stripe/stripe-react-native';
 import Animated, {
     Easing,
     useAnimatedStyle,
@@ -32,47 +39,21 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-interface Plan {
-    id: 'starter' | 'pro';
-    name: string;
-    price: number;
-    annualPrice: number;
-    description: string;
-    features: string[];
-    buttonText: string;
-    popular: boolean;
-}
-
-const proPlan: Plan = {
-    id: 'pro',
-    name: 'Pro',
-    price: 35.90,
-    annualPrice: 399.00,
-    description: 'Todos os recursos avançados agora acessíveis.',
-    features: [
-        'Tudo do Gratuito',
-        'Open Finance ilimitado',
-        'Aurora IA ilimitada',
-        'Consultor IA completo',
-        'Módulo FIRE',
-        'Relatórios avançados'
-    ],
-    buttonText: '',
-    popular: true
-};
-
 export default function PlansScreen() {
     const router = useRouter();
+    const { forced } = useLocalSearchParams();
+    const isForced = forced === 'true';
     const insets = useSafeAreaInsets();
-    const { user, profile, refreshProfile } = useAuthContext();
-    const { initPaymentSheet, presentPaymentSheet } = useStripe();
+    const { user, profile, refreshProfile, signOut } = useAuthContext();
 
-    // ---------------------------------------------------------------------------
-    // State
-    // ---------------------------------------------------------------------------
+    const handleSwitchAccount = async () => {
+        await signOut();
+        router.replace('/(public)/login');
+    };
+
     const [iapLoading, setIapLoading] = useState(false);
     const [restoring, setRestoring] = useState(false);
-    const [priceString, setPriceString] = useState('R$ 35,90');
+    const [priceString, setPriceString] = useState(PRO_PRICE_STRING);
     const [iapReady, setIapReady] = useState(false);
     const [alreadyPro, setAlreadyPro] = useState(false);
 
@@ -83,19 +64,17 @@ export default function PlansScreen() {
         (currentPlan === 'pro' || currentPlan === 'premium') &&
         (currentStatus === 'active' || currentStatus === 'trialing');
 
-    // Verifica status ao abrir a tela
+    // Verifica status e inicializa StoreKit ao abrir
     useEffect(() => {
         if (!user?.uid) return;
-
         let cancelled = false;
 
         const setup = async () => {
-            // Verifica se já tem Pro ativo
+            await initializePurchases(user.uid);
             const proActive = await checkProStatus(user.uid);
             if (cancelled) return;
             setAlreadyPro(proActive);
 
-            // Carrega preço
             const { priceString: price } = await getProOffering();
             if (cancelled) return;
             setPriceString(price);
@@ -106,163 +85,103 @@ export default function PlansScreen() {
         return () => { cancelled = true; };
     }, [user?.uid]);
 
+    // Listeners nativos do StoreKit
+    useEffect(() => {
+        if (!isIOS) return;
+
+        const purchaseSub = purchaseUpdatedListener(async (purchase: SubscriptionPurchase) => {
+            if (purchase.productId !== PRO_PRODUCT_ID) return;
+            const receiptData = purchase.transactionReceipt;
+            if (!receiptData || !user?.uid) return;
+
+            setIapLoading(true);
+            try {
+                const result = await validateReceiptWithBackend(user.uid, receiptData);
+                await finishTransaction({ purchase, isConsumable: false });
+
+                if (result.success) {
+                    await refreshProfile();
+                    Alert.alert(
+                        'Bem-vindo ao Pro!',
+                        'Sua assinatura foi ativada com sucesso. Aproveite todos os recursos ilimitados.',
+                        [{ text: 'Continuar', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : router.back() }]
+                    );
+                } else {
+                    Alert.alert(
+                        'Falha na ativação',
+                        result.error ?? 'Não foi possível ativar a assinatura. Tente novamente.',
+                        [{ text: 'OK' }]
+                    );
+                }
+            } finally {
+                setIapLoading(false);
+            }
+        });
+
+        const errorSub = purchaseErrorListener((error: PurchaseError) => {
+            if ((error as any).code === 'E_USER_CANCELLED') {
+                setIapLoading(false);
+                return;
+            }
+            setIapLoading(false);
+            Alert.alert('Erro no pagamento', error.message || 'Não foi possível processar o pagamento.');
+        });
+
+        return () => {
+            purchaseSub.remove();
+            errorSub.remove();
+        };
+    }, [user?.uid, isForced]);
+
+    // Bloqueia botão voltar no Android se forçado
+    useEffect(() => {
+        if (!isForced) return;
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => true);
+        return () => backHandler.remove();
+    }, [isForced]);
+
     // ---------------------------------------------------------------------------
     // Handlers
     // ---------------------------------------------------------------------------
 
     const handlePurchase = async () => {
         if (!user?.uid || !user?.email) {
-            Alert.alert(
-                'Autenticação necessária',
-                'Faça login para assinar o plano Pro.',
-                [{ text: 'OK' }]
-            );
+            Alert.alert('Autenticação necessária', 'Faça login para assinar o plano Pro.', [{ text: 'OK' }]);
             return;
         }
 
         setIapLoading(true);
         try {
-            // 1. Faz setup no backend (cria customer + setup intent)
-            const setupResult = await setupStripePayment(
-                user.uid,
-                user.email,
-                profile?.name
-            );
-
-            if (!setupResult.success || !setupResult.publishableKey) {
-                Alert.alert(
-                    'Erro',
-                    setupResult.error || 'Não foi possível configurar o pagamento.',
-                    [{ text: 'OK' }]
-                );
+            await purchaseProSubscription();
+            // Resultado chega via purchaseUpdatedListener acima
+        } catch (e: any) {
+            if (e?.code === 'E_USER_CANCELLED') {
+                setIapLoading(false);
                 return;
             }
-
-            // 2. Inicializa e apresenta o Stripe Payment Sheet (via useStripe hook)
-
-            // Inicializa Payment Sheet
-            const { error: initError } = await initPaymentSheet({
-                merchantDisplayName: 'Controlar+',
-                customerId: setupResult.customerId,
-                customerEphemeralKeySecret: setupResult.ephemeralKey,
-                setupIntentClientSecret: setupResult.setupIntentClientSecret,
-                applePay: {
-                    merchantCountryCode: 'BR',
-                    paymentSummaryItems: [
-                        {
-                            label: 'Controlar+ Pro - Mensal',
-                            amount: '35.90',
-                            type: 'final',
-                        },
-                    ],
-                },
-                googlePay: {
-                    merchantCountryCode: 'BR',
-                    testEnv: false,
-                },
-                style: 'alwaysDark',
-                returnURL: 'controlarapp://stripe-redirect',
-            });
-
-            if (initError) {
-                console.error('[IAP] Erro ao inicializar Payment Sheet:', initError);
-                Alert.alert(
-                    'Erro no pagamento',
-                    initError.message || 'Não foi possível abrir a tela de pagamento.',
-                    [{ text: 'OK' }]
-                );
-                return;
-            }
-
-            // Apresenta Payment Sheet
-            const { error: presentError } = await presentPaymentSheet();
-
-            if (presentError) {
-                if (presentError.code === 'Canceled') {
-                    // Usuário cancelou
-                    return;
-                }
-                Alert.alert(
-                    'Erro no pagamento',
-                    presentError.message || 'Não foi possível processar o pagamento.',
-                    [{ text: 'OK' }]
-                );
-                return;
-            }
-
-            // 3. Payment Sheet confirmado — busca o payment method criado e cria a subscription
-            // O setupIntent confirmado dá acesso ao payment method via backend
-            // Precisamos buscar o setupIntent para obter o paymentMethodId
-            const setupIntentId = setupResult.setupIntentClientSecret?.split('_secret_')[0];
-
-            if (!setupIntentId) {
-                Alert.alert('Erro', 'Falha ao obter dados do pagamento.', [{ text: 'OK' }]);
-                return;
-            }
-
-            // Busca payment method ID via config endpoint (ou usa o que temos)
-            // O backend pode recuperar do setupIntent
-            const subscriptionResult = await createSubscription(
-                user.uid,
-                user.email,
-                setupIntentId, // Backend resolverá o paymentMethodId do setupIntent
-                profile?.name
-            );
-
-            if (subscriptionResult.alreadyActive) {
-                await refreshProfile();
-                Alert.alert(
-                    'Plano já ativo! ✅',
-                    'Você já possui uma assinatura Pro ativa.',
-                    [{ text: 'OK', onPress: () => router.back() }]
-                );
-                return;
-            }
-
-            if (subscriptionResult.success) {
-                await refreshProfile();
-                Alert.alert(
-                    'Bem-vindo ao Pro! 🎉',
-                    'Sua assinatura foi ativada com sucesso. Aproveite todos os recursos ilimitados.',
-                    [{ text: 'Continuar', onPress: () => router.back() }]
-                );
-            } else {
-                Alert.alert(
-                    'Falha na assinatura',
-                    subscriptionResult.error ?? 'Não foi possível ativar a assinatura. Tente novamente.',
-                    [{ text: 'OK' }]
-                );
-            }
-        } catch (error: any) {
-            console.error('[IAP] Erro geral na compra:', error);
-            Alert.alert(
-                'Erro',
-                'Ocorreu um erro inesperado. Tente novamente.',
-                [{ text: 'OK' }]
-            );
-        } finally {
             setIapLoading(false);
+            Alert.alert('Erro', e?.message || 'Ocorreu um erro inesperado. Tente novamente.');
         }
     };
 
     const handleRestore = async () => {
-        if (!user?.uid || !user?.email) return;
+        if (!user?.uid) return;
 
         setRestoring(true);
         try {
-            const result = await restorePurchases(user.uid, user.email);
+            const result = await restorePurchases(user.uid);
 
             if (result.hasPro) {
                 await refreshProfile();
                 Alert.alert(
                     'Compra restaurada!',
                     'Sua assinatura Pro foi restaurada com sucesso.',
-                    [{ text: 'OK', onPress: () => router.back() }]
+                    [{ text: 'OK', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : router.back() }]
                 );
             } else {
                 Alert.alert(
                     'Nenhuma compra encontrada',
-                    'Não encontramos uma assinatura Pro ativa vinculada a este email.',
+                    'Não encontramos uma assinatura Pro ativa vinculada a este Apple ID.',
                     [{ text: 'OK' }]
                 );
             }
@@ -331,16 +250,32 @@ export default function PlansScreen() {
                 />
             </View>
 
-            {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity
-                    style={styles.closeButton}
-                    onPress={() => router.back()}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <X size={24} color="#8E8E93" />
-                </TouchableOpacity>
+                {isForced ? (
+                    <TouchableOpacity
+                        style={styles.closeButton}
+                        onPress={handleSwitchAccount}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <LogOut size={20} color="#8E8E93" />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={{ width: 40 }} />
+                )}
+                <Text style={styles.headerTitle}>Meu plano</Text>
+                {!isForced ? (
+                    <TouchableOpacity
+                        style={styles.closeButton}
+                        onPress={() => router.back()}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <X size={24} color="#8E8E93" />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={{ width: 40 }} />
+                )}
             </View>
 
             <ScrollView
@@ -350,9 +285,9 @@ export default function PlansScreen() {
             >
                 {/* Hero */}
                 <Animated.View style={[styles.heroSection, heroStyle]}>
-                    <Text style={styles.heroTitle}>Conheça o Plano{"\n"}Pro</Text>
+                    <Text style={styles.heroTitle}>Conheça o Plano Pro</Text>
                     <Text style={styles.heroDescription}>
-                        Veja todos os recursos disponíveis no plano Pro.
+                        Recursos avançados para sua gestão financeira.
                     </Text>
                 </Animated.View>
 
@@ -360,7 +295,7 @@ export default function PlansScreen() {
                 <Animated.View style={[styles.mainCard, mainCardStyle]}>
                     <View style={styles.planInfoRow}>
                         <View>
-                            <Text style={styles.bigPlanName}>{proPlan.name}</Text>
+                            <Text style={styles.bigPlanName}>Pro</Text>
                             <Text style={styles.planSubtitle}>Recursos ilimitados</Text>
                         </View>
 
@@ -371,44 +306,12 @@ export default function PlansScreen() {
                     </View>
                 </Animated.View>
 
-                {/* Features Card */}
-                <Animated.View style={[styles.attachedCard, featuresCardStyle]}>
-                    <Text style={styles.featuresTitle}>O que está incluído:</Text>
-                    <View style={styles.featuresContainer}>
-                        {proPlan.features.map((feature, index) => (
-                            <View key={index} style={styles.featureRow}>
-                                <Check size={16} color="#d97757" />
-                                <Text style={styles.featureText}>{feature}</Text>
-                            </View>
-                        ))}
-                    </View>
-
-                    {/* Apple Pay badge */}
-                    {isIOS && (
-                        <View style={styles.applePayBadge}>
-                            <Text style={styles.applePayText}> Pay disponível</Text>
-                        </View>
-                    )}
-
-                    {!isIOS && (
-                        <View style={styles.infoNote}>
-                            <Text style={styles.infoNoteText}>
-                                Gerencie sua assinatura pelo site controlarmais.com.br
-                            </Text>
-                        </View>
-                    )}
-                </Animated.View>
-
-                {/* Guarantee Card */}
                 <Animated.View style={[styles.guaranteeCard, guaranteeCardStyle]}>
                     <View style={styles.guaranteeRow}>
-                        <Shield size={20} color="#4CAF50" />
-                        <View style={styles.guaranteeContent}>
-                            <Text style={styles.guaranteeTitle}>Garantia de satisfação</Text>
-                            <Text style={styles.guaranteeText}>
-                                Reembolso em até 7 dias úteis, sem perguntas.
-                            </Text>
-                        </View>
+                        <Shield size={16} color="#8E8E93" />
+                        <Text style={styles.guaranteeText}>
+                            7 dias de garantia incondicional
+                        </Text>
                     </View>
                 </Animated.View>
 
@@ -416,7 +319,6 @@ export default function PlansScreen() {
                 {isIOS && (
                     <Animated.View style={[styles.purchaseSection, buttonStyle]}>
                         {isPro || alreadyPro ? (
-                            /* Usuário já tem Pro */
                             <View style={styles.alreadyProBadge}>
                                 <Check size={18} color="#4CAF50" />
                                 <Text style={styles.alreadyProText}>
@@ -425,7 +327,6 @@ export default function PlansScreen() {
                             </View>
                         ) : (
                             <>
-                                {/* Botão principal de compra */}
                                 <TouchableOpacity
                                     style={[
                                         styles.purchaseButton,
@@ -438,18 +339,10 @@ export default function PlansScreen() {
                                     {iapLoading ? (
                                         <ActivityIndicator color="#000" />
                                     ) : (
-                                        <>
-                                            <Text style={styles.purchaseButtonText}>
-                                                Assinar Pro
-                                            </Text>
-                                            <Text style={styles.purchaseButtonPrice}>
-                                                {priceString}/mês • Apple Pay
-                                            </Text>
-                                        </>
+                                        <Text style={styles.purchaseButtonText}>Assinar Pro</Text>
                                     )}
                                 </TouchableOpacity>
 
-                                {/* Restaurar compras */}
                                 <TouchableOpacity
                                     style={styles.restoreButton}
                                     onPress={handleRestore}
@@ -468,10 +361,9 @@ export default function PlansScreen() {
                                     )}
                                 </TouchableOpacity>
 
-                                {/* Termos legais */}
                                 <Text style={styles.legalText}>
-                                    A assinatura é cobrada automaticamente via Stripe. Cancele a qualquer momento
-                                    nas configurações do app ou pelo site.
+                                    A assinatura é renovada automaticamente pela App Store. Cancele a qualquer momento
+                                    nas configurações do iPhone em Ajustes → Apple ID → Assinaturas.
                                 </Text>
                             </>
                         )}
@@ -492,9 +384,14 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'flex-end',
-        paddingHorizontal: 16,
+        justifyContent: 'space-between',
+        paddingHorizontal: 24,
         paddingVertical: 12,
+    },
+    headerTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#FFFFFF',
     },
     closeButton: {
         width: 40,
@@ -510,38 +407,31 @@ const styles = StyleSheet.create({
         paddingBottom: 40,
         paddingTop: 10,
     },
-    // Hero Section
     heroSection: {
         marginBottom: 28,
         paddingHorizontal: 20,
         alignItems: 'center',
     },
     heroTitle: {
-        fontSize: 32,
+        fontSize: 22,
         fontWeight: '700',
         color: '#FFFFFF',
-        marginBottom: 12,
+        marginBottom: 6,
         textAlign: 'center',
-        lineHeight: 40,
     },
     heroDescription: {
-        fontSize: 15,
+        fontSize: 14,
         color: '#8E8E93',
-        lineHeight: 22,
         textAlign: 'center',
+        opacity: 0.8,
     },
-    // Main Card
     mainCard: {
         backgroundColor: '#151515',
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
+        borderRadius: 24,
         padding: 24,
+        marginBottom: 16,
         borderWidth: 1,
-        borderBottomWidth: 0,
         borderColor: '#252525',
-        marginBottom: 0,
     },
     planInfoRow: {
         flexDirection: 'row',
@@ -574,106 +464,26 @@ const styles = StyleSheet.create({
         color: '#666',
         marginTop: 2,
     },
-    // Attached Card
-    attachedCard: {
-        backgroundColor: '#121212',
-        borderTopLeftRadius: 0,
-        borderTopRightRadius: 0,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
-        paddingHorizontal: 24,
-        paddingBottom: 24,
-        paddingTop: 20,
-        borderWidth: 1,
-        borderColor: '#252525',
-        borderTopWidth: 1,
-        borderBottomWidth: 0,
-        marginBottom: 0,
-    },
-    // Guarantee Card
     guaranteeCard: {
-        backgroundColor: '#151515',
-        borderTopLeftRadius: 0,
-        borderTopRightRadius: 0,
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        paddingHorizontal: 24,
-        paddingVertical: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         borderWidth: 1,
-        borderColor: '#252525',
-        borderTopWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
         marginBottom: 24,
+        alignSelf: 'center',
     },
     guaranteeRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
     },
-    guaranteeContent: {
-        flex: 1,
-        flexDirection: 'column',
-    },
-    guaranteeTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#FFFFFF',
-        marginBottom: 4,
-    },
     guaranteeText: {
-        fontSize: 13,
+        fontSize: 12,
         color: '#8E8E93',
+        fontWeight: '500',
     },
-    // Features
-    featuresTitle: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#8E8E93',
-        marginBottom: 16,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    featuresContainer: {
-        marginBottom: 20,
-    },
-    featureRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-        gap: 10,
-    },
-    featureText: {
-        fontSize: 14,
-        color: '#CCC',
-    },
-    infoNote: {
-        backgroundColor: 'rgba(142, 142, 147, 0.1)',
-        borderRadius: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        alignItems: 'center',
-    },
-    infoNoteText: {
-        fontSize: 13,
-        color: '#8E8E93',
-        textAlign: 'center',
-        lineHeight: 18,
-    },
-    // Apple Pay Badge
-    applePayBadge: {
-        backgroundColor: 'rgba(255, 255, 255, 0.06)',
-        borderRadius: 12,
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'center',
-    },
-    applePayText: {
-        fontSize: 14,
-        color: '#FFFFFF',
-        fontWeight: '600',
-    },
-    // Purchase Section
     purchaseSection: {
         marginTop: 8,
         marginBottom: 8,
@@ -696,12 +506,6 @@ const styles = StyleSheet.create({
         color: '#000',
         letterSpacing: -0.3,
     },
-    purchaseButtonPrice: {
-        fontSize: 13,
-        fontWeight: '500',
-        color: 'rgba(0,0,0,0.6)',
-        marginTop: 2,
-    },
     restoreButton: {
         alignItems: 'center',
         paddingVertical: 14,
@@ -722,7 +526,6 @@ const styles = StyleSheet.create({
         lineHeight: 16,
         paddingHorizontal: 8,
     },
-    // Already Pro
     alreadyProBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -737,21 +540,5 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#4CAF50',
-    },
-    securitySection: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 20,
-        marginBottom: 16,
-    },
-    securityBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    securityText: {
-        fontSize: 12,
-        color: '#8E8E93',
     },
 });

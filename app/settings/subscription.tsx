@@ -9,12 +9,14 @@ import {
     AlertTriangle,
     ChevronRight,
     CreditCard,
+    LogOut,
     RefreshCw,
     Zap
 } from 'lucide-react-native';
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    BackHandler,
     Platform,
     RefreshControl,
     ScrollView,
@@ -152,7 +154,7 @@ const getStatusConfig = (status: string) => {
 
 export default function SubscriptionSettingsScreen() {
     const router = useRouter();
-    const { user, profile, refreshProfile } = useAuthContext();
+    const { user, profile, refreshProfile, signOut } = useAuthContext();
     const insets = useSafeAreaInsets();
 
     // State
@@ -219,13 +221,19 @@ export default function SubscriptionSettingsScreen() {
         await loadSubscriptionData();
     };
 
+    // Switch account handler
+    const handleSwitchAccount = async () => {
+        await signOut();
+        router.replace('/(public)/login');
+    };
+
     // Derived values - use profile data as fallback if subscription state is not yet loaded
     const currentSubscription = subscription || profile?.subscription;
     const currentPaymentMethod = paymentMethod || profile?.paymentMethod;
 
     const plan = String(currentSubscription?.plan || 'free').trim().toLowerCase();
     const status = String(currentSubscription?.status || 'free').trim().toLowerCase();
-    const isPro = plan === 'pro' || plan === 'premium';
+    const isPro = (plan === 'pro' || plan === 'premium') && (status === 'active' || status === 'trialing');
     const isTrial = status === 'trial' || status === 'trialing';
     const isCancelled = status === 'cancelled' || status === 'canceled';
     const isExpired = status === 'expired' || status === 'past_due' || status === 'trial_expired';
@@ -237,6 +245,13 @@ export default function SubscriptionSettingsScreen() {
     // - Plano pro/premium com status active = Pro
     const planDisplay = !isPro ? 'Starter' : (isTrial ? 'Grátis' : 'Pro');
     const billingCycle = currentSubscription?.billingCycle || 'monthly';
+
+    // Block Android back button for non-Pro users
+    useEffect(() => {
+        if (isPro) return;
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => true);
+        return () => backHandler.remove();
+    }, [isPro]);
     // Valor padrão do Pro é R$ 35,90
     const priceValue = currentSubscription?.price
         ? formatCurrency(currentSubscription.price)
@@ -285,25 +300,24 @@ export default function SubscriptionSettingsScreen() {
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity
-                    onPress={() => router.back()}
-                    style={styles.backButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <ChevronRight size={24} color="#E0E0E0" style={{ transform: [{ rotate: '180deg' }] }} />
-                </TouchableOpacity>
+                {isPro ? (
+                    <TouchableOpacity
+                        onPress={() => router.back()}
+                        style={styles.backButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <ChevronRight size={24} color="#E0E0E0" style={{ transform: [{ rotate: '180deg' }] }} />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={styles.backButton} />
+                )}
                 <Text style={styles.headerTitle}>Meu Plano</Text>
                 <TouchableOpacity
-                    onPress={onRefresh}
-                    style={styles.refreshButton}
+                    onPress={handleSwitchAccount}
+                    style={styles.switchAccountButton}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    disabled={isRefreshing}
                 >
-                    <RefreshCw
-                        size={20}
-                        color={isRefreshing ? '#666' : '#E0E0E0'}
-                        style={isRefreshing ? { opacity: 0.5 } : undefined}
-                    />
+                    <LogOut size={20} color="#E0E0E0" />
                 </TouchableOpacity>
             </View>
 
@@ -465,27 +479,6 @@ export default function SubscriptionSettingsScreen() {
                     </View>
 
 
-                    {/* CTA UPGRADE — só aparece para usuários no plano gratuito no iOS */}
-                    {!isPro && Platform.OS === 'ios' && (
-                        <>
-                            <SectionHeader title="ASSINAR" />
-                            <TouchableOpacity
-                                style={styles.ctaCard}
-                                onPress={() => router.push('/settings/plans')}
-                                activeOpacity={0.85}
-                            >
-                                <View style={styles.ctaContent}>
-                                    <View style={styles.ctaTextContainer}>
-                                        <Text style={styles.ctaTitle}>Assinar Pro</Text>
-                                        <Text style={styles.ctaSubtitle}>R$ 35,90/mês • Apple Pay disponível</Text>
-                                    </View>
-                                    <View style={styles.ctaIconContainer}>
-                                        <Zap size={18} color="#000" />
-                                    </View>
-                                </View>
-                            </TouchableOpacity>
-                        </>
-                    )}
 
                     <View style={{ height: 100 }} />
 
@@ -520,6 +513,12 @@ const styles = StyleSheet.create({
         color: '#E0E0E0',
     },
     refreshButton: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'flex-end',
+    },
+    switchAccountButton: {
         width: 40,
         height: 40,
         justifyContent: 'center',

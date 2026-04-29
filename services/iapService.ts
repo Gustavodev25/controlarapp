@@ -1,43 +1,66 @@
 /**
- * iapService.ts
- * Stripe-based In-App Purchase service for iOS (Apple Pay)
+ * IAP Service — Skips native module loading entirely in Expo Go.
  *
- * Substitui o RevenueCat, usando Stripe Payment Sheet com Apple Pay.
- * O fluxo funciona assim:
- *   1. App chama backend /api/stripe/create-payment-intent → recebe setupIntent + ephemeralKey
- *   2. App apresenta Stripe Payment Sheet (com Apple Pay habilitado)
- *   3. Usuário confirma pagamento via Apple Pay ou cartão
- *   4. App chama backend /api/stripe/create-subscription com o paymentMethodId
- *   5. Webhook Stripe atualiza Firebase automaticamente
+ * `react-native-iap` depends on `react-native-nitro-modules` which throws
+ * at the top-level when running inside Expo Go. Metro propagates this as an
+ * uncaught global error even inside try-catch. We detect Expo Go via
+ * expo-constants and never attempt to require `react-native-iap` at all.
  */
 
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
 // ---------------------------------------------------------------------------
-// Constantes
+// Expo Go detection — MUST happen before any require of react-native-iap
 // ---------------------------------------------------------------------------
 
-// Stripe payments always use the production backend.
-// API_BASE_URL resolves to localhost:3001 on physical devices in dev mode (unreachable),
-// so we use the production URL directly here.
-const STRIPE_BACKEND_URL =
+const isExpoGo =
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+// ---------------------------------------------------------------------------
+// Lazy module reference (only loaded in native builds)
+// ---------------------------------------------------------------------------
+
+let _iap: typeof import('react-native-iap') | null = null;
+
+function getIAP(): typeof import('react-native-iap') | null {
+    if (isExpoGo) return null;
+    if (_iap) return _iap;
+
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        _iap = require('react-native-iap') as typeof import('react-native-iap');
+        return _iap;
+    } catch (e) {
+        console.warn('[IAP] react-native-iap could not be loaded:', e);
+        return null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Re-exported types (these are type-only so no runtime cost)
+// ---------------------------------------------------------------------------
+
+export type SubscriptionPurchase = import('react-native-iap').SubscriptionPurchase;
+export type PurchaseError = import('react-native-iap').PurchaseError;
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const BACKEND_URL =
     process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') ||
-    'https://backendcontrolarapp-production-3182.up.railway.app';
+    'https://backendcontrolarapp-production.up.railway.app';
 
-const STRIPE_API_URL = `${STRIPE_BACKEND_URL}/api/stripe`;
-
+export const PRO_PRODUCT_ID = 'com.gustavodev25.controlarapp.pro.monthly';
 export const PRO_PRICE_STRING = 'R$ 35,90';
-export const PRO_PRODUCT_ID = 'pro_monthly';
 
 // ---------------------------------------------------------------------------
-// Tipos
+// Types
 // ---------------------------------------------------------------------------
 
 export interface PurchaseResult {
     success: boolean;
-    subscriptionId?: string;
-    clientSecret?: string;
-    requiresAction?: boolean;
     alreadyActive?: boolean;
     userCancelled?: boolean;
     error?: string;
@@ -49,229 +72,144 @@ export interface RestoreResult {
     error?: string;
 }
 
-export interface StripeConfig {
-    publishableKey: string;
-}
-
-export interface SetupResult {
-    success: boolean;
-    setupIntentClientSecret?: string;
-    ephemeralKey?: string;
-    customerId?: string;
-    publishableKey?: string;
-    error?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Buscar configuração do Stripe (publishable key)
-// ---------------------------------------------------------------------------
-
-let _cachedConfig: StripeConfig | null = null;
-
-export async function getStripeConfig(): Promise<StripeConfig> {
-    if (_cachedConfig) return _cachedConfig;
-
-    try {
-        const response = await fetch(`${STRIPE_API_URL}/config`);
-        const data = await response.json();
-        _cachedConfig = { publishableKey: data.publishableKey };
-        return _cachedConfig;
-    } catch (error: any) {
-        console.error('[IAP] Falha ao buscar config Stripe:', error);
-        // Fallback para a chave pública do .env
-        return {
-            publishableKey: process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '',
-        };
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Setup: prepara customer + ephemeral key + setup intent
-// ---------------------------------------------------------------------------
-
-export async function setupStripePayment(
-    firebaseUid: string,
-    email: string,
-    name?: string
-): Promise<SetupResult> {
-    try {
-        const response = await fetch(`${STRIPE_API_URL}/create-payment-intent`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ firebaseUid, email, name }),
-        });
-
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-            const text = await response.text();
-            console.error('[IAP] Resposta não-JSON do servidor:', response.status, text.slice(0, 200));
-            throw new Error(`Servidor retornou status ${response.status}. Verifique se o backend está atualizado.`);
-        }
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Erro ao configurar pagamento');
-        }
-
-        return {
-            success: true,
-            setupIntentClientSecret: data.setupIntentClientSecret,
-            ephemeralKey: data.ephemeralKey,
-            customerId: data.customerId,
-            publishableKey: data.publishableKey,
-        };
-    } catch (error: any) {
-        console.error('[IAP] Erro no setup:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Criar assinatura com payment method
-// ---------------------------------------------------------------------------
-
-export async function createSubscription(
-    firebaseUid: string,
-    email: string,
-    paymentMethodId: string,
-    name?: string
-): Promise<PurchaseResult> {
-    try {
-        const response = await fetch(`${STRIPE_API_URL}/create-subscription`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ firebaseUid, email, paymentMethodId, name }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Erro ao criar assinatura');
-        }
-
-        if (data.alreadyActive) {
-            return {
-                success: true,
-                alreadyActive: true,
-                subscriptionId: data.subscriptionId,
-            };
-        }
-
-        return {
-            success: data.status === 'active',
-            subscriptionId: data.subscriptionId,
-            clientSecret: data.clientSecret,
-            requiresAction: data.requiresAction,
-        };
-    } catch (error: any) {
-        console.error('[IAP] Erro ao criar assinatura:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Restaurar compras
-// ---------------------------------------------------------------------------
-
-export async function restorePurchases(
-    firebaseUid: string,
-    email: string
-): Promise<RestoreResult> {
-    if (Platform.OS !== 'ios') {
-        return { success: false, hasPro: false };
-    }
-
-    try {
-        const response = await fetch(`${STRIPE_API_URL}/restore-purchase`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ firebaseUid, email }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Erro ao restaurar');
-        }
-
-        return {
-            success: true,
-            hasPro: data.hasPro,
-        };
-    } catch (error: any) {
-        console.error('[IAP] Falha ao restaurar compras:', error);
-        return { success: false, hasPro: false, error: error.message };
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Verificar status da assinatura
-// ---------------------------------------------------------------------------
-
-export async function checkProStatus(firebaseUid: string): Promise<boolean> {
-    try {
-        const response = await fetch(
-            `${STRIPE_API_URL}/subscription-status?firebaseUid=${encodeURIComponent(firebaseUid)}`
-        );
-        const data = await response.json();
-        return data.hasSubscription && data.status === 'active';
-    } catch {
-        return false;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Cancelar assinatura
-// ---------------------------------------------------------------------------
-
-export async function cancelSubscription(firebaseUid: string): Promise<{
-    success: boolean;
-    cancelAt?: Date;
-    error?: string;
-}> {
-    try {
-        const response = await fetch(`${STRIPE_API_URL}/cancel-subscription`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ firebaseUid }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Erro ao cancelar');
-        }
-
-        return {
-            success: true,
-            cancelAt: data.cancelAt ? new Date(data.cancelAt) : undefined,
-        };
-    } catch (error: any) {
-        console.error('[IAP] Erro ao cancelar:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Offerings - Compatibilidade com interface antiga
-// ---------------------------------------------------------------------------
-
 export interface OfferingsResult {
     priceString: string;
     error?: string;
 }
 
-export async function getProOffering(): Promise<OfferingsResult> {
-    return { priceString: PRO_PRICE_STRING };
+// ---------------------------------------------------------------------------
+// Re-exported helpers (lazy)
+// ---------------------------------------------------------------------------
+
+export function purchaseUpdatedListener(
+    listener: (purchase: SubscriptionPurchase) => void
+) {
+    const iap = getIAP();
+    if (!iap) {
+        // Return a no-op subscription so callers don't break
+        return { remove: () => {} };
+    }
+    return iap.purchaseUpdatedListener(listener as any);
+}
+
+export function purchaseErrorListener(
+    listener: (error: PurchaseError) => void
+) {
+    const iap = getIAP();
+    if (!iap) {
+        return { remove: () => {} };
+    }
+    return iap.purchaseErrorListener(listener as any);
+}
+
+export async function finishTransaction(opts: {
+    purchase: SubscriptionPurchase;
+    isConsumable: boolean;
+}): Promise<void> {
+    const iap = getIAP();
+    if (!iap) return;
+    await iap.finishTransaction(opts as any);
 }
 
 // ---------------------------------------------------------------------------
-// Inicialização (compatibilidade — agora no-op pois o Stripe não precisa de init)
+// Core functions
 // ---------------------------------------------------------------------------
 
-export async function initializePurchases(_userId: string): Promise<void> {
-    // Stripe não precisa de inicialização no SDK client como o RevenueCat
-    // A inicialização é feita sob demanda quando o Payment Sheet é aberto
-    console.log('[IAP] Stripe mode — sem inicialização necessária');
+export async function initializePurchases(_userId?: string): Promise<void> {
+    if (Platform.OS !== 'ios') return;
+    if (isExpoGo) {
+        console.log('[IAP] Skipping — running in Expo Go');
+        return;
+    }
+
+    const iap = getIAP();
+    if (!iap) return;
+
+    try {
+        await iap.initConnection();
+    } catch (e) {
+        console.error('[IAP] initConnection error:', e);
+    }
+}
+
+export async function getProOffering(): Promise<OfferingsResult> {
+    if (Platform.OS !== 'ios' || isExpoGo) return { priceString: PRO_PRICE_STRING };
+
+    const iap = getIAP();
+    if (!iap) return { priceString: PRO_PRICE_STRING };
+
+    try {
+        const products = await iap.getSubscriptions({ skus: [PRO_PRODUCT_ID] });
+        if (products.length > 0) {
+            return { priceString: products[0].localizedPrice || PRO_PRICE_STRING };
+        }
+    } catch (e) {
+        console.error('[IAP] getSubscriptions error:', e);
+    }
+    return { priceString: PRO_PRICE_STRING };
+}
+
+export async function checkProStatus(firebaseUid: string): Promise<boolean> {
+    try {
+        const response = await fetch(
+            `${BACKEND_URL}/api/apple/subscription-status?firebaseUid=${encodeURIComponent(firebaseUid)}`
+        );
+        const data = await response.json();
+        return data.hasPro === true;
+    } catch {
+        return false;
+    }
+}
+
+export async function validateReceiptWithBackend(
+    firebaseUid: string,
+    receiptData: string
+): Promise<PurchaseResult> {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/apple/validate-receipt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ firebaseUid, receiptData }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Erro ao validar recibo');
+        return { success: data.hasPro === true };
+    } catch (e: any) {
+        console.error('[IAP] validate-receipt error:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+export async function restorePurchases(firebaseUid: string): Promise<RestoreResult> {
+    if (Platform.OS !== 'ios' || isExpoGo) {
+        return { success: false, hasPro: false, error: 'IAP not available in this environment' };
+    }
+
+    const iap = getIAP();
+    if (!iap) return { success: false, hasPro: false, error: 'IAP not available' };
+
+    try {
+        const purchases = await iap.getAvailablePurchases();
+        const proPurchase = purchases.find(p => p.productId === PRO_PRODUCT_ID);
+        if (!proPurchase?.transactionReceipt) {
+            return { success: true, hasPro: false };
+        }
+        const result = await validateReceiptWithBackend(firebaseUid, proPurchase.transactionReceipt);
+        if (result.success) {
+            await iap.finishTransaction({ purchase: proPurchase as any, isConsumable: false });
+        }
+        return { success: true, hasPro: result.success };
+    } catch (e: any) {
+        console.error('[IAP] restorePurchases error:', e);
+        return { success: false, hasPro: false, error: e.message };
+    }
+}
+
+export async function purchaseProSubscription(): Promise<void> {
+    if (isExpoGo) {
+        throw new Error('Compras não são suportadas no Expo Go. Use um build nativo (EAS).');
+    }
+    const iap = getIAP();
+    if (!iap) throw new Error('IAP não disponível neste ambiente');
+    await iap.requestSubscription({ sku: PRO_PRODUCT_ID });
 }

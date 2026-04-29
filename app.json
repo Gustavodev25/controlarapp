@@ -74,10 +74,9 @@
       "expo-secure-store",
       "expo-notifications",
       [
-        "@stripe/stripe-react-native",
+        "react-native-iap",
         {
-          "merchantIdentifier": "merchant.com.gustavodev25.controlarapp",
-          "enableApplePay": true
+          "paymentProvider": "Apple"
         }
       ]
     ],
