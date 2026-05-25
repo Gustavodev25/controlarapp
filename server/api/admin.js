@@ -50,14 +50,20 @@ function parseDateOnlySaoPaulo(value, fieldName) {
 
 function mirrorSubscriptionField(update, field, value) {
     if (value === undefined) return;
-    update[`subscription.${field}`] = value;
-    update[`profile.subscription.${field}`] = value;
+    update.subscription = update.subscription || {};
+    update.profile = update.profile || {};
+    update.profile.subscription = update.profile.subscription || {};
+    update.subscription[field] = value;
+    update.profile.subscription[field] = value;
 }
 
 function mirrorPaymentField(update, field, value) {
     if (value === undefined) return;
-    update[`paymentMethod.${field}`] = value;
-    update[`profile.paymentMethod.${field}`] = value;
+    update.paymentMethod = update.paymentMethod || {};
+    update.profile = update.profile || {};
+    update.profile.paymentMethod = update.profile.paymentMethod || {};
+    update.paymentMethod[field] = value;
+    update.profile.paymentMethod[field] = value;
 }
 
 router.post('/users/:uid/grant-pro', requireAdminToken, async (req, res) => {
