@@ -4,6 +4,7 @@ import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { usePerformanceBudget } from '@/hooks/usePerformanceBudget';
 import { BlurView } from 'expo-blur';
+import { GlassView, isGlassEffectAPIAvailable, type GlassStyle } from 'expo-glass-effect';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, router, Tabs } from 'expo-router';
 import LottieView from 'lottie-react-native';
@@ -23,6 +24,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   interpolate,
+  useAnimatedProps,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -108,6 +110,7 @@ const TABS = [
 type MenuKey = 'transactions' | 'recurrence' | null;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedGlassView = Animated.createAnimatedComponent(GlassView);
 
 interface TabItemProps {
   title: string;
@@ -224,6 +227,14 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
   const insets = useSafeAreaInsets();
   const { budget, lod } = usePerformanceBudget();
 
+  const isGlassAvailable = useMemo(() => {
+    try {
+      return typeof isGlassEffectAPIAvailable === 'function' && isGlassEffectAPIAvailable();
+    } catch {
+      return false;
+    }
+  }, []);
+
   const currentRouteName = state.routes[state.index].name;
 
   const [activeTab, setActiveTab] = useState(currentRouteName);
@@ -251,6 +262,20 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
   const menuContentReveal = useSharedValue(0);
 
   const backdropProgress = useSharedValue(0);
+
+  const glassViewProps = useAnimatedProps(() => {
+    const glassEffectStyle: GlassStyle = barVisibility.value > 0.01 ? 'regular' : 'none';
+    return {
+      glassEffectStyle,
+    };
+  });
+
+  const menuGlassViewProps = useAnimatedProps(() => {
+    const glassEffectStyle: GlassStyle = menuProgress.value > 0.01 ? 'regular' : 'none';
+    return {
+      glassEffectStyle,
+    };
+  });
 
   const animatedBarWidth = useDerivedValue(() =>
     withSpring(targetBarWidth.value, SPRING_MORPH)
@@ -588,6 +613,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     return {
       borderRadius: animatedBarRadius.value + morph * 4 - pressed * 1.2,
+      backgroundColor: isGlassAvailable ? 'transparent' : '#101010',
     };
   });
 
@@ -786,20 +812,29 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
             menuAnimatedStyle,
           ]}
         >
-          <View style={styles.menuBox}>
-            <View pointerEvents="none" style={styles.menuBase}>
-              <LinearGradient
-                colors={[
-                  'rgba(16,16,16,0.98)',
-                  'rgba(16,16,16,0.94)',
-                  'rgba(16,16,16,0.92)',
-                ]}
-                locations={[0, 0.45, 1]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
+          <View style={[styles.menuBox, { backgroundColor: isGlassAvailable ? 'transparent' : '#101010' }]}>
+            {isGlassAvailable ? (
+              <AnimatedGlassView
+                pointerEvents="none"
+                animatedProps={menuGlassViewProps}
                 style={StyleSheet.absoluteFillObject}
+                colorScheme="dark"
               />
-            </View>
+            ) : (
+              <View pointerEvents="none" style={styles.menuBase}>
+                <LinearGradient
+                  colors={[
+                    'rgba(16,16,16,0.98)',
+                    'rgba(16,16,16,0.94)',
+                    'rgba(16,16,16,0.92)',
+                  ]}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              </View>
+            )}
 
             <Animated.View style={[styles.menuContent, menuContentAnimatedStyle]}>
               {visibleMenu === 'transactions' && (
@@ -920,25 +955,36 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
           style={[styles.tabBarInner, tabBarInnerAnimatedStyle]}
           onLayout={(event) => setTabBarWidth(event.nativeEvent.layout.width)}
         >
-          <View pointerEvents="none" style={styles.tabBaseBlurLayer}>
-            {tabBlurIntensity > 0 && (
-              <BlurView intensity={tabBlurIntensity} tint="dark" style={StyleSheet.absoluteFillObject} />
-            )}
-          </View>
-
-          <View pointerEvents="none" style={styles.tabBaseTint}>
-            <LinearGradient
-              colors={[
-                'rgba(16,16,16,0.98)',
-                'rgba(16,16,16,0.94)',
-                'rgba(16,16,16,0.92)',
-              ]}
-              locations={[0, 0.45, 1]}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
+          {isGlassAvailable ? (
+            <AnimatedGlassView
+              pointerEvents="none"
+              animatedProps={glassViewProps}
               style={StyleSheet.absoluteFillObject}
+              colorScheme="dark"
             />
-          </View>
+          ) : (
+            <>
+              <View pointerEvents="none" style={styles.tabBaseBlurLayer}>
+                {tabBlurIntensity > 0 && (
+                  <BlurView intensity={tabBlurIntensity} tint="dark" style={StyleSheet.absoluteFillObject} />
+                )}
+              </View>
+
+              <View pointerEvents="none" style={styles.tabBaseTint}>
+                <LinearGradient
+                  colors={[
+                    'rgba(16,16,16,0.98)',
+                    'rgba(16,16,16,0.94)',
+                    'rgba(16,16,16,0.92)',
+                  ]}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              </View>
+            </>
+          )}
 
           <View pointerEvents="none" style={styles.innerBottomShade} />
 
