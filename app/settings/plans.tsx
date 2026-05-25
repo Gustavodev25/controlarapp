@@ -48,10 +48,15 @@ const isUserCancelledError = (error: any) => {
     return code === 'e_user_cancelled' || code === 'user-cancelled';
 };
 
+const isAppleProviderValue = (value?: string | null) => {
+    return ['apple', 'app_store', 'storekit'].includes(String(value || '').trim().toLowerCase());
+};
+
 export default function PlansScreen() {
     const router = useRouter();
-    const { forced } = useLocalSearchParams();
+    const { forced, setupPayment } = useLocalSearchParams();
     const isForced = forced === 'true';
+    const isPaymentSetupIntent = setupPayment === 'true';
     const insets = useSafeAreaInsets();
     const { user, profile, refreshProfile, signOut } = useAuthContext();
 
@@ -72,10 +77,20 @@ export default function PlansScreen() {
     const isIOS = Platform.OS === 'ios';
     const currentPlan = String(profile?.subscription?.plan ?? 'free').trim().toLowerCase();
     const currentStatus = String(profile?.subscription?.status ?? '').trim().toLowerCase();
+    const currentProvider = String(
+        (profile?.subscription as any)?.provider ||
+        (profile?.subscription as any)?.paymentProvider ||
+        (profile?.subscription as any)?.iapSource ||
+        ''
+    ).trim().toLowerCase();
     const isPro =
         (currentPlan === 'pro' || currentPlan === 'premium') &&
         (currentStatus === 'active' || currentStatus === 'trial' || currentStatus === 'trialing');
-    const hasActivePro = alreadyPro || (!iapReady && isPro);
+    const isManualPro =
+        isPro &&
+        (currentProvider === 'manual' || currentProvider === 'admin' || (profile?.subscription as any)?.manualGrant === true);
+    const shouldSetupPayment = isIOS && (isPaymentSetupIntent || isManualPro);
+    const hasActivePro = !shouldSetupPayment && (alreadyPro || (!iapReady && isPro));
     const profileProRef = useRef(isPro);
 
     useEffect(() => {
@@ -210,7 +225,7 @@ export default function PlansScreen() {
                 if (purchaseHandledRef.current || !user?.uid) return;
 
                 const statusResult = await syncAppleSubscriptionStatus(user.uid);
-                if (statusResult.hasPro) {
+                if (statusResult.hasPro && isAppleProviderValue(statusResult.provider)) {
                     purchaseHandledRef.current = true;
                     setAlreadyPro(true);
                     await refreshProfileRef.current();
@@ -242,9 +257,12 @@ export default function PlansScreen() {
         try {
             const result = await restorePurchases(user.uid);
             const statusResult = await syncAppleSubscriptionStatus(user.uid, { refreshServerStatus: true });
-            setAlreadyPro(statusResult.hasPro || result.hasPro);
+            const hasAppleRestored =
+                result.hasPro ||
+                (statusResult.hasPro && isAppleProviderValue(statusResult.provider));
+            setAlreadyPro(hasAppleRestored || (!shouldSetupPayment && statusResult.hasPro));
 
-            if (result.hasPro || statusResult.hasPro) {
+            if (hasAppleRestored) {
                 await refreshProfile();
                 Alert.alert(
                     'Compra restaurada!',
@@ -466,9 +484,17 @@ export default function PlansScreen() {
                                     {iapLoading ? (
                                         <ActivityIndicator color="#000" />
                                     ) : (
-                                        <Text style={styles.purchaseButtonText}>Assinar Pro</Text>
+                                        <Text style={styles.purchaseButtonText}>
+                                            {shouldSetupPayment ? 'Configurar pagamento' : 'Assinar Pro'}
+                                        </Text>
                                     )}
                                 </TouchableOpacity>
+
+                                {shouldSetupPayment ? (
+                                    <Text style={styles.setupPaymentText}>
+                                        Seu Pro já está liberado. Configure a cobrança pela App Store para manter o acesso na próxima renovação.
+                                    </Text>
+                                ) : null}
 
                                 <TouchableOpacity
                                     style={styles.restoreButton}
@@ -705,6 +731,14 @@ const styles = StyleSheet.create({
     restoreText: {
         fontSize: 13,
         color: '#8E8E93',
+    },
+    setupPaymentText: {
+        fontSize: 12,
+        color: '#8E8E93',
+        textAlign: 'center',
+        lineHeight: 17,
+        paddingHorizontal: 10,
+        paddingTop: 12,
     },
     legalText: {
         fontSize: 11,

@@ -3,6 +3,7 @@ import { IosCoreLoader } from '@/components/ui/IosCoreLoader';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { databaseService } from '@/services/firebase';
 import { openSubscriptionManagement, syncAppleSubscriptionStatus } from '@/services/iapService';
+import { safeBack } from '@/utils/navigation';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
@@ -48,8 +49,10 @@ interface SubscriptionData {
     provider?: string;
     paymentProvider?: string;
     iapSource?: string;
+    manualGrant?: boolean;
     expiresAt?: any;
     startedAt?: any;
+    renewalDate?: any;
     billingCycle?: 'monthly' | 'yearly';
     price?: number;
     nextBillingDate?: string;
@@ -275,16 +278,37 @@ export default function SubscriptionSettingsScreen() {
         } : null);
 
     const hasDisplayPaymentMethod = displayPaymentMethod && displayPaymentMethod.last4;
+    const subscriptionProvider = String(
+        currentSubscription?.provider ||
+        currentSubscription?.paymentProvider ||
+        currentSubscription?.iapSource ||
+        ''
+    ).trim().toLowerCase();
     const isAppleSubscription =
         Platform.OS === 'ios' &&
-        ['apple', 'app_store', 'storekit'].includes(
-            String(
-                currentSubscription?.provider ||
-                currentSubscription?.paymentProvider ||
-                currentSubscription?.iapSource ||
-                ''
-            ).trim().toLowerCase()
-        );
+        ['apple', 'app_store', 'storekit'].includes(subscriptionProvider);
+    const isManualSubscription =
+        subscriptionProvider === 'manual' ||
+        subscriptionProvider === 'admin' ||
+        currentSubscription?.manualGrant === true;
+    const renewalDateText = formatDateSimple(
+        currentSubscription?.renewalDate ||
+        currentSubscription?.nextBillingDate ||
+        currentSubscription?.expiresAt
+    );
+    const needsPaymentSetup =
+        Platform.OS === 'ios' &&
+        hasKnownProSubscription &&
+        isManualSubscription &&
+        !isAppleSubscription &&
+        !hasDisplayPaymentMethod;
+
+    const handleConfigurePayment = () => {
+        router.push({
+            pathname: '/settings/plans',
+            params: { setupPayment: 'true' },
+        } as any);
+    };
 
     const handleManageAppleSubscription = async () => {
         try {
@@ -321,7 +345,7 @@ export default function SubscriptionSettingsScreen() {
                 <View style={styles.header}>
                     {isPro ? (
                         <TouchableOpacity
-                            onPress={() => router.back()}
+                            onPress={() => safeBack(router)}
                             style={styles.backButton}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
@@ -431,6 +455,27 @@ export default function SubscriptionSettingsScreen() {
                                     activeOpacity={0.75}
                                 >
                                     <Text style={styles.editButtonText}>Gerenciar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : needsPaymentSetup ? (
+                            <View style={styles.paymentRow}>
+                                <View style={styles.paymentIconBox}>
+                                    <Text style={styles.paymentIconEmoji}></Text>
+                                </View>
+                                <View style={styles.cardInfo}>
+                                    <Text style={styles.cardText}>Método de pagamento pendente</Text>
+                                    <Text style={styles.cardSubtext}>
+                                        {renewalDateText
+                                            ? `Renovação prevista para ${renewalDateText}`
+                                            : 'Configure pela App Store para manter o Pro'}
+                                    </Text>
+                                </View>
+                                <TouchableOpacity
+                                    style={styles.editButton}
+                                    onPress={handleConfigurePayment}
+                                    activeOpacity={0.75}
+                                >
+                                    <Text style={styles.editButtonText}>Configurar</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : hasDisplayPaymentMethod ? (
