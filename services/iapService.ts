@@ -66,6 +66,7 @@ export interface PurchaseResult {
     alreadyActive?: boolean;
     userCancelled?: boolean;
     hasPro?: boolean;
+    syncedFromStoreKit?: boolean;
     status?: string;
     expiresAt?: string | null;
     cancelAtPeriodEnd?: boolean;
@@ -119,7 +120,65 @@ export interface AppleSubscriptionStatusResult {
     error?: string;
 }
 
+interface AppleSubscriptionStatusOptions {
+    refreshServerStatus?: boolean;
+}
+
 let connectionPromise: Promise<void> | null = null;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isJws = (value?: string | null) => {
+    return typeof value === 'string' && value.split('.').length === 3;
+};
+
+const toFiniteNumber = (value: any): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+};
+
+const getPurchaseTransactionId = (purchase?: any): string | null => {
+    return purchase?.transactionId || purchase?.id || null;
+};
+
+const getPurchaseOriginalTransactionId = (purchase?: any): string | null => {
+    return (
+        purchase?.originalTransactionIdentifierIOS ||
+        purchase?.originalTransactionId ||
+        purchase?.transactionId ||
+        purchase?.id ||
+        null
+    );
+};
+
+const normalizeStoreKitPurchaseForBackend = (
+    purchase?: Partial<StorePurchase> | Record<string, any> | null,
+    signedTransactionInfo?: string | null
+) => {
+    if (!purchase && !signedTransactionInfo) return null;
+
+    const rawPurchase = (purchase || {}) as Record<string, any>;
+
+    return {
+        productId: rawPurchase.productId || PRO_PRODUCT_ID,
+        transactionId: getPurchaseTransactionId(rawPurchase),
+        originalTransactionId: getPurchaseOriginalTransactionId(rawPurchase),
+        purchaseToken: isJws(rawPurchase.purchaseToken) ? rawPurchase.purchaseToken : null,
+        signedTransactionInfo: signedTransactionInfo || (isJws(rawPurchase.purchaseToken) ? rawPurchase.purchaseToken : null),
+        purchaseState: rawPurchase.purchaseState || null,
+        transactionDate: toFiniteNumber(rawPurchase.transactionDate),
+        expirationDateIOS: toFiniteNumber(rawPurchase.expirationDateIOS),
+        originalTransactionDateIOS: toFiniteNumber(rawPurchase.originalTransactionDateIOS),
+        environmentIOS: rawPurchase.environmentIOS || null,
+        isAutoRenewing: typeof rawPurchase.isAutoRenewing === 'boolean' ? rawPurchase.isAutoRenewing : null,
+        renewalInfoIOS: rawPurchase.renewalInfoIOS || null,
+        store: rawPurchase.store || rawPurchase.platform || 'ios',
+    };
+};
 
 function getTrustedDisplayPrice(product: ProductSubscription): string {
     const displayPrice = String(product.displayPrice || '').trim();
@@ -236,10 +295,14 @@ function createFallbackStatus(error?: string): AppleSubscriptionStatusResult {
     };
 }
 
-export async function getAppleSubscriptionStatus(firebaseUid: string): Promise<AppleSubscriptionStatusResult> {
+export async function getAppleSubscriptionStatus(
+    firebaseUid: string,
+    options: AppleSubscriptionStatusOptions = {}
+): Promise<AppleSubscriptionStatusResult> {
     try {
+        const refreshParam = options.refreshServerStatus ? '&refresh=true' : '';
         const response = await fetch(
-            `${BACKEND_URL}/api/apple/subscription-status?firebaseUid=${encodeURIComponent(firebaseUid)}`
+            `${BACKEND_URL}/api/apple/subscription-status?firebaseUid=${encodeURIComponent(firebaseUid)}${refreshParam}`
         );
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -263,24 +326,147 @@ export async function getAppleSubscriptionStatus(firebaseUid: string): Promise<A
     }
 }
 
-export async function syncAppleSubscriptionStatus(firebaseUid: string): Promise<AppleSubscriptionStatusResult> {
-    const currentStatus = await getAppleSubscriptionStatus(firebaseUid);
+async function getStoreKitSignedTransaction(purchase?: Partial<StorePurchase> | Record<string, any> | null): Promise<string | null> {
+    const purchaseToken = (purchase as any)?.purchaseToken;
+    if (isJws(purchaseToken)) return purchaseToken;
+
+    const iap = getIAP();
+    if (!iap || typeof (iap as any).getTransactionJwsIOS !== 'function') return null;
+
+    try {
+        await initializePurchases();
+        const signedTransaction = await (iap as any).getTransactionJwsIOS(PRO_PRODUCT_ID);
+        return isJws(signedTransaction) ? signedTransaction : null;
+    } catch (e) {
+        console.warn('[IAP] getTransactionJwsIOS unavailable:', e);
+        return null;
+    }
+}
+
+async function getActiveStoreKitPurchase(): Promise<Record<string, any> | null> {
+    if (Platform.OS !== 'ios' || isExpoGo) return null;
+
+    const iap = getIAP();
+    if (!iap) return null;
+
+    await initializePurchases();
+
+    try {
+        if (typeof (iap as any).getActiveSubscriptions === 'function') {
+            const subscriptions = await (iap as any).getActiveSubscriptions([PRO_PRODUCT_ID]);
+            const activeSubscription = Array.isArray(subscriptions)
+                ? subscriptions.find((item: any) => item?.productId === PRO_PRODUCT_ID && item?.isActive !== false)
+                : null;
+
+            if (activeSubscription) return activeSubscription;
+        }
+    } catch (e) {
+        console.warn('[IAP] getActiveSubscriptions unavailable:', e);
+    }
+
+    try {
+        if (typeof (iap as any).currentEntitlementIOS === 'function') {
+            const entitlement = await (iap as any).currentEntitlementIOS(PRO_PRODUCT_ID);
+            if (entitlement?.productId === PRO_PRODUCT_ID) return entitlement;
+        }
+    } catch (e) {
+        console.warn('[IAP] currentEntitlementIOS unavailable:', e);
+    }
+
+    try {
+        const purchases = await iap.getAvailablePurchases({
+            onlyIncludeActiveItemsIOS: true,
+            alsoPublishToEventListenerIOS: false,
+        });
+        return (purchases || []).find((item: StorePurchase) => item.productId === PRO_PRODUCT_ID) || null;
+    } catch (e) {
+        console.warn('[IAP] getAvailablePurchases unavailable:', e);
+        return null;
+    }
+}
+
+export async function syncStoreKitPurchaseWithBackend(
+    firebaseUid: string,
+    purchase?: Partial<StorePurchase> | Record<string, any> | null
+): Promise<PurchaseResult> {
+    if (Platform.OS !== 'ios' || isExpoGo) {
+        return { success: false, hasPro: false, error: 'StoreKit indisponivel neste ambiente' };
+    }
+
+    try {
+        const signedTransactionInfo = await getStoreKitSignedTransaction(purchase);
+        if (!signedTransactionInfo) {
+            return {
+                success: false,
+                hasPro: false,
+                error: 'Nao foi possivel obter a transacao assinada da App Store.',
+            };
+        }
+
+        const normalizedPurchase = normalizeStoreKitPurchaseForBackend(purchase, signedTransactionInfo);
+
+        const response = await fetch(`${BACKEND_URL}/api/apple/sync-storekit-purchase`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                firebaseUid,
+                signedTransactionInfo,
+                purchase: normalizedPurchase,
+            }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Erro ao sincronizar compra Apple');
+
+        return {
+            success: data.hasPro === true,
+            hasPro: data.hasPro === true,
+            syncedFromStoreKit: true,
+            status: data.status,
+            expiresAt: data.expiresAt || null,
+            cancelAtPeriodEnd: data.cancelAtPeriodEnd === true,
+            autoRenewStatus: data.autoRenewStatus || null,
+            error: data.error,
+        };
+    } catch (e: any) {
+        console.error('[IAP] sync-storekit-purchase error:', e);
+        return {
+            success: false,
+            hasPro: false,
+            error: e?.message || 'Erro ao sincronizar compra Apple',
+        };
+    }
+}
+
+export async function syncActiveStoreKitPurchaseWithBackend(firebaseUid: string): Promise<PurchaseResult> {
+    const activePurchase = await getActiveStoreKitPurchase();
+    if (!activePurchase) {
+        return { success: false, hasPro: false, error: 'Nenhuma assinatura Pro ativa encontrada na App Store.' };
+    }
+
+    return syncStoreKitPurchaseWithBackend(firebaseUid, activePurchase);
+}
+
+export async function syncAppleSubscriptionStatus(
+    firebaseUid: string,
+    options: AppleSubscriptionStatusOptions = {}
+): Promise<AppleSubscriptionStatusResult> {
+    const currentStatus = await getAppleSubscriptionStatus(firebaseUid, options);
 
     if (Platform.OS !== 'ios' || isExpoGo) {
         return currentStatus;
     }
 
-    const receiptData = await getReceiptDataForValidation({ refreshIfMissing: false });
-    if (!receiptData) {
+    if (currentStatus.hasPro) {
         return currentStatus;
     }
 
-    const validation = await validateReceiptWithBackend(firebaseUid, receiptData);
-    if (validation.error) {
-        return currentStatus;
+    const storeKitSync = await syncActiveStoreKitPurchaseWithBackend(firebaseUid);
+    if (storeKitSync.success || storeKitSync.hasPro) {
+        return getAppleSubscriptionStatus(firebaseUid);
     }
 
-    return getAppleSubscriptionStatus(firebaseUid);
+    return currentStatus;
 }
 
 export async function checkProStatus(firebaseUid: string): Promise<boolean> {
@@ -323,22 +509,32 @@ export async function validateReceiptWithBackend(
 }
 
 async function getReceiptDataForValidation(
-    options: { refreshIfMissing?: boolean } = {}
+    options: { refreshIfMissing?: boolean; attempts?: number; retryDelayMs?: number } = {}
 ): Promise<string | null> {
     if (Platform.OS !== 'ios' || isExpoGo) return null;
 
     const iap = getIAP();
     if (!iap) return null;
 
-    try {
-        await initializePurchases();
-        const receipt = await iap.getReceiptIOS();
-        if (receipt) return receipt;
-    } catch (e) {
-        console.warn('[IAP] getReceiptIOS unavailable:', e);
+    const attempts = Math.max(1, options.attempts ?? 1);
+    const retryDelayMs = options.retryDelayMs ?? 600;
+
+    await initializePurchases();
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            const receipt = await iap.getReceiptIOS();
+            if (receipt) return receipt;
+        } catch (e) {
+            console.warn('[IAP] getReceiptIOS unavailable:', e);
+        }
+
+        if (attempt < attempts - 1) {
+            await wait(retryDelayMs);
+        }
     }
 
-    if (options.refreshIfMissing === false) {
+    if (options.refreshIfMissing !== true) {
         return null;
     }
 
@@ -362,27 +558,62 @@ export async function validatePurchaseWithBackend(
     firebaseUid: string,
     purchase: StorePurchase
 ): Promise<PurchaseResult> {
-    const receiptData = await getReceiptDataForValidation();
-    if (!receiptData) {
-        return {
-            success: false,
-            error: 'Nao foi possivel obter o recibo da App Store. Tente restaurar a compra.',
-        };
+    const storeKitResult = await syncStoreKitPurchaseWithBackend(firebaseUid, purchase);
+    if (storeKitResult.success) {
+        return storeKitResult;
     }
 
-    return validateReceiptWithBackend(firebaseUid, receiptData, purchase);
+    const receiptData = await getReceiptDataForValidation({
+        refreshIfMissing: false,
+        attempts: 3,
+        retryDelayMs: 700,
+    });
+
+    if (receiptData) {
+        const receiptResult = await validateReceiptWithBackend(firebaseUid, receiptData, purchase);
+        if (receiptResult.success || receiptResult.error) {
+            return receiptResult;
+        }
+    }
+
+    return {
+        success: false,
+        hasPro: false,
+        error: storeKitResult.error || 'Compra feita na Apple, mas ainda nao foi possivel ativar o Pro. Toque em Restaurar compras.',
+    };
 }
 
 export async function restorePurchases(firebaseUid: string): Promise<RestoreResult> {
+    const accountStatus = await getAppleSubscriptionStatus(firebaseUid, { refreshServerStatus: true });
+    if (accountStatus.hasPro) {
+        return { success: true, hasPro: true };
+    }
+
     if (Platform.OS !== 'ios' || isExpoGo) {
-        return { success: false, hasPro: false, error: 'IAP not available in this environment' };
+        return {
+            success: accountStatus.success,
+            hasPro: false,
+            error: accountStatus.error || 'IAP not available in this environment',
+        };
     }
 
     const iap = getIAP();
-    if (!iap) return { success: false, hasPro: false, error: 'IAP not available' };
+    if (!iap) {
+        return {
+            success: accountStatus.success,
+            hasPro: false,
+            error: accountStatus.error || 'IAP not available',
+        };
+    }
 
     try {
         await initializePurchases();
+
+        const activeSync = await syncActiveStoreKitPurchaseWithBackend(firebaseUid);
+        if (activeSync.success || activeSync.hasPro) {
+            return { success: true, hasPro: true };
+        }
+
         await iap.restorePurchases();
         const purchases = await iap.getAvailablePurchases({
             onlyIncludeActiveItemsIOS: true,
@@ -390,7 +621,8 @@ export async function restorePurchases(firebaseUid: string): Promise<RestoreResu
         });
         const proPurchase = purchases.find(p => p.productId === PRO_PRODUCT_ID);
         if (!proPurchase) {
-            return { success: true, hasPro: false };
+            const refreshedAccountStatus = await getAppleSubscriptionStatus(firebaseUid, { refreshServerStatus: true });
+            return { success: true, hasPro: refreshedAccountStatus.hasPro };
         }
         const result = await validatePurchaseWithBackend(firebaseUid, proPurchase);
         if (result.success) {

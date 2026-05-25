@@ -17,6 +17,7 @@ import {
     type PurchaseError,
     type SubscriptionPurchase,
 } from '@/services/iapService';
+import { safeBack } from '@/utils/navigation';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
 import { Check, LogOut, RefreshCw, Shield, X } from 'lucide-react-native';
@@ -65,6 +66,8 @@ export default function PlansScreen() {
     const [iapReady, setIapReady] = useState(false);
     const [alreadyPro, setAlreadyPro] = useState(false);
     const refreshProfileRef = useRef(refreshProfile);
+    const purchaseHandledRef = useRef(false);
+    const purchaseFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isIOS = Platform.OS === 'ios';
     const currentPlan = String(profile?.subscription?.plan ?? 'free').trim().toLowerCase();
@@ -82,6 +85,15 @@ export default function PlansScreen() {
     useEffect(() => {
         profileProRef.current = isPro;
     }, [isPro]);
+
+    const clearPurchaseFallbackTimer = useCallback(() => {
+        if (purchaseFallbackTimerRef.current) {
+            clearTimeout(purchaseFallbackTimerRef.current);
+            purchaseFallbackTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => clearPurchaseFallbackTimer, [clearPurchaseFallbackTimer]);
 
     // Verifica status e inicializa StoreKit sempre que a tela entra em foco
     useFocusEffect(useCallback(() => {
@@ -119,12 +131,15 @@ export default function PlansScreen() {
         const purchaseSub = purchaseUpdatedListener(async (purchase: SubscriptionPurchase) => {
             if (purchase.productId !== PRO_PRODUCT_ID) return;
             if (!user?.uid) return;
+            if (purchaseHandledRef.current) return;
 
             setIapLoading(true);
             try {
                 const result = await validatePurchaseWithBackend(user.uid, purchase);
 
                 if (result.success) {
+                    purchaseHandledRef.current = true;
+                    clearPurchaseFallbackTimer();
                     await finishTransaction({ purchase, isConsumable: false });
                     const statusResult = await syncAppleSubscriptionStatus(user.uid);
                     setAlreadyPro(statusResult.hasPro || result.success);
@@ -132,7 +147,7 @@ export default function PlansScreen() {
                     Alert.alert(
                         'Bem-vindo ao Pro!',
                         'Sua assinatura foi ativada com sucesso. Aproveite todos os recursos ilimitados.',
-                        [{ text: 'Continuar', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : router.back() }]
+                        [{ text: 'Continuar', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : safeBack(router) }]
                     );
                 } else {
                     Alert.alert(
@@ -165,7 +180,7 @@ export default function PlansScreen() {
             purchaseSub.remove();
             errorSub.remove();
         };
-    }, [user?.uid, isForced, isIOS, router]);
+    }, [user?.uid, isForced, isIOS, router, clearPurchaseFallbackTimer]);
 
     // Bloqueia botão voltar no Android se forçado
     useEffect(() => {
@@ -185,9 +200,31 @@ export default function PlansScreen() {
         }
 
         setIapLoading(true);
+        purchaseHandledRef.current = false;
+        clearPurchaseFallbackTimer();
         try {
             await purchaseProSubscription();
-            // Resultado chega via purchaseUpdatedListener acima
+            // O resultado normalmente chega pelo listener. Este fallback cobre casos
+            // em que o StoreKit ja ativou a compra, mas o evento nao voltou para a tela.
+            purchaseFallbackTimerRef.current = setTimeout(async () => {
+                if (purchaseHandledRef.current || !user?.uid) return;
+
+                const statusResult = await syncAppleSubscriptionStatus(user.uid);
+                if (statusResult.hasPro) {
+                    purchaseHandledRef.current = true;
+                    setAlreadyPro(true);
+                    await refreshProfileRef.current();
+                    setIapLoading(false);
+                    Alert.alert(
+                        'Bem-vindo ao Pro!',
+                        'Sua assinatura foi ativada com sucesso. Aproveite todos os recursos ilimitados.',
+                        [{ text: 'Continuar', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : safeBack(router) }]
+                    );
+                    return;
+                }
+
+                setIapLoading(false);
+            }, 4500);
         } catch (e: any) {
             if (isUserCancelledError(e)) {
                 setIapLoading(false);
@@ -204,7 +241,7 @@ export default function PlansScreen() {
         setRestoring(true);
         try {
             const result = await restorePurchases(user.uid);
-            const statusResult = await syncAppleSubscriptionStatus(user.uid);
+            const statusResult = await syncAppleSubscriptionStatus(user.uid, { refreshServerStatus: true });
             setAlreadyPro(statusResult.hasPro || result.hasPro);
 
             if (result.hasPro || statusResult.hasPro) {
@@ -212,12 +249,12 @@ export default function PlansScreen() {
                 Alert.alert(
                     'Compra restaurada!',
                     'Sua assinatura Pro foi restaurada com sucesso.',
-                    [{ text: 'OK', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : router.back() }]
+                    [{ text: 'OK', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : safeBack(router) }]
                 );
             } else {
                 Alert.alert(
                     'Nenhuma compra encontrada',
-                    'Não encontramos uma assinatura Pro ativa vinculada a este Apple ID.',
+                    'Nao encontramos uma assinatura Pro ativa nesta conta ou no Apple ID deste dispositivo.',
                     [{ text: 'OK' }]
                 );
             }
@@ -326,7 +363,7 @@ export default function PlansScreen() {
                 {!isForced ? (
                     <TouchableOpacity
                         style={styles.closeButton}
-                        onPress={() => router.back()}
+                        onPress={() => safeBack(router)}
                         activeOpacity={0.7}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
