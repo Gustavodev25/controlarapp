@@ -1,0 +1,287 @@
+
+> controlarapp@1.0.0 dev:tunnel
+> node scripts/dev-tunnel.js
+
+[33m[cleanup][0m Liberando portas 8081 e 3001...
+[36m[tunnel][0m Criando tunnel cloudflare na porta 8081...
+[32m[tunnel][0m ✅ Tunnel ativo: https://exploring-tba-applicable-trip.trycloudflare.com
+[34m[server][0m Iniciando servidor backend...
+[32m[expo][0m Iniciando Expo Metro Bundler...
+[34m[server][0m > controlarapp@1.0.0 server:dev
+[34m[server][0m > cd server && npm run dev
+[34m[server][0m > controlarapp-server@1.0.0 dev
+[34m[server][0m > nodemon index.js
+[33m[server][0m 'nodemon' n�o � reconhecido como um comando interno
+[33m[server][0m ou externo, um programa oper�vel ou um arquivo em lotes.
+[31m[server][0m Processo encerrado (code: 1)
+[32m[expo][0m Starting project at C:\Users\Maldanis\Desktop\controlarapp-main
+[32m[expo][0m React Compiler enabled
+[32m[expo][0m Starting Metro Bundler
+[32m[expo][0m Waiting on http://localhost:8081
+
+[1m[32m  ══════════════════════════════════════════════[0m
+[1m[32m  📱 Escaneie o QR Code com o Expo Go:[0m
+[1m[32m  ══════════════════════════════════════════════[0m
+
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+█ ▄▄▄▄▄ █▀▄█▄▀█ ▀▄█▀▄▄█ ▄▄▄▄▄ █
+█ █   █ █▀▄  ▀▀▀█▄▀▄█▀█ █   █ █
+█ █▄▄▄█ █▀█▀▄▄▀▄▀█▄▄▄ █ █▄▄▄█ █
+█▄▄▄▄▄▄▄█▄▀ █▄█▄▀▄█ █▄█▄▄▄▄▄▄▄█
+█   ▄▄▀▄▄ █▄▀▄  ▄  ▀▀▀ ▀ ▀▄▀▄▀█
+█▀▀▀▀▄▀▄▄█  ▀ █▀ ▄█▄█ ▄▄█▀█▄ ██
+███ █ ▄▄█▄ █▀█▄▄█▀▄▀ █▀▀ ▀▀ ▄▀█
+██▀ ▄█▀▄▀▄▀ █▀▄▀▄█▄▄█▄▀  █▄▄▀██
+█▀██ █ ▄██ ▀▀▄ ▄▄ ▄▀▀▀▀▀▀▀▀ ▄ █
+█ ███  ▄█▀███▄█▄ ▀█▄▀██▀▀▄ ▄███
+█▄██▄██▄█▀ █ ▄ ▄▄ ▄▀█ ▄▄▄ ▀▄▀▀█
+█ ▄▄▄▄▄ █▄██▀▄▄   ▄   █▄█  ████
+█ █   █ █ ▄▄▀▄▄ ██ ▀█▄ ▄▄▄▄ █▀█
+█ █▄▄▄█ █  ▄█▄█   █▀ ▀▄ ▄ ▀█ ██
+█▄▄▄▄▄▄▄█▄█▄█▄▄▄▄█▄█▄████▄▄▄███
+
+
+[36m  URL Expo Go: [1mexp://exploring-tba-applicable-trip.trycloudflare.com[0m
+[36m  Tunnel URL:  [1mhttps://exploring-tba-applicable-trip.trycloudflare.com[0m
+[2m  (Ou digite a URL manualmente no Expo Go)[0m
+[2m  Atalhos: pressione R para recarregar, Q para sair.[0m
+
+[32m  ══════════════════════════════════════════════[0m
+[34m  📦 Metro:    http://localhost:8081[0m
+[34m  🖥️  Server:   http://localhost:3001[0m
+[32m  ══════════════════════════════════════════════[0m
+
+[32m[expo][0m Logs for your project will appear below.
+[32m[expo][0m Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 60.5% (2162/3192)
+[32m[expo][0m λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.4% (3142/3361)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ node_modules\expo-router\node\render.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 3875ms node_modules\expo-router\node\render.js (4350 modules)
+[32m[expo][0m λ Bundled 3971ms node_modules\expo-router\node\render.js (1 module)
+[32m[expo][0m λ Bundled 1475ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (4240/4240)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (4240/4240)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 76ms node_modules\expo-router\node\render.js (1 module)
+[32m[expo][0m λ Bundled 74ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 12082ms node_modules\expo-router\entry.js (4240 modules)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web Bundled 12113ms node_modules\expo-router\entry.js (1 module)
+[32m[expo][0m Web Bundled 9593ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web Bundled 2125ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web Bundled 1964ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m λ Bundled 61ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 1051ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 60ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 921ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 75ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 859ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 57ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 992ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 84ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 1002ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 57ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 1013ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 57ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 925ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 87ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 977ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 80ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 1009ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 60ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 1189ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 99ms node_modules\expo-router\node\render.js (1 module)
+[35m[expo][0m [Firebase] React Native persistence unavailable. Using in-memory auth persistence.
+[35m[expo][0m "shadow*" style props are deprecated. Use "boxShadow".
+[35m[expo][0m "textShadow*" style props are deprecated. Use "textShadow".
+[32m[expo][0m Web Bundled 1211ms node_modules\expo-router\entry.js (1 module)
+[35m[expo][0m Error: Cannot pipe to a closed or destroyed stream
+[35m[expo][0m at pipelineImpl (node:internal/streams/pipeline:264:15)
+[35m[expo][0m at node:stream/promises:31:5
+[35m[expo][0m at new Promise (<anonymous>)
+[35m[expo][0m at pipeline (node:stream/promises:20:10)
+[35m[expo][0m at respond (C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:138:19)
+[35m[expo][0m at C:\Users\Maldanis\Desktop\controlarapp-main\node_modules\expo-server\src\vendor\http.ts:68:13
+[35m[expo][0m at processTicksAndRejections (node:internal/process/task_queues:104:5)
+[32m[expo][0m Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[32m[expo][0m λ Bundled 65ms node_modules\expo-router\node\render.js (1 module)
+[31m[expo][0m Processo encerrado (code: 1)
+[33m[info][0m Encerrando processos...
