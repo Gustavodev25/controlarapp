@@ -545,11 +545,22 @@ router.get('/ping', (req, res) => {
 
 router.get('/connectors', async (req, res) => {
     try {
-        const resp = await pluggy.safeFetch(`${PLUGGY_API_URL}/connectors?sandbox=${env.PLUGGY_SANDBOX}&types=PERSONAL_BANK,BUSINESS_BANK`);
+        const healthDetails = req.query.healthDetails === 'true' || req.query.healthDetails === '1';
+        
+        let url = `${PLUGGY_API_URL}/connectors?sandbox=${env.PLUGGY_SANDBOX}&types=PERSONAL_BANK,BUSINESS_BANK`;
+        
+        if (healthDetails) {
+            url += '&healthDetails=true';
+        }
+
+        const resp = await pluggy.safeFetch(url);
+        
         if (!resp.ok) {
             return sendPluggyError(res, resp, 'Servico temporariamente indisponivel', 'CONNECTORS_FETCH_FAILED');
         }
-        res.json(await readResponseBody(resp));
+        
+        const data = await readResponseBody(resp);
+        res.json(data);
     } catch (err) {
         res.status(502).json({
             success: false,
@@ -557,6 +568,52 @@ router.get('/connectors', async (req, res) => {
             errorCode: 'CONNECTORS_FETCH_FAILED',
             retryable: true,
             actionRequired: false,
+        });
+    }
+});
+
+// Lightweight endpoint for bank health status (used by app to show warnings)
+router.get('/connectors/health', async (req, res) => {
+    try {
+        const resp = await pluggy.safeFetch(
+            `${PLUGGY_API_URL}/connectors?sandbox=${env.PLUGGY_SANDBOX}&types=PERSONAL_BANK,BUSINESS_BANK&healthDetails=true`
+        );
+        
+        if (!resp.ok) {
+            return res.status(502).json({
+                success: false,
+                error: 'Não foi possível verificar status dos bancos',
+                errorCode: 'HEALTH_CHECK_FAILED',
+            });
+        }
+
+        const data = await readResponseBody(resp);
+        const connectors = data.results || data || [];
+
+        // Extract only connectors that have health issues
+        const unhealthy = connectors
+            .filter((c: any) => {
+                const health = c.health || {};
+                const status = (health.status || '').toUpperCase();
+                return status !== 'ONLINE' && status !== 'OPERATIONAL';
+            })
+            .map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                health: c.health || { status: 'UNKNOWN' },
+            }));
+
+        res.json({
+            success: true,
+            unhealthy,
+            totalChecked: connectors.length,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (err: any) {
+        res.status(502).json({
+            success: false,
+            error: err?.message || 'Falha ao verificar status dos bancos',
+            errorCode: 'HEALTH_CHECK_FAILED',
         });
     }
 });

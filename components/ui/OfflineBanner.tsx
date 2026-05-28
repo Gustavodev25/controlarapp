@@ -49,11 +49,11 @@ export function OfflineBanner() {
             setIslandState('OFFLINE');
             islandWidth.value = withSpring(TAB_BAR_WIDTH - 24, springConfig);
             // Cresce unida à navbar
-            islandHeight.value = withSpring(48, springConfig);
+            islandHeight.value = withSpring(42, springConfig);  // Tighter offline banner
         } else if (isSyncing || pendingOps > 0) {
             setIslandState('SYNCING');
-            islandWidth.value = withSpring(180, springConfig);
-            islandHeight.value = withSpring(38, springConfig);
+            islandWidth.value = withSpring(170, springConfig);
+            islandHeight.value = withSpring(36, springConfig);  // Tighter syncing banner
         } else {
             // Volta a encolher e deslizar para trás do navbar
             islandWidth.value = withSpring(TAB_BAR_WIDTH * 0.3, { damping: 16, stiffness: 220, mass: 0.5 });
@@ -138,10 +138,10 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: 48,
+        height: 42,   // Reduced from 48
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,  // Reduced padding
     },
 
     /* ---- Sincronizando ---- */

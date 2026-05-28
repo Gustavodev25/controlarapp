@@ -17,6 +17,7 @@ interface ConnectAccountModalProps {
     searchElement?: React.ReactNode;
     warningText?: string;
     overlayElement?: React.ReactNode;
+    onDismiss?: () => void;
 }
 
 export function ConnectAccountModal({
@@ -34,6 +35,7 @@ export function ConnectAccountModal({
     searchElement,
     warningText,
     overlayElement,
+    onDismiss,
 }: ConnectAccountModalProps) {
     const [isModalMounted, setIsModalMounted] = useState(false);
     const { width, height } = useWindowDimensions();
@@ -60,6 +62,7 @@ export function ConnectAccountModal({
             animationType="slide"
             statusBarTranslucent
             onRequestClose={handleClose}
+            onDismiss={onDismiss}
         >
             <SafeAreaView style={styles.safeArea}>
                 <View

@@ -30,10 +30,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const INITIAL_BATCH = 2000;
-const PAGE_BATCH = 500;
-const MAX_HISTORY_LIMIT = 2000;
-const SILENT_REFRESH_BATCH = 350;
+const INITIAL_BATCH = 800;      // Reduced from 2000 for faster initial load
+const PAGE_BATCH = 400;
+const MAX_HISTORY_LIMIT = 1500;  // Reduced from 2000
+const SILENT_REFRESH_BATCH = 300;
 
 function normalizeCreditTransactionType(data: DocumentData): 'income' | 'expense' {
     const explicitType = typeof data?.type === 'string' ? data.type.toLowerCase() : '';

@@ -44,7 +44,7 @@ export function GlobalSyncBanner() {
                         alignItems: 'center',
                         minWidth: 100,
                         maxWidth: (Dimensions.get('window').width * 0.75) - 40,
-                        minHeight: 48,
+                        minHeight: 40,   // Tighter height
                     }
                 ]}
             >
@@ -84,9 +84,9 @@ const styles = StyleSheet.create({
     dynamicIsland: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 24,
+        paddingHorizontal: 14,
+        paddingVertical: 7,   // Reduced padding (was 10)
+        borderRadius: 22,
         backgroundColor: '#1E1E1E',
         borderWidth: 1,
         borderColor: '#333333',

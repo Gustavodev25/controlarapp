@@ -63,16 +63,16 @@ const BANNER_BOTTOM_OFFSET = FLOATING_TAB_BAR_BOTTOM + FLOATING_TAB_BAR_HEIGHT -
 
 const TOP_BAR_WIDTH = Math.min(SCREEN_WIDTH * 0.78, 340);
 const BANNER_MAX_WIDTH = Math.round(TOP_BAR_WIDTH * 0.8);
-const BANNER_HORIZONTAL_PADDING = 10;
+const BANNER_HORIZONTAL_PADDING = 8;   // Reduced horizontal padding
 const TEXT_ONLY_WIDTH_BUFFER = BANNER_HORIZONTAL_PADDING * 2 + 2;
 const ESTIMATED_TEXT_CHAR_WIDTH = 8.5;
 
 // Discrete morph targets — each "shape" the banner can take
 const SHAPE = {
-    compactActions: { width: 138, height: 50, radius: 26 }, // Sim/Não centralizado
-    textOnly: { width: 0, height: 50, radius: 24 }, // mensagem curta
-    textLong: { width: BANNER_MAX_WIDTH, height: 60, radius: 28 }, // 2 linhas
-    withActions: { width: BANNER_MAX_WIDTH, height: 50, radius: 24 }, // texto + ações
+    compactActions: { width: 138, height: 46, radius: 24 }, // Sim/Não centralizado
+    textOnly: { width: 0, height: 46, radius: 22 }, // mensagem curta  (reduced height)
+    textLong: { width: BANNER_MAX_WIDTH, height: 56, radius: 26 }, // 2 linhas
+    withActions: { width: BANNER_MAX_WIDTH, height: 46, radius: 22 }, // texto + ações (tighter)
 } as const;
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -760,7 +760,7 @@ const styles = StyleSheet.create({
     content: {
         ...StyleSheet.absoluteFillObject,
         paddingHorizontal: BANNER_HORIZONTAL_PADDING,
-        paddingVertical: 9,
+        paddingVertical: 6,   // Reduced from 9 - less padding as requested
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'flex-start',
@@ -776,8 +776,8 @@ const styles = StyleSheet.create({
     centeredActionsContent: {
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 0,
+        paddingHorizontal: 8,
+        paddingVertical: 4,   // Slight padding for better balance when centered
     },
 
     textBlock: {

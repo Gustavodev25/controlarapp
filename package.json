@@ -11,6 +11,8 @@
     "dev:ios": "concurrently -n server,expo -c blue,green --kill-others \"npm run server:dev\" \"expo start --go --ios\"",
     "dev:web": "concurrently -n server,expo -c blue,green --kill-others \"npm run server:dev\" \"expo start --web\"",
     "dev:tunnel": "node scripts/dev-tunnel.js",
+    "dev:tunnel:android": "node scripts/dev-tunnel.js --android",
+    "dev:tunnel:ios": "node scripts/dev-tunnel.js --ios",
     "perf:collect": "powershell -ExecutionPolicy Bypass -File scripts/perf/collect-metrics.ps1",
     "perf:scenario": "powershell -ExecutionPolicy Bypass -File scripts/perf/run-scenario.ps1",
     "perf:parse-framestats": "npx tsx scripts/perf/parse-framestats.ts",

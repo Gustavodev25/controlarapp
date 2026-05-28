@@ -44,10 +44,10 @@ import { InteractionManager, RefreshControl, ScrollView, StyleSheet, Text, Touch
 
 let hasPlayedOverviewGlowIntro = false;
 
-const CREDIT_OVERVIEW_WINDOW_MONTHS = 24;
+const CREDIT_OVERVIEW_WINDOW_MONTHS = 8;   // Reduced from 24 for performance (biggest win)
 const CREDIT_OVERVIEW_BATCH_SIZE = 250;
-const CREDIT_OVERVIEW_MAX_ITEMS_PER_CARD = 1000;
-const CREDIT_OVERVIEW_MAX_SCANNED_DOCS = 5000;
+const CREDIT_OVERVIEW_MAX_ITEMS_PER_CARD = 300;  // Reduced from 1000
+const CREDIT_OVERVIEW_MAX_SCANNED_DOCS = 1500;   // Reduced from 5000
 const DEBUG_DASHBOARD_PERF = false;
 const PROFILE_REFRESH_MIN_INTERVAL_MS = 30000;
 
@@ -782,7 +782,7 @@ export default function DashboardScreen() {
 
     const runId = ++creditOverviewRunIdRef.current;
     const fetchAccounts = async () => databaseService.getAccounts(user.uid);
-    const accountsResult = await queryCache.get(`accounts_${user.uid}`, fetchAccounts, { ttlMinutes: 10, persist: true });
+    const accountsResult = await queryCache.get(`accounts_${user.uid}`, fetchAccounts, { ttlMinutes: 30, persist: true });
 
     if (runId !== creditOverviewRunIdRef.current) {
       return;
@@ -963,9 +963,9 @@ export default function DashboardScreen() {
       };
 
       const allCreditTransactions = ((await queryCache.get(
-        `dashboard_credit_transactions_${user.uid}_v2`,
+        `dashboard_credit_transactions_${user.uid}_v3_perf`,   // v3 = reduced window + better caching
         fetchAllCreditTransactions,
-        { ttlMinutes: 10, persist: false }
+        { ttlMinutes: 45, persist: true }   // Much longer + persistent cache = huge perf win
       )) || []) as Transaction[];
 
       if (runId !== creditOverviewRunIdRef.current) {

@@ -149,6 +149,7 @@ const OAUTH_POLL_INITIAL_DELAY_MS = 3000;
 const OAUTH_POLL_MAX_DELAY_MS = 12000;
 const SYNC_REQUEST_TIMEOUT_MS = 240000;
 const MANUAL_REFRESH_MAX_DURATION_MS = 5 * 60 * 1000;
+const CPF_MODAL_IOS_PRESENT_DELAY_MS = 450;
 
 const triggerBankCardMorph = () => {
     LayoutAnimation.configureNext({
@@ -424,6 +425,10 @@ export default function OpenFinanceScreen() {
     const [loadingConnectors, setLoadingConnectors] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [connectorsFetchError, setConnectorsFetchError] = useState<string | null>(null);
+
+    // Health warnings for banks that are currently having issues (from Pluggy)
+    const [unhealthyBankIds, setUnhealthyBankIds] = useState<Set<string>>(new Set());
+    const [bankHealthLoading, setBankHealthLoading] = useState(false);
     const [selectedConnector, setSelectedConnector] = useState<any>(null);
     const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
     const [useCNPJ, setUseCNPJ] = useState(false);
@@ -462,6 +467,8 @@ export default function OpenFinanceScreen() {
     const activePollingItemIdRef = useRef<string | null>(null);
     const pendingItemSyncInFlightRef = useRef(false);
     const activeManualSyncsRef = useRef<Set<string>>(new Set());
+    const pendingCpfAfterBankDismissRef = useRef(false);
+    const cpfModalOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         pendingItemIdRef.current = pendingItemId;
@@ -475,6 +482,35 @@ export default function OpenFinanceScreen() {
     }, []);
 
     useEffect(() => clearBankSyncBannerTimer, [clearBankSyncBannerTimer]);
+
+    const clearCpfModalOpenTimer = useCallback(() => {
+        if (cpfModalOpenTimerRef.current) {
+            clearTimeout(cpfModalOpenTimerRef.current);
+            cpfModalOpenTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => clearCpfModalOpenTimer, [clearCpfModalOpenTimer]);
+
+    const showPendingCpfModal = useCallback(() => {
+        if (!pendingCpfAfterBankDismissRef.current) return;
+
+        pendingCpfAfterBankDismissRef.current = false;
+        clearCpfModalOpenTimer();
+        setShowCpfModal(true);
+    }, [clearCpfModalOpenTimer]);
+
+    const handleConnectAccountModalDismiss = useCallback(() => {
+        if (Platform.OS === 'ios') {
+            showPendingCpfModal();
+        }
+    }, [showPendingCpfModal]);
+
+    const handleCloseCpfModal = useCallback(() => {
+        pendingCpfAfterBankDismissRef.current = false;
+        clearCpfModalOpenTimer();
+        setShowCpfModal(false);
+    }, [clearCpfModalOpenTimer]);
 
     const hideBankSyncBanner = useCallback(() => {
         setBankSyncBanner({
@@ -1554,7 +1590,53 @@ export default function OpenFinanceScreen() {
         }
     };
 
+    // Fetch which banks are currently having issues according to Pluggy
+    const fetchBankHealthStatus = async () => {
+        setBankHealthLoading(true);
+        try {
+            if (!user) return;
+
+            const token = await user.getIdToken();
+
+            const response = await apiFetch('/api/pluggy/connectors/health', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                timeout: 15000,
+            });
+
+            if (!response.ok) {
+                // Non-critical — just don't show warnings if it fails
+                console.warn('[BankHealth] Failed to fetch health status');
+                setUnhealthyBankIds(new Set());
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.success && Array.isArray(data.unhealthy)) {
+                const badIds = new Set<string>(
+                    data.unhealthy
+                        .map((b: any) => String(b.id))
+                        .filter(Boolean)
+                );
+                setUnhealthyBankIds(badIds);
+            } else {
+                setUnhealthyBankIds(new Set());
+            }
+        } catch (e) {
+            console.warn('[BankHealth] Error fetching health:', e);
+            setUnhealthyBankIds(new Set());
+        } finally {
+            setBankHealthLoading(false);
+        }
+    };
+
     const handleOpenModal = () => {
+        pendingCpfAfterBankDismissRef.current = false;
+        clearCpfModalOpenTimer();
         openedOAuthUrlRef.current = false;
         setIsModalVisible(true);
         setConnectionStep('banks');
@@ -1564,6 +1646,9 @@ export default function OpenFinanceScreen() {
         setConnectionError(null);
         setConnectionStatusText('');
         setSearchQuery('');
+
+        // Load bank health warnings (non-blocking)
+        void fetchBankHealthStatus();
         setShowCpfModal(false);
         setCpfInput('');
         setCpfConnector(null);
@@ -1571,9 +1656,14 @@ export default function OpenFinanceScreen() {
         openFinanceConnectionState.clearCallbackPayload().catch(() => null);
 
         fetchConnectors();
+        // Also fetch health status for warnings on banks
+        void fetchBankHealthStatus();
     };
 
     const handleCloseModal = () => {
+        pendingCpfAfterBankDismissRef.current = false;
+        clearCpfModalOpenTimer();
+
         const isActiveConnection =
             ['connecting', 'oauth_pending'].includes(connectionStep) &&
             pendingItemId;
@@ -1602,9 +1692,27 @@ export default function OpenFinanceScreen() {
     };
 
     const handleSelectConnector = (connector: any) => {
+        pendingCpfAfterBankDismissRef.current = false;
+        clearCpfModalOpenTimer();
+
         setCpfConnector(connector);
         setCpfInput('');
         setCpfModalStep('cpf');
+
+        if (Platform.OS === 'ios') {
+            Keyboard.dismiss();
+            setShowCpfModal(false);
+            pendingCpfAfterBankDismissRef.current = true;
+            setIsModalVisible(false);
+
+            cpfModalOpenTimerRef.current = setTimeout(
+                showPendingCpfModal,
+                CPF_MODAL_IOS_PRESENT_DELAY_MS
+            );
+
+            return;
+        }
+
         setShowCpfModal(true);
     };
 
@@ -1642,6 +1750,8 @@ export default function OpenFinanceScreen() {
     const handleStartConnection = async () => {
         if (!cpfConnector) return;
 
+        pendingCpfAfterBankDismissRef.current = false;
+        clearCpfModalOpenTimer();
         setSelectedConnector(cpfConnector);
 
         const creds = cpfConnector.credentials || [];
@@ -2188,15 +2298,19 @@ export default function OpenFinanceScreen() {
                                 Nenhum banco encontrado
                             </Text>
                         ) : (
-                            displayConnectors.map((item, index) => (
-                                <ConnectorCard
-                                    key={item.id.toString()}
-                                    item={item}
-                                    index={index}
-                                    onSelect={handleSelectConnector}
-                                    styles={styles}
-                                />
-                            ))
+                            displayConnectors.map((item, index) => {
+                                const isUnhealthy = unhealthyBankIds.has(String(item.id));
+                                return (
+                                    <ConnectorCard
+                                        key={item.id.toString()}
+                                        item={item}
+                                        index={index}
+                                        onSelect={handleSelectConnector}
+                                        styles={styles}
+                                        isUnhealthy={isUnhealthy}
+                                    />
+                                );
+                            })
                         )}
                     </ScrollView>
                 );
@@ -2335,6 +2449,7 @@ export default function OpenFinanceScreen() {
                 <ConnectAccountModal
                     visible={isModalVisible}
                     onClose={handleCloseModal}
+                    onDismiss={handleConnectAccountModalDismiss}
                     title={
                         connectionStep === 'banks'
                             ? 'Selecione o seu banco'
@@ -2376,7 +2491,7 @@ export default function OpenFinanceScreen() {
 
                 <ModalPadrao
                     visible={showCpfModal}
-                    onClose={() => setShowCpfModal(false)}
+                    onClose={handleCloseCpfModal}
                     title={cpfModalStep === 'cpf' ? 'Confirme seu CPF' : 'Confirmar conexão'}
                     presentation="center"
                     size="md"
@@ -2637,7 +2752,7 @@ const EmptyAccountsState = ({ styles }: any) => {
     );
 };
 
-const ConnectorCard = ({ item, index, onSelect, styles }: any) => {
+const ConnectorCard = ({ item, index, onSelect, styles, isUnhealthy }: any) => {
     const press = useSharedValue(0);
 
     const cardStyle = useAnimatedStyle(() => {
@@ -2664,6 +2779,8 @@ const ConnectorCard = ({ item, index, onSelect, styles }: any) => {
         ],
     }));
 
+    const showWarning = !!isUnhealthy;
+
     return (
         <AnimatedTouchableOpacity
             onPress={() => onSelect(item)}
@@ -2673,7 +2790,7 @@ const ConnectorCard = ({ item, index, onSelect, styles }: any) => {
             onPressOut={() => {
                 press.value = withSpring(0, PRESS_SPRING);
             }}
-            style={[styles.bankListRow, cardStyle]}
+            style={[styles.bankListRow, cardStyle, showWarning && styles.bankListRowWarning]}
             activeOpacity={0.9}
             entering={FadeInDown
                 .springify()
@@ -2699,10 +2816,19 @@ const ConnectorCard = ({ item, index, onSelect, styles }: any) => {
                 </View>
             </View>
 
-            <Text style={styles.bankRowTitle}>{item.name}</Text>
+            <View style={styles.bankRowTitleContainer}>
+                <Text style={[styles.bankRowTitle, showWarning && styles.bankRowTitleWarning]} numberOfLines={1}>
+                    {item.name}
+                </Text>
+                {showWarning && (
+                    <View style={styles.bankWarningBadge}>
+                        <Text style={styles.bankWarningText}>Instável</Text>
+                    </View>
+                )}
+            </View>
 
             <Reanimated.View style={chevronStyle}>
-                <ChevronRight size={18} color="#7A7A7A" />
+                <ChevronRight size={18} color={showWarning ? "#F59E0B" : "#7A7A7A"} />
             </Reanimated.View>
         </AnimatedTouchableOpacity>
     );
@@ -2918,6 +3044,41 @@ const styles = StyleSheet.create({
         color: '#E5E5E5',
         fontFamily: 'AROneSans_400Regular',
         zIndex: 4,
+    },
+
+    // New styles for bank health warnings
+    bankListRowWarning: {
+        borderColor: 'rgba(245, 158, 11, 0.35)',
+        backgroundColor: 'rgba(245, 158, 11, 0.03)',
+    },
+
+    bankRowTitleContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginRight: 8,
+    },
+
+    bankRowTitleWarning: {
+        color: '#FCD34D',
+    },
+
+    bankWarningBadge: {
+        backgroundColor: 'rgba(245, 158, 11, 0.15)',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(245, 158, 11, 0.3)',
+    },
+
+    bankWarningText: {
+        color: '#F59E0B',
+        fontSize: 10,
+        fontFamily: 'AROneSans_600SemiBold',
+        textTransform: 'uppercase',
+        letterSpacing: 0.3,
     },
 
     bankCardMorphWrapper: {
