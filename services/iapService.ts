@@ -59,7 +59,12 @@ const BACKEND_URL =
 export const APPLE_PRO_PRODUCT_ID = 'com.gustavodev25.controlarapp.pro.monthly';
 export const GOOGLE_PLAY_PRO_PRODUCT_ID = 'controlarapp_pro_monthly';
 export const GOOGLE_PLAY_PACKAGE_NAME = 'com.gustavodev25.controlarapp';
-export const GOOGLE_PLAY_TRIAL_OFFER_ID = 'pro-monthly-trial-7d';
+export const GOOGLE_PLAY_TRIAL_OFFER_ID = 'trial-7d';
+const GOOGLE_PLAY_LEGACY_TRIAL_OFFER_ID = 'pro-monthly-trial-7d';
+const GOOGLE_PLAY_TRIAL_OFFER_IDS = new Set([
+    GOOGLE_PLAY_TRIAL_OFFER_ID,
+    GOOGLE_PLAY_LEGACY_TRIAL_OFFER_ID,
+]);
 export const PRO_PRODUCT_ID =
     Platform.OS === 'android' ? GOOGLE_PLAY_PRO_PRODUCT_ID : APPLE_PRO_PRODUCT_ID;
 export const PRO_PRICE_STRING = 'R$ 34,90';
@@ -222,24 +227,41 @@ function getTrustedDisplayPrice(product: ProductSubscription): string {
 function getGooglePlaySubscriptionOfferToken(product?: ProductSubscription | null): string | null {
     if (!product || product.platform !== 'android') return null;
 
-    const legacyOffers = Array.isArray((product as any).subscriptionOfferDetailsAndroid)
-        ? (product as any).subscriptionOfferDetailsAndroid
-        : [];
-    const standardizedOffers = Array.isArray((product as any).subscriptionOffers)
-        ? (product as any).subscriptionOffers
-        : [];
+    const parseOfferList = (value: any): any[] => {
+        if (Array.isArray(value)) return value;
+        if (typeof value !== 'string' || !value.trim()) return [];
+
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    };
+    const legacyOffers = parseOfferList((product as any).subscriptionOfferDetailsAndroid);
+    const standardizedOffers = parseOfferList((product as any).subscriptionOffers);
+    const getOfferId = (offer: any) => String(offer?.offerId || offer?.id || '').trim();
+    const isKnownTrialOffer = (offer: any) => GOOGLE_PLAY_TRIAL_OFFER_IDS.has(getOfferId(offer));
+    const getPricingPhaseList = (offer: any) => {
+        const pricingPhases = offer?.pricingPhases || offer?.pricingPhasesAndroid;
+        if (Array.isArray(pricingPhases)) return pricingPhases;
+        if (Array.isArray(pricingPhases?.pricingPhaseList)) return pricingPhases.pricingPhaseList;
+        if (Array.isArray(offer?.pricingPhaseList)) return offer.pricingPhaseList;
+        return [];
+    };
     const hasFreePhase = (offer: any) => {
-        const pricingPhases =
-            offer?.pricingPhases?.pricingPhaseList ||
-            offer?.pricingPhasesAndroid?.pricingPhaseList ||
-            [];
+        if (toFiniteNumber(offer?.price) === 0) return true;
+        const pricingPhases = getPricingPhaseList(offer);
         return Array.isArray(pricingPhases) && pricingPhases.some((phase: any) => {
-            return String(phase?.priceAmountMicros ?? '') === '0' || Number(phase?.price) === 0;
+            return (
+                String(phase?.priceAmountMicros ?? phase?.priceAmountMicrosAndroid ?? '') === '0' ||
+                toFiniteNumber(phase?.price) === 0
+            );
         });
     };
     const trialOffer =
-        legacyOffers.find((offer: any) => offer?.offerId === GOOGLE_PLAY_TRIAL_OFFER_ID) ||
-        standardizedOffers.find((offer: any) => offer?.id === GOOGLE_PLAY_TRIAL_OFFER_ID) ||
+        legacyOffers.find(isKnownTrialOffer) ||
+        standardizedOffers.find(isKnownTrialOffer) ||
         legacyOffers.find(hasFreePhase) ||
         standardizedOffers.find(hasFreePhase);
     const fallbackOffer = legacyOffers[0] || standardizedOffers[0] || null;

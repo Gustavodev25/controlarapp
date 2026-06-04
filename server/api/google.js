@@ -11,7 +11,12 @@ const GOOGLE_PLAY_PACKAGE_NAME =
 const GOOGLE_PLAY_PRO_PRODUCT_ID =
     process.env.GOOGLE_PLAY_PRO_PRODUCT_ID || 'controlarapp_pro_monthly';
 const GOOGLE_PLAY_TRIAL_OFFER_ID =
-    process.env.GOOGLE_PLAY_TRIAL_OFFER_ID || 'pro-monthly-trial-7d';
+    process.env.GOOGLE_PLAY_TRIAL_OFFER_ID || 'trial-7d';
+const GOOGLE_PLAY_LEGACY_TRIAL_OFFER_ID = 'pro-monthly-trial-7d';
+const GOOGLE_PLAY_TRIAL_OFFER_IDS = new Set([
+    GOOGLE_PLAY_TRIAL_OFFER_ID,
+    GOOGLE_PLAY_LEGACY_TRIAL_OFFER_ID,
+]);
 const GOOGLE_PLAY_TRIAL_DAYS = 7;
 const PRO_PRICE = 34.90;
 const PRO_CURRENCY = 'BRL';
@@ -67,6 +72,48 @@ function parseJsonOrBase64Json(value) {
     }
 }
 
+function normalizeEmail(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function looksLikeFirebaseAdminSdkEmail(value) {
+    return normalizeEmail(value).includes('firebase-adminsdk');
+}
+
+function getFirebaseAdminClientEmailForComparison() {
+    if (process.env.FIREBASE_CLIENT_EMAIL) {
+        return process.env.FIREBASE_CLIENT_EMAIL;
+    }
+
+    try {
+        const serviceAccount = parseJsonOrBase64Json(process.env.FIREBASE_SERVICE_ACCOUNT);
+        return serviceAccount?.client_email || null;
+    } catch {
+        return null;
+    }
+}
+
+function validateGooglePlayServiceAccountIdentity(clientEmail) {
+    const googlePlayEmail = normalizeEmail(clientEmail);
+    const firebaseAdminEmail = normalizeEmail(getFirebaseAdminClientEmailForComparison());
+
+    if (!googlePlayEmail) return;
+
+    if (firebaseAdminEmail && googlePlayEmail === firebaseAdminEmail) {
+        throw new Error(
+            'GOOGLE_PLAY_SERVICE_ACCOUNT must not use the same client_email as Firebase Admin. ' +
+            'Use FIREBASE_SERVICE_ACCOUNT for Firebase Auth/Firestore and GOOGLE_PLAY_SERVICE_ACCOUNT for the Play Console Android Publisher API.'
+        );
+    }
+
+    if (looksLikeFirebaseAdminSdkEmail(googlePlayEmail)) {
+        throw new Error(
+            'GOOGLE_PLAY_SERVICE_ACCOUNT client_email looks like a Firebase Admin SDK service account. ' +
+            'Create or select a Play Console service account and grant it access to orders and subscriptions.'
+        );
+    }
+}
+
 function getGooglePlayServiceAccount() {
     const serviceAccount = parseJsonOrBase64Json(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT);
     const clientEmail = serviceAccount?.client_email || process.env.GOOGLE_PLAY_CLIENT_EMAIL;
@@ -75,6 +122,8 @@ function getGooglePlayServiceAccount() {
     if (!clientEmail || !privateKey) {
         return null;
     }
+
+    validateGooglePlayServiceAccountIdentity(clientEmail);
 
     return {
         clientEmail,
@@ -193,7 +242,7 @@ function resolveGoogleSubscriptionState(purchase, nowMs = Date.now()) {
     const offerId = lineItem?.offerDetails?.offerId || null;
     const startedMs = dateValueToMillis(purchase?.startTime);
     const trialEndsMs =
-        offerId === GOOGLE_PLAY_TRIAL_OFFER_ID && startedMs
+        offerId && GOOGLE_PLAY_TRIAL_OFFER_IDS.has(offerId) && startedMs
             ? startedMs + GOOGLE_PLAY_TRIAL_DAYS * DAY_MS
             : null;
     const isTrialing = hasPro && trialEndsMs && trialEndsMs > nowMs;
@@ -613,4 +662,5 @@ module.exports._test = {
     getLatestProLineItem,
     obfuscateFirebaseUid,
     resolveGoogleSubscriptionState,
+    validateGooglePlayServiceAccountIdentity,
 };

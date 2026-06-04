@@ -49,6 +49,14 @@ const isUserCancelledError = (error: any) => {
     return code === 'e_user_cancelled' || code === 'user-cancelled';
 };
 
+const isDuplicatePurchaseUpdateError = (error: any) => {
+    const message = String(error?.message || error || '').toLowerCase();
+    return (
+        message.includes('duplicate purchase update skipped') ||
+        (message.includes('restorepurchases') && message.includes('getavailablepurchases'))
+    );
+};
+
 const isNativeStoreProviderValue = (value?: string | null) => {
     return ['apple', 'app_store', 'storekit', 'google', 'google_play', 'play_store']
         .includes(String(value || '').trim().toLowerCase());
@@ -144,6 +152,30 @@ export default function PlansScreen() {
         return () => { cancelled = true; };
     }, [user?.uid]));
 
+    const recoverExistingStorePurchase = useCallback(async () => {
+        if (!user?.uid) return false;
+
+        clearPurchaseFallbackTimer();
+        const result = await restorePurchases(user.uid);
+        const statusResult = await syncStoreSubscriptionStatus(user.uid, { refreshServerStatus: true });
+        const hasStorePurchaseRestored =
+            result.hasPro ||
+            (statusResult.hasPro && isNativeStoreProviderValue(statusResult.provider));
+
+        setAlreadyPro(hasStorePurchaseRestored || (!shouldSetupPayment && statusResult.hasPro));
+
+        if (!hasStorePurchaseRestored) return false;
+
+        purchaseHandledRef.current = true;
+        await refreshProfileRef.current();
+        Alert.alert(
+            'Compra restaurada!',
+            `A ${storeName} ja tinha uma assinatura ativa para este usuario. Seu Plano Pro foi sincronizado.`,
+            [{ text: 'Continuar', onPress: () => isForced ? router.replace('/(tabs)/dashboard') : safeBack(router) }]
+        );
+        return true;
+    }, [clearPurchaseFallbackTimer, isForced, router, shouldSetupPayment, storeName, user?.uid]);
+
     // Listeners nativos do StoreKit
     useEffect(() => {
         if (!isMobileStore) return;
@@ -192,6 +224,28 @@ export default function PlansScreen() {
                 setIapLoading(false);
                 return;
             }
+            if (isDuplicatePurchaseUpdateError(error)) {
+                setIapLoading(true);
+                recoverExistingStorePurchase()
+                    .then((recovered) => {
+                        if (!recovered) {
+                            Alert.alert(
+                                'Compra ja existente',
+                                `A ${storeName} informou que esta assinatura ja existe. Toque em "Restaurar compras anteriores" para tentar sincronizar novamente.`,
+                                [{ text: 'OK' }]
+                            );
+                        }
+                    })
+                    .catch((restoreError: any) => {
+                        Alert.alert(
+                            'Compra ja existente',
+                            restoreError?.message || `A ${storeName} informou que esta assinatura ja existe. Toque em "Restaurar compras anteriores" para sincronizar.`,
+                            [{ text: 'OK' }]
+                        );
+                    })
+                    .finally(() => setIapLoading(false));
+                return;
+            }
             setIapLoading(false);
             Alert.alert('Erro no pagamento', error.message || 'Não foi possível processar o pagamento.');
         });
@@ -200,7 +254,7 @@ export default function PlansScreen() {
             purchaseSub.remove();
             errorSub.remove();
         };
-    }, [user?.uid, isForced, isMobileStore, router, clearPurchaseFallbackTimer]);
+    }, [user?.uid, isForced, isMobileStore, router, clearPurchaseFallbackTimer, recoverExistingStorePurchase, storeName]);
 
     // Bloqueia botão voltar no Android se forçado
     useEffect(() => {
@@ -248,6 +302,27 @@ export default function PlansScreen() {
         } catch (e: any) {
             if (isUserCancelledError(e)) {
                 setIapLoading(false);
+                return;
+            }
+            if (isDuplicatePurchaseUpdateError(e)) {
+                try {
+                    const recovered = await recoverExistingStorePurchase();
+                    if (!recovered) {
+                        Alert.alert(
+                            'Compra ja existente',
+                            `A ${storeName} informou que esta assinatura ja existe. Toque em "Restaurar compras anteriores" para sincronizar novamente.`,
+                            [{ text: 'OK' }]
+                        );
+                    }
+                } catch (restoreError: any) {
+                    Alert.alert(
+                        'Compra ja existente',
+                        restoreError?.message || `A ${storeName} informou que esta assinatura ja existe. Toque em "Restaurar compras anteriores" para sincronizar.`,
+                        [{ text: 'OK' }]
+                    );
+                } finally {
+                    setIapLoading(false);
+                }
                 return;
             }
             setIapLoading(false);

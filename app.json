@@ -2,7 +2,7 @@
   "expo": {
     "name": "Controlar+",
     "slug": "controlarapp",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "controlarapp",
@@ -41,7 +41,7 @@
         "android.permission.USE_FINGERPRINT"
       ],
       "package": "com.gustavodev25.controlarapp",
-      "versionCode": 7
+      "versionCode": 8
     },
     "web": {
       "output": "static",

@@ -19,7 +19,7 @@ Nao altere estes IDs nos paineis:
 | Google | Package name | `com.gustavodev25.controlarapp` |
 | Google | Subscription product ID | `controlarapp_pro_monthly` |
 | Google | Base plan ID | `pro-monthly` |
-| Google | Offer ID | `pro-monthly-trial-7d` |
+| Google | Offer ID | `trial-7d` |
 
 O preco exibido como fallback no app e `R$ 34,90` por mes. Cadastre o mesmo preco nas lojas.
 
@@ -76,6 +76,11 @@ FIREBASE_CLIENT_EMAIL=firebase-adminsdk-...@seu-projeto.iam.gserviceaccount.com
 credencial e diferente de `GOOGLE_PLAY_SERVICE_ACCOUNT`: a primeira acessa Firebase
 Auth/Firestore; a segunda acessa a Android Publisher API.
 
+Nao reutilize a credencial `firebase-adminsdk-...` em `GOOGLE_PLAY_SERVICE_ACCOUNT`.
+No Railway, mantenha duas variaveis separadas: `FIREBASE_SERVICE_ACCOUNT` para Firebase
+Admin e `GOOGLE_PLAY_SERVICE_ACCOUNT` para a conta adicionada em `Users and permissions`
+do Play Console.
+
 ## Google Play Console
 
 1. Entre no Google Play Console e abra o app Controlar+.
@@ -88,7 +93,7 @@ Auth/Firestore; a segunda acessa a Android Publisher API.
    - periodo de cobranca: mensal;
    - preco no Brasil: `R$ 34,90`.
 6. Dentro do plano, crie uma oferta:
-   - ID: `pro-monthly-trial-7d`;
+   - ID: `trial-7d`;
    - elegibilidade: novos clientes;
    - fase: teste gratis por `7 dias`.
 7. Ative a assinatura, o plano basico e a oferta.
@@ -106,11 +111,22 @@ FIREBASE_SERVICE_ACCOUNT={"type":"service_account", "...":"..."}
 GOOGLE_PLAY_SERVICE_ACCOUNT={"type":"service_account", "...":"..."}
 GOOGLE_PLAY_PACKAGE_NAME=com.gustavodev25.controlarapp
 GOOGLE_PLAY_PRO_PRODUCT_ID=controlarapp_pro_monthly
-GOOGLE_PLAY_TRIAL_OFFER_ID=pro-monthly-trial-7d
+GOOGLE_PLAY_TRIAL_OFFER_ID=trial-7d
 GOOGLE_PLAY_RTDN_TOKEN=gere_um_token_secreto_longo
 ```
 
 `GOOGLE_PLAY_SERVICE_ACCOUNT` aceita JSON completo ou JSON convertido para base64.
+Ela nao deve ter o mesmo `client_email` usado em `FIREBASE_SERVICE_ACCOUNT`.
+
+Antes de retestar no app, valide o ambiente do backend:
+
+```bash
+cd server
+npm run test:config
+```
+
+O script deve mostrar `Trial Offer ID: trial-7d`, duas credenciais com `client_email`
+diferentes, e nao pode apontar a credencial Google Play como `firebase-adminsdk-...`.
 
 ### Notificacoes Google em tempo real
 

@@ -21,9 +21,26 @@ const {
   GOOGLE_PLAY_TRIAL_DAYS,
   obfuscateFirebaseUid,
   resolveGoogleSubscriptionState,
+  validateGooglePlayServiceAccountIdentity,
 } = googleRouter._test;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ORIGINAL_FIREBASE_SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT;
+const ORIGINAL_FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL;
+
+afterEach(() => {
+  if (ORIGINAL_FIREBASE_SERVICE_ACCOUNT === undefined) {
+    delete process.env.FIREBASE_SERVICE_ACCOUNT;
+  } else {
+    process.env.FIREBASE_SERVICE_ACCOUNT = ORIGINAL_FIREBASE_SERVICE_ACCOUNT;
+  }
+
+  if (ORIGINAL_FIREBASE_CLIENT_EMAIL === undefined) {
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+  } else {
+    process.env.FIREBASE_CLIENT_EMAIL = ORIGINAL_FIREBASE_CLIENT_EMAIL;
+  }
+});
 
 function createPurchase({
   state = 'SUBSCRIPTION_STATE_ACTIVE',
@@ -56,6 +73,15 @@ describe('Google Play subscription state', () => {
     expect(result.trialEndsMs).toBe(Date.parse('2026-06-01T12:00:00.000Z') + GOOGLE_PLAY_TRIAL_DAYS * DAY_MS);
   });
 
+  test('keeps recognizing the legacy seven-day trial offer id', () => {
+    const result = resolveGoogleSubscriptionState(createPurchase({
+      offerId: 'pro-monthly-trial-7d',
+    }), Date.parse('2026-06-03T12:00:00.000Z'));
+
+    expect(result.hasPro).toBe(true);
+    expect(result.status).toBe('trialing');
+  });
+
   test('keeps access until expiration after auto-renewal is cancelled', () => {
     const result = resolveGoogleSubscriptionState(createPurchase({
       state: 'SUBSCRIPTION_STATE_CANCELED',
@@ -79,5 +105,22 @@ describe('Google Play subscription state', () => {
   test('uses a stable sha256 account identifier', () => {
     expect(obfuscateFirebaseUid('firebase-user-123')).toMatch(/^[a-f0-9]{64}$/);
     expect(obfuscateFirebaseUid('firebase-user-123')).toBe(obfuscateFirebaseUid('firebase-user-123'));
+  });
+
+  test('rejects Firebase Admin SDK credentials for Google Play', () => {
+    delete process.env.FIREBASE_SERVICE_ACCOUNT;
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+
+    expect(() => validateGooglePlayServiceAccountIdentity(
+      'firebase-adminsdk-test@controlarapp.iam.gserviceaccount.com'
+    )).toThrow(/Firebase Admin SDK/);
+  });
+
+  test('rejects reusing the Firebase Admin client email for Google Play', () => {
+    process.env.FIREBASE_CLIENT_EMAIL = 'firebase-admin@controlarapp.iam.gserviceaccount.com';
+
+    expect(() => validateGooglePlayServiceAccountIdentity(
+      'firebase-admin@controlarapp.iam.gserviceaccount.com'
+    )).toThrow(/same client_email/);
   });
 });
