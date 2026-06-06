@@ -19,6 +19,7 @@ const {
   APPLE_MONTHLY_FALLBACK_MS,
   assertAppleAppAccountTokenMatches,
   getExpectedAppleAppAccountToken,
+  inferAppleNotificationStatusCode,
   isAppleFreeTrial,
   resolveMonthlyEntitlementPeriod,
 } = appleRouter._test;
@@ -71,6 +72,9 @@ describe('Apple subscription entitlement period', () => {
   test('recognizes App Store free trials from receipts and StoreKit transactions', () => {
     expect(isAppleFreeTrial({ receipt: { is_trial_period: 'true' } })).toBe(true);
     expect(isAppleFreeTrial({ transactionPayload: { offerDiscountType: 'FREE_TRIAL' } })).toBe(true);
+    expect(isAppleFreeTrial({ transactionPayload: { rawOfferDiscountType: 'free_trial' } })).toBe(true);
+    expect(isAppleFreeTrial({ transactionPayload: { offerType: 1, offerIdentifier: 'intro-free-trial' } })).toBe(true);
+    expect(isAppleFreeTrial({ purchase: { offerIOS: { paymentMode: 'freeTrial' } } })).toBe(true);
     expect(isAppleFreeTrial({ transactionPayload: { offerDiscountType: 'PAY_AS_YOU_GO' } })).toBe(false);
   });
 
@@ -84,5 +88,13 @@ describe('Apple subscription entitlement period', () => {
     expect(() => {
       assertAppleAppAccountTokenMatches(firebaseUid, { appAccountToken: getExpectedAppleAppAccountToken('other-user') });
     }).toThrow('Apple transaction account token does not match the signed-in user');
+  });
+
+  test('infers App Store notification statuses for renewal lifecycle events', () => {
+    expect(inferAppleNotificationStatusCode({ notificationType: 'DID_RENEW', data: {} }, {})).toBe(1);
+    expect(inferAppleNotificationStatusCode({ notificationType: 'DID_FAIL_TO_RENEW', data: {} }, {})).toBe(3);
+    expect(inferAppleNotificationStatusCode({ notificationType: 'EXPIRED', data: {} }, {})).toBe(2);
+    expect(inferAppleNotificationStatusCode({ notificationType: 'REFUND', data: {} }, {})).toBe(5);
+    expect(inferAppleNotificationStatusCode({ notificationType: 'DID_RENEW', data: { status: 4 } }, {})).toBe(4);
   });
 });

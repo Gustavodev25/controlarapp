@@ -200,6 +200,33 @@ const getPurchaseOriginalTransactionId = (purchase?: any): string | null => {
     );
 };
 
+const hasStoreKitPurchaseEvidence = (
+    purchase?: Partial<StorePurchase> | Record<string, any> | null
+): boolean => {
+    if (!purchase) return false;
+
+    const rawPurchase = purchase as Record<string, any>;
+    if (rawPurchase.productId && rawPurchase.productId !== APPLE_PRO_PRODUCT_ID) {
+        return false;
+    }
+
+    return Boolean(
+        rawPurchase.transactionId ||
+        rawPurchase.id ||
+        rawPurchase.originalTransactionIdentifierIOS ||
+        rawPurchase.originalTransactionId ||
+        rawPurchase.transactionDate ||
+        rawPurchase.expirationDateIOS ||
+        rawPurchase.originalTransactionDateIOS ||
+        rawPurchase.revocationDateIOS ||
+        rawPurchase.offerIOS ||
+        rawPurchase.renewalInfoIOS ||
+        rawPurchase.environmentIOS ||
+        rawPurchase.isActive === true ||
+        rawPurchase.purchaseState
+    );
+};
+
 const normalizeStoreKitPurchaseForBackend = (
     purchase?: Partial<StorePurchase> | Record<string, any> | null,
     signedTransactionInfo?: string | null
@@ -218,7 +245,10 @@ const normalizeStoreKitPurchaseForBackend = (
         transactionDate: toFiniteNumber(rawPurchase.transactionDate),
         expirationDateIOS: toFiniteNumber(rawPurchase.expirationDateIOS),
         originalTransactionDateIOS: toFiniteNumber(rawPurchase.originalTransactionDateIOS),
+        revocationDateIOS: toFiniteNumber(rawPurchase.revocationDateIOS),
+        revocationReasonIOS: rawPurchase.revocationReasonIOS || null,
         appAccountToken: rawPurchase.appAccountToken || null,
+        offerIOS: rawPurchase.offerIOS || null,
         environmentIOS: rawPurchase.environmentIOS || null,
         isAutoRenewing: typeof rawPurchase.isAutoRenewing === 'boolean' ? rawPurchase.isAutoRenewing : null,
         renewalInfoIOS: rawPurchase.renewalInfoIOS || null,
@@ -472,6 +502,8 @@ async function getStoreKitSignedTransaction(purchase?: Partial<StorePurchase> | 
     const purchaseToken = (purchase as any)?.purchaseToken;
     if (isJws(purchaseToken)) return purchaseToken;
 
+    if (!hasStoreKitPurchaseEvidence(purchase)) return null;
+
     const iap = getIAP();
     if (!iap || typeof (iap as any).getTransactionJwsIOS !== 'function') return null;
 
@@ -650,14 +682,6 @@ export async function syncStoreKitPurchaseWithBackend(
 export async function syncActiveStoreKitPurchaseWithBackend(firebaseUid: string): Promise<PurchaseResult> {
     const activePurchase = await getActiveStoreKitPurchase();
     if (!activePurchase) {
-        const signedTransactionInfo = await getStoreKitSignedTransaction({ productId: APPLE_PRO_PRODUCT_ID });
-        if (signedTransactionInfo) {
-            return syncStoreKitPurchaseWithBackend(firebaseUid, {
-                productId: APPLE_PRO_PRODUCT_ID,
-                purchaseToken: signedTransactionInfo,
-            });
-        }
-
         return { success: false, hasPro: false, error: 'Nenhuma assinatura Pro ativa encontrada na App Store.' };
     }
 

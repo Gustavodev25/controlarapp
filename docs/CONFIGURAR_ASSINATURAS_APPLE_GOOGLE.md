@@ -54,6 +54,19 @@ APPLE_SERVER_API_ENVIRONMENT=production
 O `APPLE_SHARED_SECRET` fica nas configuracoes de assinatura do App Store Connect.
 Para a App Store Server API, gere uma chave em `Users and Access > Integrations`.
 
+### App Store Server Notifications
+
+No App Store Connect, configure a URL de notificacoes da assinatura para:
+
+```text
+https://SEU_BACKEND/api/apple/notifications
+```
+
+Use a URL de producao em Production e, se estiver testando Sandbox com outro
+backend, configure a URL Sandbox tambem. O endpoint recebe `signedPayload` da
+Apple, valida o JWS e atualiza o Firestore para renovacoes, expiracoes,
+cancelamentos e refunds.
+
 ## Firebase Admin no backend
 
 As rotas de IAP usam Firebase Admin para validar o ID token do usuario e gravar o

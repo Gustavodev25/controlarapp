@@ -44,11 +44,38 @@ function isAppleFreeTrial({ receipt, transactionPayload, purchase } = {}) {
 
     const discountType = String(
         transactionPayload?.offerDiscountType ||
+        transactionPayload?.rawOfferDiscountType ||
         purchase?.offerIOS?.paymentMode ||
+        purchase?.offerIOS?.paymentModeIOS ||
+        purchase?.offerIOS?.rawPaymentMode ||
         ''
     ).trim().toLowerCase().replace(/_/g, '-');
 
-    return discountType === 'free-trial';
+    if (discountType) {
+        return discountType === 'free-trial' || discountType === 'freetrial';
+    }
+
+    const offerType = String(
+        transactionPayload?.offerType ||
+        transactionPayload?.rawOfferType ||
+        purchase?.offerIOS?.type ||
+        purchase?.offerIOS?.offerType ||
+        ''
+    ).trim().toLowerCase();
+    const offerIdentifier = String(
+        transactionPayload?.offerIdentifier ||
+        purchase?.offerIOS?.id ||
+        purchase?.offerIOS?.identifier ||
+        ''
+    ).trim().toLowerCase();
+
+    return (
+        offerType === 'introductory' ||
+        offerType === 'introductory-offer' ||
+        offerType === '1' ||
+        offerIdentifier.includes('trial') ||
+        offerIdentifier.includes('free')
+    );
 }
 
 function dateValueToMillis(value) {
@@ -639,6 +666,41 @@ async function bindAppleTransactionToUser({ admin, firebaseUid, originalTransact
     return originalTransactionIdHash;
 }
 
+async function getFirebaseUidForAppleTransaction({ admin, originalTransactionId }) {
+    if (!originalTransactionId) return null;
+
+    const db = admin.firestore();
+    const originalTransactionIdHash = hashValue(originalTransactionId);
+    const mappingRef = db.collection('appleStorePurchases').doc(originalTransactionIdHash);
+    const mappingDoc = await mappingRef.get();
+
+    return mappingDoc.exists ? mappingDoc.data()?.firebaseUid || null : null;
+}
+
+function inferAppleNotificationStatusCode(notificationPayload, transactionPayload) {
+    const explicitStatus = normalizeAppleServerStatus(notificationPayload?.data?.status);
+    if (explicitStatus) return explicitStatus;
+
+    const notificationType = String(notificationPayload?.notificationType || '').trim().toUpperCase();
+    const subtype = String(notificationPayload?.subtype || '').trim().toUpperCase();
+
+    if (transactionPayload?.revocationDate) return APPLE_SERVER_STATUS.REVOKED;
+    if (notificationType === 'EXPIRED') return APPLE_SERVER_STATUS.EXPIRED;
+    if (notificationType === 'REFUND' || notificationType === 'REVOKE') return APPLE_SERVER_STATUS.REVOKED;
+    if (notificationType === 'DID_FAIL_TO_RENEW') return APPLE_SERVER_STATUS.BILLING_RETRY;
+    if (notificationType === 'GRACE_PERIOD_EXPIRED') return APPLE_SERVER_STATUS.EXPIRED;
+    if (notificationType === 'DID_RENEW' || notificationType === 'SUBSCRIBED') return APPLE_SERVER_STATUS.ACTIVE;
+    if (notificationType === 'DID_CHANGE_RENEWAL_STATUS' && subtype === 'AUTO_RENEW_DISABLED') {
+        return transactionPayload?.expiresDate && parseAppleMillis(transactionPayload.expiresDate) > Date.now()
+            ? APPLE_SERVER_STATUS.ACTIVE
+            : APPLE_SERVER_STATUS.EXPIRED;
+    }
+
+    return transactionPayload?.expiresDate && parseAppleMillis(transactionPayload.expiresDate) > Date.now()
+        ? APPLE_SERVER_STATUS.ACTIVE
+        : APPLE_SERVER_STATUS.EXPIRED;
+}
+
 async function persistComputedAppleStatus({ admin, userRef, sub, snapshot }) {
     const provider = resolveProvider(sub);
     if (!sub || (!APPLE_PROVIDER_VALUES.has(provider) && !MANUAL_PROVIDER_VALUES.has(provider))) return false;
@@ -808,7 +870,9 @@ async function persistStoreKitSubscription({ firebaseUid, transactionPayload, pu
         parseAppleMillis(transactionPayload.originalPurchaseDate) ||
         parseAppleMillis(purchase?.originalTransactionDateIOS) ||
         purchaseMs;
-    const cancellationMs = parseAppleMillis(transactionPayload.revocationDate);
+    const cancellationMs =
+        parseAppleMillis(transactionPayload.revocationDate) ||
+        parseAppleMillis(purchase?.revocationDateIOS);
     const entitlementPeriod = resolveMonthlyEntitlementPeriod({
         explicitExpiresMs,
         purchaseMs,
@@ -1224,6 +1288,77 @@ router.post('/sync-storekit-purchase', async (req, res) => {
     }
 });
 
+router.post('/notifications', async (req, res) => {
+    const { signedPayload } = req.body || {};
+
+    if (!signedPayload) {
+        return res.status(400).json({ error: 'Missing signedPayload' });
+    }
+    if (!isFirebaseConfigured()) {
+        return res.status(503).json({ error: 'Firebase Admin not configured on server' });
+    }
+
+    try {
+        const notificationPayload = decodeAppleSignedJws(signedPayload, 'Apple server notification');
+        const notificationType = String(notificationPayload.notificationType || '').trim().toUpperCase();
+
+        if (notificationType === 'TEST') {
+            return res.json({ success: true, notificationType: 'TEST' });
+        }
+
+        const notificationData = notificationPayload.data || {};
+        const signedTransactionInfo = notificationData.signedTransactionInfo;
+        if (!signedTransactionInfo) {
+            console.log('[Apple IAP] Notification ignored without transaction:', notificationType);
+            return res.json({ success: true, ignored: true, reason: 'missing_transaction' });
+        }
+
+        const transactionPayload = decodeAppleTransactionJws(signedTransactionInfo);
+        const productId = transactionPayload.productId || null;
+        if (transactionPayload.bundleId && transactionPayload.bundleId !== APP_BUNDLE_ID) {
+            return res.status(400).json({ success: false, error: 'Apple notification bundle mismatch' });
+        }
+        if (productId !== PRO_PRODUCT_ID) {
+            return res.json({ success: true, ignored: true, reason: 'non_pro_product' });
+        }
+
+        const originalTransactionId = transactionPayload.originalTransactionId || transactionPayload.transactionId || null;
+        const admin = getFirebaseAdmin();
+        const firebaseUid = await getFirebaseUidForAppleTransaction({ admin, originalTransactionId });
+        if (!firebaseUid) {
+            console.warn('[Apple IAP] Notification has no linked Firebase user:', {
+                notificationType,
+                originalTransactionId,
+            });
+            return res.json({ success: true, pending: true, reason: 'unlinked_transaction' });
+        }
+
+        const renewalPayload = decodeAppleRenewalInfoJws(notificationData.signedRenewalInfo);
+        const statusCode = inferAppleNotificationStatusCode(notificationPayload, transactionPayload);
+        const persisted = await persistAppStoreServerSubscription({
+            firebaseUid,
+            transactionPayload,
+            renewalPayload,
+            statusCode,
+            serverEnvironment: notificationData.environment || transactionPayload.environment || null,
+        });
+
+        console.log(`[Apple IAP] notification: uid=${firebaseUid} type=${notificationType} hasPro=${persisted.hasPro} status=${persisted.status}`);
+        return res.json({
+            success: true,
+            hasPro: persisted.hasPro,
+            status: persisted.status,
+            productId: PRO_PRODUCT_ID,
+            expiresAt: persisted.expiresMs ? new Date(persisted.expiresMs).toISOString() : null,
+            cancelAtPeriodEnd: persisted.cancelAtPeriodEnd,
+            autoRenewStatus: persisted.autoRenewStatus,
+        });
+    } catch (e) {
+        console.error('[Apple IAP] notification error:', e);
+        return res.status(400).json({ success: false, error: e.message });
+    }
+});
+
 router.get('/subscription-status', async (req, res) => {
     const { firebaseUid } = req.query;
     if (!firebaseUid) return res.status(400).json({ error: 'Missing firebaseUid' });
@@ -1284,4 +1419,5 @@ module.exports._test = {
     shouldRefreshAppleSubscriptionFromServerApi,
     getExpectedAppleAppAccountToken,
     assertAppleAppAccountTokenMatches,
+    inferAppleNotificationStatusCode,
 };

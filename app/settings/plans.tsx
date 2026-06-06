@@ -50,9 +50,14 @@ const isUserCancelledError = (error: any) => {
 };
 
 const isDuplicatePurchaseUpdateError = (error: any) => {
+    const code = String(error?.code || '').toLowerCase();
     const message = String(error?.message || error || '').toLowerCase();
     return (
+        code === 'duplicate-purchase' ||
+        code === 'already-owned' ||
         message.includes('duplicate purchase update skipped') ||
+        message.includes('already owned') ||
+        message.includes('already subscribed') ||
         (message.includes('restorepurchases') && message.includes('getavailablepurchases'))
     );
 };
@@ -65,6 +70,7 @@ const isStoreCatalogError = (error: any) => {
         code === 'sku-not-found' ||
         code === 'query-product' ||
         code === 'item-unavailable' ||
+        code === 'sku-offer-mismatch' ||
         message.includes('sku not found') ||
         message.includes('product not found') ||
         message.includes('item unavailable')
