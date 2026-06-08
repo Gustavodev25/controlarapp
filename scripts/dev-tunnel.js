@@ -28,6 +28,7 @@ const SERVER_ENV_FILE = path.join(SERVER_DIR, '.env');
 const LOCAL_API_HEALTH_URL = `http://127.0.0.1:${SERVER_PORT}/health`;
 const METRO_STATUS_URL = `http://127.0.0.1:${METRO_PORT}/status`;
 const TUNNEL_URL_PATTERN = /https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/;
+const DEFAULT_PRODUCTION_API_URL = 'https://backendcontrolarapp-production.up.railway.app';
 const SERVER_REQUIRED_MODULES = ['express', 'cors', 'dotenv', 'zod', 'nodemon'];
 const SERVER_REQUIRED_ENV_KEYS = ['PLUGGY_CLIENT_ID', 'PLUGGY_CLIENT_SECRET'];
 const SERVER_IMPORTANT_ENV_GROUPS = [
@@ -527,7 +528,7 @@ function buildExpoArgs(rawArgs) {
     ));
 
     const expoArgs = ['expo', 'start'];
-    if (!hasStartTargetArg) expoArgs.push('--go');
+    if (!hasStartTargetArg) expoArgs.push('--dev-client');
 
     expoArgs.push('--localhost', '--port', String(METRO_PORT));
     expoArgs.push(...forwarded);
@@ -558,9 +559,10 @@ function startBackend(apiTunnelUrl, serverEnvOverrides, processes, onUnexpectedE
     return proc;
 }
 
-function startExpo(metroTunnelUrl, apiTunnelUrl, expoArgs, processes, onUnexpectedExit, onReadyLine) {
+function startExpo(metroTunnelUrl, apiTunnelUrl, iapApiUrl, expoArgs, processes, onUnexpectedExit, onReadyLine) {
     log('expo', colors.green, `Starting Expo: npx ${expoArgs.join(' ')}`);
     log('expo', colors.green, `Injecting EXPO_PUBLIC_API_URL=${apiTunnelUrl}`);
+    log('expo', colors.green, `Injecting EXPO_PUBLIC_IAP_API_URL=${iapApiUrl}`);
 
     const proc = spawnProcess('npx', expoArgs, {
         env: {
@@ -568,6 +570,7 @@ function startExpo(metroTunnelUrl, apiTunnelUrl, expoArgs, processes, onUnexpect
             EXPO_PACKAGER_PROXY_URL: metroTunnelUrl,
             CONTROLAR_KEEP_PACKAGER_PROXY: '1',
             EXPO_PUBLIC_API_URL: apiTunnelUrl,
+            EXPO_PUBLIC_IAP_API_URL: iapApiUrl,
         },
     });
     processes.push(proc);
@@ -591,7 +594,7 @@ function startExpo(metroTunnelUrl, apiTunnelUrl, expoArgs, processes, onUnexpect
     return { proc, expoArgs };
 }
 
-function showReadyInfo(metroTunnelUrl, apiTunnelUrl, expoArgs) {
+function showReadyInfo(metroTunnelUrl, apiTunnelUrl, iapApiUrl, expoArgs) {
     const metroHost = metroTunnelUrl.replace(/^https?:\/\//, '');
     const expoUrl = `exp://${metroHost}`;
 
@@ -604,13 +607,14 @@ function showReadyInfo(metroTunnelUrl, apiTunnelUrl, expoArgs) {
     });
 
     console.log('');
-    console.log(`${colors.cyan}Expo Go URL:       ${colors.bold}${expoUrl}${colors.reset}`);
+    console.log(`${colors.cyan}Expo URL:          ${colors.bold}${expoUrl}${colors.reset}`);
     console.log(`${colors.cyan}Metro tunnel:      ${colors.bold}${metroTunnelUrl}${colors.reset}`);
     console.log(`${colors.cyan}API tunnel:        ${colors.bold}${apiTunnelUrl}${colors.reset}`);
     console.log(`${colors.cyan}Local Metro:       http://127.0.0.1:${METRO_PORT}${colors.reset}`);
     console.log(`${colors.cyan}Local API:         http://127.0.0.1:${SERVER_PORT}${colors.reset}`);
     console.log(`${colors.cyan}Backend public:    PUBLIC_BASE_URL=${apiTunnelUrl}${colors.reset}`);
     console.log(`${colors.cyan}App API env:       EXPO_PUBLIC_API_URL=${apiTunnelUrl}${colors.reset}`);
+    console.log(`${colors.cyan}IAP API env:       EXPO_PUBLIC_IAP_API_URL=${iapApiUrl}${colors.reset}`);
     console.log(`${colors.dim}Expo command:      npx ${expoArgs.join(' ')}${colors.reset}`);
     console.log(`${colors.dim}Shortcuts: r reload | q quit | Ctrl+C quit${colors.reset}`);
     console.log('');
@@ -691,16 +695,18 @@ async function main() {
         await waitForHttp(LOCAL_API_HEALTH_URL, 'server', 'Local backend');
 
         const expoArgs = buildExpoArgs(rawArgs);
+        const iapApiUrl = normalizeBaseUrl(process.env.EXPO_PUBLIC_IAP_API_URL || DEFAULT_PRODUCTION_API_URL);
         let readyPrinted = false;
         const printReadyOnce = () => {
             if (readyPrinted) return;
             readyPrinted = true;
-            showReadyInfo(metroTunnel.url, apiTunnel.url, expoArgs);
+            showReadyInfo(metroTunnel.url, apiTunnel.url, iapApiUrl, expoArgs);
         };
 
         const { proc: expoProc } = startExpo(
             metroTunnel.url,
             apiTunnel.url,
+            iapApiUrl,
             expoArgs,
             processes,
             cleanupAndExit,

@@ -52,9 +52,12 @@ export type ProductSubscription = import('react-native-iap').ProductSubscription
 // Constants
 // ---------------------------------------------------------------------------
 
-const BACKEND_URL =
-    process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') ||
-    'https://backendcontrolarapp-production.up.railway.app';
+const DEFAULT_IAP_BACKEND_URL = 'https://backendcontrolarapp-production.up.railway.app';
+const BACKEND_URL = (
+    process.env.EXPO_PUBLIC_IAP_API_URL ||
+    process.env.EXPO_PUBLIC_API_URL ||
+    DEFAULT_IAP_BACKEND_URL
+).replace(/\/+$/, '');
 
 export const APPLE_PRO_PRODUCT_ID = 'com.gustavodev25.controlarapp.pro.monthly';
 export const GOOGLE_PLAY_PRO_PRODUCT_ID = 'controlarapp_pro_monthly';
