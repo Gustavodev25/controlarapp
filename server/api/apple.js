@@ -650,7 +650,22 @@ async function bindAppleTransactionToUser({ admin, firebaseUid, originalTransact
         const existingUid = existing.exists ? existing.data()?.firebaseUid : null;
 
         if (existingUid && existingUid !== firebaseUid) {
-            throw new Error('Apple purchase is already linked to another account');
+            // In Sandbox environment, allow the same transaction to be re-linked
+            // to a different account (needed for IAP testing with shared Sandbox Apple IDs).
+            // In production this remains a hard block to prevent subscription sharing.
+            const isSandbox =
+                String(process.env.APPLE_IAP_ENVIRONMENT || process.env.APPLE_SERVER_API_ENVIRONMENT || '')
+                    .trim().toLowerCase() === 'sandbox' ||
+                String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
+
+            if (!isSandbox) {
+                throw new Error('Apple purchase is already linked to another account');
+            }
+
+            console.warn(
+                `[Apple IAP] Sandbox: re-linking transaction ${originalTransactionId} ` +
+                `from uid ${existingUid} to uid ${firebaseUid}`
+            );
         }
 
         const mappingData = {
